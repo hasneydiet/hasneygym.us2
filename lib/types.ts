@@ -87,6 +87,7 @@ export const TECHNIQUE_TAGS = [
   'GVT',
   'Myo-Reps',
   'Super-Sets',
+  'Failure',
 ];
 
 export interface ExerciseMetrics {
