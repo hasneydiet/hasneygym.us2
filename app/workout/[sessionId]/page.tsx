@@ -129,7 +129,8 @@ export default function WorkoutPage() {
       .update({ ended_at: new Date().toISOString() })
       .eq('id', sessionId);
 
-    router.push('/workout');
+    router.push('/history');
+    
   };
 
   const addSet = async (exerciseId: string) => {
