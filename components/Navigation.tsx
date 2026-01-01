@@ -28,7 +28,14 @@ export default function Navigation() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           <div className="flex items-center space-x-8">
-            <span className="text-xl font-bold text-gray-900 dark:text-white">TrackFit</span>
+            <div className="flex flex-col leading-tight">
+  <span className="text-xl font-bold text-gray-900 dark:text-white">
+    TrackFit
+  </span>
+  <span className="text-xs text-gray-500 dark:text-gray-400">
+    Hasney Gym · Personal Tracker
+  </span>
+</div>
             <div className="hidden md:flex space-x-4">
               {navItems.map((item) => (
                 <Link
