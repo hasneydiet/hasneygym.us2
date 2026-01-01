@@ -369,29 +369,12 @@ return (
             <div>
               <h1 className="text-4xl font-extrabold tracking-tight">Workout</h1>
               <div className="mt-6 flex items-center justify-between">
-                <h2 className="text-3xl font-extrabold">Routines</h2>
-              </div>
+                </div>
             </div>
 
             <div className="flex items-center gap-3 mt-2">
               {/* Placeholder for refresh / pro pill feel */}
-              <button
-                onClick={loadRoutinesAndDays}
-                className="w-11 h-11 rounded-full border border-white/15 flex items-center justify-center hover:bg-white/5"
-                title="Refresh"
-              >
-                ↻
-              </button>
-</div>
-          </div>
-{/* Collapsible label */}
-          <button
-            onClick={() => setCollapsed((v) => !v)}
-            className="mt-6 flex items-center gap-2 text-white/70 hover:text-white"
-          >
-            <ChevronDown className={`w-5 h-5 transition-transform ${collapsed ? '-rotate-90' : ''}`} />
-            <span className="text-lg">{routineCountLabel}</span>
-          </button>
+              
 
           {/* List like HEVY */}
           {!collapsed && (
