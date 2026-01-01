@@ -6,7 +6,7 @@ import AuthGuard from '@/components/AuthGuard';
 import Navigation from '@/components/Navigation';
 import { supabase } from '@/lib/supabase';
 import { Routine, RoutineDay } from '@/lib/types';
-import { ChevronDown, Plus, Search, MoreHorizontal } from 'lucide-react';
+import { ChevronDown, MoreHorizontal } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
 
@@ -382,32 +382,9 @@ return (
               >
                 ↻
               </button>
-              <div className="px-3 py-1 rounded-full bg-yellow-400 text-black font-bold text-sm select-none">
-                PRO
-              </div>
-            </div>
+</div>
           </div>
-
-          {/* Action pills */}
-          <div className="mt-6 flex items-center gap-4">
-            <button
-              onClick={() => router.push('/routines')}
-              className="flex-1 flex items-center justify-center gap-3 bg-white/10 hover:bg-white/15 rounded-2xl py-4"
-            >
-              <Plus className="w-5 h-5" />
-              <span className="text-lg font-semibold">New Routine</span>
-            </button>
-
-            <button
-              onClick={() => router.push('/exercises')}
-              className="flex-1 flex items-center justify-center gap-3 bg-white/10 hover:bg-white/15 rounded-2xl py-4"
-            >
-              <Search className="w-5 h-5" />
-              <span className="text-lg font-semibold">Explore</span>
-            </button>
-          </div>
-
-          {/* Collapsible label */}
+{/* Collapsible label */}
           <button
             onClick={() => setCollapsed((v) => !v)}
             className="mt-6 flex items-center gap-2 text-white/70 hover:text-white"
