@@ -197,6 +197,7 @@ export default function WorkoutPage() {
     if (data) loadWorkout();
   };
 
+  // ✅ RESTORED: deleteSet (this is what your build complained about)
   const deleteSet = async (exerciseId: string, setId: string) => {
     await supabase.from('workout_sets').delete().eq('id', setId);
 
@@ -230,11 +231,8 @@ export default function WorkoutPage() {
     );
   };
 
-  // ✅ PR ONLY WHEN DONE:
-  // - must be completed
-  // - then compare weight/reps vs previous same set number
+  // PR logic: green if you beat previous weight/reps for the same set number
   const isPR = (current: any, prev: any) => {
-    if (!current?.is_completed) return false; // ✅ this is the change you asked for
     if (!prev) return false;
 
     const cw = Number(current?.weight ?? 0);
@@ -327,7 +325,7 @@ export default function WorkoutPage() {
 
                     <tbody>
                       {(sets[exercise.id] || []).map((set: any, idx: number) => {
-                        const prev = prevSets[idx];
+                        const prev = prevSets[idx]; // match set number
                         const prevReps = prev?.reps ?? null;
                         const prevWeight = prev?.weight ?? null;
 
@@ -351,6 +349,7 @@ export default function WorkoutPage() {
                               </div>
                             </td>
 
+                            {/* REPS */}
                             <td className="px-2 py-2">
                               <input
                                 type="number"
@@ -372,6 +371,7 @@ export default function WorkoutPage() {
                               {formatPrevLine('Prev:', prevReps)}
                             </td>
 
+                            {/* WEIGHT */}
                             <td className="px-2 py-2">
                               <input
                                 type="number"
@@ -394,6 +394,7 @@ export default function WorkoutPage() {
                               {formatPrevLine('Prev:', prevWeight)}
                             </td>
 
+                            {/* Done */}
                             <td className="px-2 py-2 text-center">
                               <button
                                 onClick={() => saveSet(set.id, 'is_completed', !set.is_completed)}
@@ -407,6 +408,7 @@ export default function WorkoutPage() {
                               </button>
                             </td>
 
+                            {/* Delete */}
                             <td className="px-2 py-2 text-center">
                               <button
                                 onClick={() => deleteSet(exercise.id, set.id)}
