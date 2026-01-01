@@ -1,180 +1,283 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import AuthGuard from '@/components/AuthGuard';
 import Navigation from '@/components/Navigation';
 import { supabase } from '@/lib/supabase';
 import { Routine, RoutineDay } from '@/lib/types';
+import { ChevronDown, Plus, Search } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
 
+type RoutineDayCard = RoutineDay & {
+  routineName?: string;
+  preview?: string;
+  exerciseCount?: number;
+};
+
 export default function StartWorkoutPage() {
   const router = useRouter();
+
   const [routines, setRoutines] = useState<Routine[]>([]);
-  const [selectedRoutineId, setSelectedRoutineId] = useState('');
-  const [days, setDays] = useState<RoutineDay[]>([]);
-  const [selectedDayId, setSelectedDayId] = useState('');
+  const [routineDays, setRoutineDays] = useState<RoutineDayCard[]>([]);
+  const [collapsed, setCollapsed] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadRoutines();
+    loadRoutinesAndDays();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    if (selectedRoutineId) {
-      loadDays();
-    } else {
-      setDays([]);
-      setSelectedDayId('');
-    }
-  }, [selectedRoutineId]);
+  const loadRoutinesAndDays = async () => {
+    setLoading(true);
 
-  const loadRoutines = async () => {
-    const { data } = await supabase
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+
+    // 1) routines
+    const { data: routinesData } = await supabase
       .from('routines')
       .select('*')
-      .order('name');
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
 
-    if (data) setRoutines(data);
-  };
+    const routinesList = (routinesData || []) as Routine[];
+    setRoutines(routinesList);
 
-  const loadDays = async () => {
-    const { data } = await supabase
+    const routineNameById: Record<string, string> = {};
+    for (const r of routinesList) routineNameById[r.id] = r.name;
+
+    // 2) routine days
+    const { data: daysData } = await supabase
       .from('routine_days')
       .select('*')
-      .eq('routine_id', selectedRoutineId)
-      .order('day_index');
+      .in('routine_id', routinesList.map((r) => r.id))
+      .order('routine_id', { ascending: true })
+      .order('day_index', { ascending: true });
 
-    if (data) setDays(data);
+    const days = (daysData || []) as RoutineDay[];
+
+    // 3) build previews (safe: small extra queries per day)
+    const cards: RoutineDayCard[] = await Promise.all(
+      days.map(async (d) => {
+        const { data: exRows } = await supabase
+          .from('routine_day_exercises')
+          .select('order_index, exercises(name)')
+          .eq('routine_day_id', d.id)
+          .order('order_index', { ascending: true })
+          .limit(6);
+
+        const names =
+          (exRows || [])
+            .map((x: any) => x.exercises?.name)
+            .filter(Boolean) as string[];
+
+        const preview = names.slice(0, 3).join(', ');
+        const more = names.length > 3 ? '…' : '';
+        return {
+          ...d,
+          routineName: routineNameById[d.routine_id] || 'Routine',
+          preview: preview ? preview + more : '',
+          exerciseCount: names.length,
+        };
+      })
+    );
+
+    setRoutineDays(cards);
+    setLoading(false);
   };
 
-  const startWorkout = async () => {
-    if (!selectedDayId) return;
-
+  const startRoutineDay = async (routineId: string, routineDayId: string) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    const { data: session } = await supabase
+    const { data: session, error: sessionError } = await supabase
       .from('workout_sessions')
       .insert({
         user_id: user.id,
-        routine_id: selectedRoutineId,
-        routine_day_id: selectedDayId,
+        routine_id: routineId,
+        routine_day_id: routineDayId,
       })
       .select()
       .single();
 
-    if (session) {
-      const { data: routineExercises } = await supabase
-        .from('routine_day_exercises')
-        .select('*, exercises(*)')
-        .eq('routine_day_id', selectedDayId)
-        .order('order_index');
+    if (sessionError) {
+      console.error('Failed to create session:', sessionError);
+      return;
+    }
+    if (!session) return;
 
-      if (routineExercises) {
-        for (const ex of routineExercises) {
-          const techniqueTags = ex.exercises?.default_technique_tags || [];
+    const { data: routineExercises, error: rexError } = await supabase
+      .from('routine_day_exercises')
+      .select('*, exercises(*)')
+      .eq('routine_day_id', routineDayId)
+      .order('order_index', { ascending: true });
 
-          const { data: workoutExercise } = await supabase
-            .from('workout_exercises')
-            .insert({
-              workout_session_id: session.id,
-              exercise_id: ex.exercise_id,
-              order_index: ex.order_index,
-              superset_group_id: ex.superset_group_id,
-              technique_tags: techniqueTags,
-            })
-            .select()
-            .single();
+    if (rexError) {
+      console.error('Failed to load routine exercises:', rexError);
+      return;
+    }
 
-          if (workoutExercise) {
-            let setsToCreate = 0;
-            let defaultReps = 0;
+    if (routineExercises && routineExercises.length > 0) {
+      for (const ex of routineExercises as any[]) {
+        const techniqueTags = ex.exercises?.default_technique_tags || [];
 
-            if (ex.default_sets && ex.default_sets.length > 0) {
-              setsToCreate = ex.default_sets.length;
-            } else if (ex.exercises?.default_set_scheme?.sets) {
-              setsToCreate = ex.exercises.default_set_scheme.sets;
-              defaultReps = ex.exercises.default_set_scheme.reps || 0;
-            }
+        const { data: workoutExercise, error: weError } = await supabase
+          .from('workout_exercises')
+          .insert({
+            workout_session_id: session.id,
+            exercise_id: ex.exercise_id,
+            order_index: ex.order_index,
+            superset_group_id: ex.superset_group_id,
+            technique_tags: techniqueTags,
+          })
+          .select()
+          .single();
 
-            if (setsToCreate > 0) {
-              const setsToInsert = [];
-              for (let i = 0; i < setsToCreate; i++) {
-                setsToInsert.push({
-                  workout_exercise_id: workoutExercise.id,
-                  set_index: i,
-                  reps: ex.default_sets?.[i]?.reps || defaultReps,
-                  weight: 0,
-                  rpe: null,
-                  is_completed: false,
-                  notes: '',
-                });
-              }
-              await supabase.from('workout_sets').insert(setsToInsert);
-            }
-          }
+        if (weError) {
+          console.error('Failed to create workout exercise:', weError);
+          continue;
+        }
+
+        if (workoutExercise) {
+          const defaultSets: any[] = ex.default_sets || [];
+          const schemeSets = Number(ex.exercises?.default_set_scheme?.sets ?? 0);
+          const setsToCreate =
+            schemeSets > 0 ? schemeSets : (defaultSets.length > 0 ? defaultSets.length : 3);
+
+          const defaultReps = Number(ex.exercises?.default_set_scheme?.reps ?? 0);
+
+          const setsToInsert = Array.from({ length: setsToCreate }).map((_, i) => ({
+            workout_exercise_id: workoutExercise.id,
+            set_index: i,
+            reps: defaultSets?.[i]?.reps ?? defaultReps ?? 0,
+            weight: 0,
+            rpe: null,
+            is_completed: false,
+            notes: '',
+          }));
+
+          const { error: setErr } = await supabase.from('workout_sets').insert(setsToInsert);
+          if (setErr) console.error('Failed to create workout sets:', setErr);
         }
       }
-
-      router.push(`/workout/${session.id}`);
     }
+
+    router.push(`/workout/${session.id}`);
   };
+
+  const routineCountLabel = useMemo(() => {
+    return `My Routines (${routineDays.length})`;
+  }, [routineDays.length]);
 
   return (
     <AuthGuard>
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
+      <div className="min-h-screen bg-black text-white pb-20">
         <Navigation />
-        <div className="max-w-2xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-6">Start Workout</h1>
 
-          <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm p-6 space-y-6">
+        <div className="max-w-3xl mx-auto px-4 py-6">
+          {/* Header like HEVY */}
+          <div className="flex items-start justify-between">
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Select Routine
-              </label>
-              <select
-                value={selectedRoutineId}
-                onChange={(e) => setSelectedRoutineId(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-gray-900 dark:focus:ring-gray-100 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-              >
-                <option value="">Choose a routine</option>
-                {routines.map((routine) => (
-                  <option key={routine.id} value={routine.id}>
-                    {routine.name}
-                  </option>
-                ))}
-              </select>
+              <h1 className="text-4xl font-extrabold tracking-tight">Workout</h1>
+              <div className="mt-6 flex items-center justify-between">
+                <h2 className="text-3xl font-extrabold">Routines</h2>
+              </div>
             </div>
 
-            {selectedRoutineId && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Select Day
-                </label>
-                <select
-                  value={selectedDayId}
-                  onChange={(e) => setSelectedDayId(e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-gray-900 dark:focus:ring-gray-100 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-                >
-                  <option value="">Choose a day</option>
-                  {days.map((day) => (
-                    <option key={day.id} value={day.id}>
-                      {day.name}
-                    </option>
-                  ))}
-                </select>
+            <div className="flex items-center gap-3 mt-2">
+              {/* Placeholder for refresh / pro pill feel */}
+              <button
+                onClick={loadRoutinesAndDays}
+                className="w-11 h-11 rounded-full border border-white/15 flex items-center justify-center hover:bg-white/5"
+                title="Refresh"
+              >
+                ↻
+              </button>
+              <div className="px-3 py-1 rounded-full bg-yellow-400 text-black font-bold text-sm select-none">
+                PRO
               </div>
-            )}
+            </div>
+          </div>
+
+          {/* Action pills */}
+          <div className="mt-6 flex items-center gap-4">
+            <button
+              onClick={() => router.push('/routines')}
+              className="flex-1 flex items-center justify-center gap-3 bg-white/10 hover:bg-white/15 rounded-2xl py-4"
+            >
+              <Plus className="w-5 h-5" />
+              <span className="text-lg font-semibold">New Routine</span>
+            </button>
 
             <button
-              onClick={startWorkout}
-              disabled={!selectedDayId}
-              className="w-full bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 py-3 rounded-lg hover:bg-gray-800 dark:hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+              onClick={() => router.push('/exercises')}
+              className="flex-1 flex items-center justify-center gap-3 bg-white/10 hover:bg-white/15 rounded-2xl py-4"
             >
-              Start Workout
+              <Search className="w-5 h-5" />
+              <span className="text-lg font-semibold">Explore</span>
             </button>
           </div>
+
+          {/* Collapsible label */}
+          <button
+            onClick={() => setCollapsed((v) => !v)}
+            className="mt-6 flex items-center gap-2 text-white/70 hover:text-white"
+          >
+            <ChevronDown className={`w-5 h-5 transition-transform ${collapsed ? '-rotate-90' : ''}`} />
+            <span className="text-lg">{routineCountLabel}</span>
+          </button>
+
+          {/* List like HEVY */}
+          {!collapsed && (
+            <div className="mt-4 space-y-4">
+              {loading && (
+                <div className="text-white/60">Loading routines…</div>
+              )}
+
+              {!loading && routineDays.length === 0 && (
+                <div className="text-white/60">
+                  No routines yet. Tap <span className="text-white">New Routine</span> to create one.
+                </div>
+              )}
+
+              {!loading &&
+                routineDays.map((d) => (
+                  <div
+                    key={d.id}
+                    className="bg-white/10 rounded-3xl p-5 border border-white/10"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-2xl font-extrabold">{d.name}</div>
+                        <div className="mt-1 text-white/60 text-base line-clamp-2">
+                          {d.preview || 'No exercises added yet'}
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => router.push(`/routines/${d.routine_id}`)}
+                        className="w-10 h-10 rounded-full hover:bg-white/10 flex items-center justify-center text-white/80"
+                        title="Edit routine"
+                      >
+                        •••
+                      </button>
+                    </div>
+
+                    <button
+                      onClick={() => startRoutineDay(d.routine_id, d.id)}
+                      className="mt-4 w-full bg-sky-500 hover:bg-sky-400 text-white font-bold text-xl py-4 rounded-2xl"
+                    >
+                      Start Routine
+                    </button>
+                  </div>
+                ))}
+            </div>
+          )}
         </div>
       </div>
     </AuthGuard>
