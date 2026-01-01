@@ -83,11 +83,9 @@ export interface WorkoutSet {
 export const TECHNIQUE_TAGS = [
   'drop set',
   'rest-pause',
-  'AMRAP',
-  'tempo',
-  'pause reps',
-  'partials',
-  'warmup'
+  'GVT',
+  'MyoSets',
+  'Super Sets',
 ];
 
 export interface ExerciseMetrics {
