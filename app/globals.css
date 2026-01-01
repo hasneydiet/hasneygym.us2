@@ -80,3 +80,64 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* =========================
+   Phase 1: Readability + S25 Ultra ergonomics
+   - Larger default type for 1.75 readers
+   - Better line-height
+   - Larger tap targets for inputs/buttons
+   ========================= */
+
+:root{
+  /* ~18px base on most devices (16px * 1.125) */
+  --app-font-scale: 1.125;
+}
+
+html{
+  font-size: calc(16px * var(--app-font-scale));
+  -webkit-text-size-adjust: 100%;
+}
+
+body{
+  line-height: 1.55;
+}
+
+/* Make form controls easier to tap/read */
+input,
+select,
+textarea{
+  font-size: 1rem;
+  line-height: 1.4;
+  min-height: 44px;
+}
+
+/* Buttons should be thumb-friendly */
+button{
+  min-height: 44px;
+}
+
+/* Improve focus visibility (accessibility) */
+:focus-visible{
+  outline: 2px solid rgba(59,130,246,.9); /* blue-500-ish */
+  outline-offset: 2px;
+}
+
+
+@layer components {
+  /* Reusable “big readable” controls */
+  .app-input {
+    @apply w-full rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 px-4 py-3 text-base;
+  }
+  .app-btn {
+    @apply inline-flex items-center justify-center rounded-xl px-4 py-3 font-semibold;
+  }
+  .app-btn-primary {
+    @apply app-btn bg-gray-900 text-white hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-200;
+  }
+  .app-btn-secondary {
+    @apply app-btn bg-gray-100 text-gray-900 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700;
+  }
+  .app-card {
+    @apply rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm;
+  }
+}
