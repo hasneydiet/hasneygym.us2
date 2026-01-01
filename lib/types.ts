@@ -81,11 +81,12 @@ export interface WorkoutSet {
 }
 
 export const TECHNIQUE_TAGS = [
-  'drop set',
-  'rest-pause',
+  'Normal-Sets',
+  'Drop-Sets',
+  'Rest-Pause',
   'GVT',
-  'MyoSets',
-  'Super Sets',
+  'Myo-Reps',
+  'Super-Sets',
 ];
 
 export interface ExerciseMetrics {
