@@ -25,7 +25,7 @@ export default function StartWorkoutPage() {
   const [loading, setLoading] = useState(true);
 
   // ✅ For "..." menu per routine
-  const [openMenuRoutineId, setOpenMenuRoutineId] = useState<string | null>(null);
+  const [openMenuCardId, setOpenMenuCardId] = useState<string | null>(null);
 
   // ✅ Last performed date per routine
   const [lastPerformedByRoutineId, setLastPerformedByRoutineId] = useState<Record<string, string | null>>({});
@@ -42,7 +42,7 @@ export default function StartWorkoutPage() {
       const target = e.target as HTMLElement | null;
       if (!target) return;
       if (target.closest?.('[data-routine-menu]')) return;
-      setOpenMenuRoutineId(null);
+      setOpenMenuCardId(null);
     };
     document.addEventListener('click', onDocClick);
     return () => document.removeEventListener('click', onDocClick);
@@ -238,7 +238,7 @@ export default function StartWorkoutPage() {
       console.error('Rename failed:', error);
       return;
     }
-    setOpenMenuRoutineId(null);
+    setOpenMenuCardId(null);
     await loadRoutinesAndDays();
   };
 
@@ -326,7 +326,7 @@ export default function StartWorkoutPage() {
       }
     }
 
-    setOpenMenuRoutineId(null);
+    setOpenMenuCardId(null);
     await loadRoutinesAndDays();
   };
 
@@ -353,7 +353,7 @@ export default function StartWorkoutPage() {
       return;
     }
 
-    setOpenMenuRoutineId(null);
+    setOpenMenuCardId(null);
     await loadRoutinesAndDays();
   };
 
@@ -410,7 +410,7 @@ return (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            setOpenMenuRoutineId((cur) => (cur === d.routine_id ? null : d.routine_id));
+                            setOpenMenuCardId((cur) => (cur === d.id ? null : d.id));
                           }}
                           className="w-10 h-10 rounded-full hover:bg-white/10 flex items-center justify-center text-white/80"
                           title="Routine actions"
@@ -418,11 +418,11 @@ return (
                           <MoreHorizontal className="w-6 h-6" />
                         </button>
 
-                        {openMenuRoutineId === d.routine_id && (
+                        {openMenuCardId === d.id && (
                           <div className="absolute right-0 mt-2 w-44 rounded-xl border border-white/10 bg-gray-900/95 backdrop-blur shadow-lg overflow-hidden z-50">
                             <button
                               onClick={() => {
-                                setOpenMenuRoutineId(null);
+                                setOpenMenuCardId(null);
                                 router.push(`/routines/${d.routine_id}`);
                               }}
                               className="w-full text-left px-4 py-3 text-sm text-white/90 hover:bg-white/10"
