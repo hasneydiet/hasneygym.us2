@@ -12,7 +12,7 @@ export default function Navigation() {
   const router = useRouter();
   const { theme, toggleTheme } = useTheme();
 
-  // Keep content from being hidden behind the fixed mobile footer nav
+  // Prevent content from being hidden behind bottom tab bar
   useEffect(() => {
     const prev = document.body.style.paddingBottom;
     document.body.style.paddingBottom = '80px';
@@ -26,8 +26,6 @@ export default function Navigation() {
     router.push('/login');
   };
 
-  // ✅ Correct routes based on your app folder:
-  // /routines exists, /routine does NOT
   const navItems = [
     { href: '/dashboard', icon: Home, label: 'Home' },
     { href: '/workout/start', icon: Dumbbell, label: 'Workout' },
@@ -42,64 +40,66 @@ export default function Navigation() {
 
   return (
     <>
-      {/* TOP HEADER (desktop/tablet) */}
-      <nav className="hidden md:block bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 sticky top-0 z-50">
+      {/* HEADER (mobile + desktop) */}
+      <nav className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center gap-8">
-              {/* Logo / Title */}
-              <Link href="/dashboard" className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-lg bg-gray-900 dark:bg-gray-100 flex items-center justify-center">
-                  <Dumbbell className="w-5 h-5 text-white dark:text-gray-900" />
-                </div>
-                <div className="leading-tight">
-                  <div className="text-lg font-bold text-gray-900 dark:text-white">HasneyGym</div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400">Workout Tracker</div>
-                </div>
-              </Link>
-
-              {/* Links */}
-              <div className="flex items-center gap-2">
-                {navItems.map((item) => (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                      isActive(item.href)
-                        ? 'bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900'
-                        : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
-                    }`}
-                  >
-                    {item.label}
-                  </Link>
-                ))}
+          <div className="flex justify-between items-center h-14 md:h-16">
+            {/* Logo */}
+            <Link href="/dashboard" className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg bg-gray-900 dark:bg-gray-100 flex items-center justify-center">
+                <Dumbbell className="w-5 h-5 text-white dark:text-gray-900" />
               </div>
+              <div className="leading-tight">
+                <div className="text-sm md:text-lg font-bold text-gray-900 dark:text-white">
+                  HasneyGym
+                </div>
+                <div className="hidden md:block text-xs text-gray-500 dark:text-gray-400">
+                  Workout Tracker
+                </div>
+              </div>
+            </Link>
+
+            {/* Desktop nav links ONLY */}
+            <div className="hidden md:flex items-center gap-2">
+              {navItems.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                    isActive(item.href)
+                      ? 'bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900'
+                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
+                  }`}
+                >
+                  {item.label}
+                </Link>
+              ))}
             </div>
 
-            {/* Actions */}
+            {/* Actions (mobile + desktop) */}
             <div className="flex items-center gap-2">
               <button
                 onClick={toggleTheme}
-                className="px-3 py-2 rounded-md text-sm font-medium transition-colors text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
-                aria-label="Toggle theme"
+                className="p-2 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
                 title="Toggle theme"
+                aria-label="Toggle theme"
               >
-                {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+                {theme === 'light' ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />}
               </button>
 
               <button
                 onClick={handleLogout}
-                className="px-3 py-2 rounded-md text-sm font-medium transition-colors text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center gap-2"
+                className="p-2 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
+                title="Logout"
               >
-                <LogOut className="w-4 h-4" />
-                <span>Logout</span>
+                <LogOut className="w-5 h-5" />
               </button>
             </div>
           </div>
         </div>
       </nav>
 
-      {/* BOTTOM TAB BAR (mobile) */}
+      {/* MOBILE BOTTOM TAB BAR */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/95 dark:bg-gray-900/95 backdrop-blur border-t border-gray-200 dark:border-gray-800">
         <div className="pb-[env(safe-area-inset-bottom)]">
           <div className="flex justify-around">
