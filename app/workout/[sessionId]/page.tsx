@@ -236,6 +236,27 @@ export default function WorkoutPage() {
     );
   };
 
+  // ✅ PR logic: green if you beat previous weight/reps for the same set number
+  const isPR = (current: any, prev: any) => {
+    if (!prev) return false;
+
+    const cw = Number(current?.weight ?? 0);
+    const cr = Number(current?.reps ?? 0);
+    const pw = Number(prev?.weight ?? 0);
+    const pr = Number(prev?.reps ?? 0);
+
+    // need meaningful values
+    if (!cw || !cr) return false;
+
+    // If previous is empty/zero, don't call it a PR
+    if (!pw && !pr) return false;
+
+    const heavierSameOrMoreReps = cw > pw && cr >= pr;
+    const moreRepsSameOrMoreWeight = cr > pr && cw >= pw;
+
+    return heavierSameOrMoreReps || moreRepsSameOrMoreWeight;
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <div className="max-w-5xl mx-auto px-4 py-6">
@@ -318,9 +339,25 @@ export default function WorkoutPage() {
                         const prevWeight = prev?.weight ?? null;
                         const prevRpe = prev?.rpe ?? null;
 
+                        const pr = isPR(set, prev);
+
                         return (
-                          <tr key={set.id} className="border-b border-gray-100 dark:border-gray-800 align-top">
-                            <td className="px-2 py-2 font-medium text-gray-900 dark:text-gray-100">{idx + 1}</td>
+                          <tr
+                            key={set.id}
+                            className={`border-b dark:border-gray-800 align-top ${
+                              pr ? 'bg-green-50/60 dark:bg-green-900/20' : 'border-gray-100'
+                            }`}
+                          >
+                            <td className="px-2 py-2 font-medium text-gray-900 dark:text-gray-100">
+                              <div className="flex items-center gap-2">
+                                <span>{idx + 1}</span>
+                                {pr && (
+                                  <span className="inline-flex items-center rounded-full bg-green-600 text-white text-[10px] px-2 py-0.5">
+                                    PR
+                                  </span>
+                                )}
+                              </div>
+                            </td>
 
                             {/* REPS */}
                             <td className="px-2 py-2">
@@ -335,7 +372,11 @@ export default function WorkoutPage() {
                                   saveSet(set.id, 'reps', Number.isFinite(num) ? num : 0);
                                   clearDraftField(set.id, 'reps');
                                 }}
-                                className="w-full px-2 py-1 border border-gray-300 dark:border-gray-700 rounded text-center bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                                className={`w-full px-2 py-1 border rounded text-center bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 ${
+                                  pr
+                                    ? 'border-green-400 dark:border-green-500'
+                                    : 'border-gray-300 dark:border-gray-700'
+                                }`}
                               />
                               {formatPrevLine('Prev:', prevReps)}
                             </td>
@@ -354,7 +395,11 @@ export default function WorkoutPage() {
                                   saveSet(set.id, 'weight', Number.isFinite(num) ? num : 0);
                                   clearDraftField(set.id, 'weight');
                                 }}
-                                className="w-full px-2 py-1 border border-gray-300 dark:border-gray-700 rounded text-center bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                                className={`w-full px-2 py-1 border rounded text-center bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 ${
+                                  pr
+                                    ? 'border-green-400 dark:border-green-500'
+                                    : 'border-gray-300 dark:border-gray-700'
+                                }`}
                               />
                               {formatPrevLine('Prev:', prevWeight)}
                             </td>
@@ -373,7 +418,11 @@ export default function WorkoutPage() {
                                   saveSet(set.id, 'rpe', val === null ? null : Number.isFinite(val) ? val : null);
                                   clearDraftField(set.id, 'rpe');
                                 }}
-                                className="w-full px-2 py-1 border border-gray-300 dark:border-gray-700 rounded text-center bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                                className={`w-full px-2 py-1 border rounded text-center bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 ${
+                                  pr
+                                    ? 'border-green-400 dark:border-green-500'
+                                    : 'border-gray-300 dark:border-gray-700'
+                                }`}
                               />
                               {formatPrevLine('Prev:', prevRpe)}
                             </td>
