@@ -1,9 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import AuthGuard from '@/components/AuthGuard';
-import Navigation from '@/components/Navigation';
+import { useRouter } from 'next/navigation';import Navigation from '@/components/Navigation';
 import { supabase } from '@/lib/supabase';
 import { Routine, RoutineDay } from '@/lib/types';
 import { ChevronDown, MoreHorizontal } from 'lucide-react';
@@ -30,7 +28,6 @@ export default function StartWorkoutPage() {
   // ✅ Last performed date per routine
   const [lastPerformedByRoutineId, setLastPerformedByRoutineId] = useState<Record<string, string | null>>({});
 
-
   useEffect(() => {
     loadRoutinesAndDays();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -47,7 +44,6 @@ export default function StartWorkoutPage() {
     document.addEventListener('click', onDocClick);
     return () => document.removeEventListener('click', onDocClick);
   }, []);
-
 
   const loadRoutinesAndDays = async () => {
     setLoading(true);
@@ -357,9 +353,8 @@ export default function StartWorkoutPage() {
     await loadRoutinesAndDays();
   };
 
-
 return (
-    <AuthGuard>
+    
       <div className="min-h-screen bg-black text-white pb-20">
         <Navigation />
 
@@ -464,6 +459,6 @@ return (
           )}
         </div>
       </div>
-    </AuthGuard>
+    
   );
 }
