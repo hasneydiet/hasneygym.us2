@@ -6,7 +6,7 @@ import AuthGuard from '@/components/AuthGuard';
 import Navigation from '@/components/Navigation';
 import { supabase } from '@/lib/supabase';
 import { Routine, RoutineDay } from '@/lib/types';
-import { ChevronDown, Plus, Search } from 'lucide-react';
+import { ChevronDown, Plus, Search, MoreHorizontal } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,10 +24,30 @@ export default function StartWorkoutPage() {
   const [collapsed, setCollapsed] = useState(false);
   const [loading, setLoading] = useState(true);
 
+  // ✅ For "..." menu per routine
+  const [openMenuRoutineId, setOpenMenuRoutineId] = useState<string | null>(null);
+
+  // ✅ Last performed date per routine
+  const [lastPerformedByRoutineId, setLastPerformedByRoutineId] = useState<Record<string, string | null>>({});
+
+
   useEffect(() => {
     loadRoutinesAndDays();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    const onDocClick = (e: MouseEvent) => {
+      // Close any open menu when tapping outside
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      if (target.closest?.('[data-routine-menu]')) return;
+      setOpenMenuRoutineId(null);
+    };
+    document.addEventListener('click', onDocClick);
+    return () => document.removeEventListener('click', onDocClick);
+  }, []);
+
 
   const loadRoutinesAndDays = async () => {
     setLoading(true);
@@ -47,6 +67,28 @@ export default function StartWorkoutPage() {
 
     const routinesList = (routinesData || []) as Routine[];
     setRoutines(routinesList);
+
+    // ✅ last performed session per routine (most recent started_at where ended_at is not null)
+    if (routinesList.length > 0) {
+      const { data: sessionRows } = await supabase
+        .from('workout_sessions')
+        .select('routine_id, started_at, ended_at')
+        .in('routine_id', routinesList.map((r) => r.id))
+        .not('ended_at', 'is', null)
+        .order('started_at', { ascending: false })
+        .limit(200);
+
+      const map: Record<string, string | null> = {};
+      for (const row of (sessionRows || []) as any[]) {
+        const rid = row.routine_id as string;
+        if (!rid) continue;
+        if (map[rid] !== undefined) continue; // first (most recent) wins
+        map[rid] = row.started_at ?? null;
+      }
+      setLastPerformedByRoutineId(map);
+    } else {
+      setLastPerformedByRoutineId({});
+    }
 
     const routineNameById: Record<string, string> = {};
     for (const r of routinesList) routineNameById[r.id] = r.name;
@@ -174,7 +216,149 @@ export default function StartWorkoutPage() {
     return `My Routines (${routineDays.length})`;
   }, [routineDays.length]);
 
-  return (
+  
+  const formatLastPerformed = (iso: string | null | undefined) => {
+    if (!iso) return 'Never';
+    try {
+      const d = new Date(iso);
+      return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    } catch {
+      return '—';
+    }
+  };
+
+  const renameRoutine = async (routineId: string, currentName: string) => {
+    const next = window.prompt('Rename routine', currentName);
+    if (!next) return;
+    const name = next.trim();
+    if (!name) return;
+
+    const { error } = await supabase.from('routines').update({ name }).eq('id', routineId);
+    if (error) {
+      console.error('Rename failed:', error);
+      return;
+    }
+    setOpenMenuRoutineId(null);
+    await loadRoutinesAndDays();
+  };
+
+  const duplicateRoutine = async (routineId: string) => {
+    // Clone routine -> days -> day exercises (no schema assumptions beyond what we read)
+    const routine = routines.find((r: any) => r.id === routineId);
+    if (!routine) return;
+
+    const newName = `${routine.name || 'Routine'} Copy`;
+
+    const { data: newRoutine, error: rErr } = await supabase
+      .from('routines')
+      .insert({ name: newName })
+      .select()
+      .single();
+
+    if (rErr || !newRoutine?.id) {
+      console.error('Duplicate routine (create) failed:', rErr);
+      return;
+    }
+
+    // days
+    const { data: oldDays, error: dErr } = await supabase
+      .from('routine_days')
+      .select('*')
+      .eq('routine_id', routineId)
+      .order('day_index', { ascending: true });
+
+    if (dErr) {
+      console.error('Duplicate routine (load days) failed:', dErr);
+      return;
+    }
+
+    const dayIdMap: Record<string, string> = {};
+
+    for (const d of (oldDays || []) as any[]) {
+      const payload: any = {
+        routine_id: newRoutine.id,
+        name: d.name,
+        day_index: d.day_index,
+      };
+
+      // copy any other optional fields safely
+      for (const k of Object.keys(d)) {
+        if (['id', 'created_at', 'updated_at', 'routine_id'].includes(k)) continue;
+        if (payload[k] !== undefined) continue;
+        payload[k] = d[k];
+      }
+
+      const { data: newDay, error: ndErr } = await supabase
+        .from('routine_days')
+        .insert(payload)
+        .select()
+        .single();
+
+      if (ndErr || !newDay?.id) {
+        console.error('Duplicate routine (create day) failed:', ndErr);
+        continue;
+      }
+
+      dayIdMap[d.id] = newDay.id;
+
+      // day exercises for that day
+      const { data: oldEx, error: exErr } = await supabase
+        .from('routine_day_exercises')
+        .select('*')
+        .eq('routine_day_id', d.id)
+        .order('order_index', { ascending: true });
+
+      if (exErr) {
+        console.error('Duplicate routine (load day exercises) failed:', exErr);
+        continue;
+      }
+
+      for (const ex of (oldEx || []) as any[]) {
+        const exPayload: any = { routine_day_id: newDay.id };
+
+        for (const k of Object.keys(ex)) {
+          if (['id', 'created_at', 'updated_at', 'routine_day_id'].includes(k)) continue;
+          exPayload[k] = ex[k];
+        }
+
+        const { error: insErr } = await supabase.from('routine_day_exercises').insert(exPayload);
+        if (insErr) console.error('Duplicate routine (insert day exercise) failed:', insErr);
+      }
+    }
+
+    setOpenMenuRoutineId(null);
+    await loadRoutinesAndDays();
+  };
+
+  const deleteRoutine = async (routineId: string) => {
+    const ok = window.confirm('Delete this routine? This cannot be undone.');
+    if (!ok) return;
+
+    // Delete children first (safe even if FK cascade exists)
+    const { data: days } = await supabase
+      .from('routine_days')
+      .select('id')
+      .eq('routine_id', routineId);
+
+    const dayIds = (days || []).map((d: any) => d.id);
+
+    if (dayIds.length > 0) {
+      await supabase.from('routine_day_exercises').delete().in('routine_day_id', dayIds);
+      await supabase.from('routine_days').delete().in('id', dayIds);
+    }
+
+    const { error } = await supabase.from('routines').delete().eq('id', routineId);
+    if (error) {
+      console.error('Delete routine failed:', error);
+      return;
+    }
+
+    setOpenMenuRoutineId(null);
+    await loadRoutinesAndDays();
+  };
+
+
+return (
     <AuthGuard>
       <div className="min-h-screen bg-black text-white pb-20">
         <Navigation />
@@ -257,15 +441,55 @@ export default function StartWorkoutPage() {
                         <div className="mt-1 text-white/60 text-base line-clamp-2">
                           {d.preview || 'No exercises added yet'}
                         </div>
+                        <div className="mt-2 text-white/50 text-sm">
+                          Last performed: {formatLastPerformed(lastPerformedByRoutineId[d.routine_id] ?? null)}
+                        </div>
                       </div>
 
-                      <button
-                        onClick={() => router.push(`/routines/${d.routine_id}`)}
-                        className="w-10 h-10 rounded-full hover:bg-white/10 flex items-center justify-center text-white/80"
-                        title="Edit routine"
-                      >
-                        •••
-                      </button>
+                      <div className="relative" data-routine-menu>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setOpenMenuRoutineId((cur) => (cur === d.routine_id ? null : d.routine_id));
+                          }}
+                          className="w-10 h-10 rounded-full hover:bg-white/10 flex items-center justify-center text-white/80"
+                          title="Routine actions"
+                        >
+                          <MoreHorizontal className="w-6 h-6" />
+                        </button>
+
+                        {openMenuRoutineId === d.routine_id && (
+                          <div className="absolute right-0 mt-2 w-44 rounded-xl border border-white/10 bg-gray-900/95 backdrop-blur shadow-lg overflow-hidden z-50">
+                            <button
+                              onClick={() => {
+                                setOpenMenuRoutineId(null);
+                                router.push(`/routines/${d.routine_id}`);
+                              }}
+                              className="w-full text-left px-4 py-3 text-sm text-white/90 hover:bg-white/10"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => renameRoutine(d.routine_id, d.routineName || 'Routine')}
+                              className="w-full text-left px-4 py-3 text-sm text-white/90 hover:bg-white/10"
+                            >
+                              Rename
+                            </button>
+                            <button
+                              onClick={() => duplicateRoutine(d.routine_id)}
+                              className="w-full text-left px-4 py-3 text-sm text-white/90 hover:bg-white/10"
+                            >
+                              Duplicate
+                            </button>
+                            <button
+                              onClick={() => deleteRoutine(d.routine_id)}
+                              className="w-full text-left px-4 py-3 text-sm text-red-300 hover:bg-white/10"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     <button
