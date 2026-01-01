@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { Home, Dumbbell, Calendar, History, LogOut, Sun, Moon } from 'lucide-react';
+import { Dumbbell, Calendar, History, LogOut, Sun, Moon, Play } from 'lucide-react';
 import { useTheme } from '@/lib/theme';
 
 export default function Navigation() {
@@ -27,14 +27,14 @@ export default function Navigation() {
   };
 
   const navItems = [
-    { href: '/dashboard', icon: Home, label: 'Home' },
-    { href: '/workout/start', icon: Dumbbell, label: 'Workout' },
+    { href: '/workout/start', icon: Play, label: 'Workout' },
+    { href: '/exercises', icon: Dumbbell, label: 'Exercises' },
     { href: '/routines', icon: Calendar, label: 'Routines' },
     { href: '/history', icon: History, label: 'History' },
   ];
 
   const isActive = (href: string) => {
-    if (href === '/dashboard') return pathname === '/dashboard' || pathname === '/';
+    if (href === '/workout/start') return pathname === '/' || pathname.startsWith('/workout');
     return pathname === href || pathname.startsWith(href + '/');
   };
 
@@ -45,7 +45,7 @@ export default function Navigation() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-14 md:h-16">
             {/* Logo */}
-            <Link href="/dashboard" className="flex items-center gap-3">
+            <Link href="/workout/start" className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-lg bg-gray-900 dark:bg-gray-100 flex items-center justify-center">
                 <Dumbbell className="w-5 h-5 text-white dark:text-gray-900" />
               </div>
