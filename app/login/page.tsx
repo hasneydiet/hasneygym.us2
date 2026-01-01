@@ -18,7 +18,7 @@ export default function LoginPage() {
     const checkAuth = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
-        router.push('/dashboard');
+        router.push('/workout/start');
       }
     };
     checkAuth();
@@ -42,7 +42,7 @@ export default function LoginPage() {
           await supabase.from('profiles').insert({
             id: data.user.id,
           });
-          router.push('/dashboard');
+          router.push('/workout/start');
         }
       } else {
         const { error } = await supabase.auth.signInWithPassword({
@@ -51,7 +51,7 @@ export default function LoginPage() {
         });
 
         if (error) throw error;
-        router.push('/dashboard');
+        router.push('/workout/start');
       }
     } catch (err: any) {
       setError(err.message);
