@@ -19,7 +19,7 @@ export default function WorkoutPage() {
   const [sets, setSets] = useState<{ [exerciseId: string]: WorkoutSet[] }>({});
   const [lastTimeData, setLastTimeData] = useState<ExerciseLastTime>({});
 
-  // HEVY-style: previous sets per exercise (indexed by set number)
+  // ✅ HEVY-style: previous sets per exercise (indexed by set number)
   const [prevSetsByExercise, setPrevSetsByExercise] = useState<Record<string, WorkoutSet[]>>({});
 
   // Draft input state (smooth typing)
@@ -86,7 +86,7 @@ export default function WorkoutPage() {
     }
     setSets(setsMap);
 
-    // load previous sets (HEVY-style)
+    // ✅ load previous sets (HEVY-style)
     await loadPreviousSetsForExercises(exData, sessionData.started_at);
 
     // keep any existing last-time summary function (if your project has it)
@@ -97,7 +97,7 @@ export default function WorkoutPage() {
   };
 
   /**
-   * HEVY-style previous sets:
+   * ✅ HEVY-style previous sets:
    * for each current workout_exercise row, find the most recent previous workout session
    * where the same exercise_id was performed, then pull that session's sets.
    */
@@ -227,7 +227,6 @@ export default function WorkoutPage() {
     loadWorkout();
   };
 
-  // Inline "Prev:" helper (HEVY style light text)
   const formatPrevLine = (label: string, value: string | number | null | undefined) => {
     if (value === null || value === undefined || value === '') return null;
     return (
@@ -235,24 +234,6 @@ export default function WorkoutPage() {
         <span className="opacity-80">{label}</span> {value}
       </div>
     );
-  };
-
-  // ✅ NEW: Exercise-level summary line, like HEVY: "Previous: 10×225, 10×225, 8×225"
-  const buildPrevSummary = (prevSets: WorkoutSet[]) => {
-    if (!prevSets || prevSets.length === 0) return null;
-
-    const parts = prevSets
-      .map((s: any) => {
-        const r = typeof s?.reps === 'number' ? s.reps : 0;
-        const w = typeof s?.weight === 'number' ? s.weight : 0;
-        if (!r && !w) return null;
-        return `${r}×${w}`;
-      })
-      .filter(Boolean) as string[];
-
-    if (parts.length === 0) return null;
-
-    return parts.join(', ');
   };
 
   return (
@@ -279,7 +260,6 @@ export default function WorkoutPage() {
         <div className="space-y-6">
           {exercises.map((exercise: any) => {
             const prevSets = prevSetsByExercise[exercise.id] || [];
-            const prevSummary = buildPrevSummary(prevSets);
 
             return (
               <div key={exercise.id} className="bg-white dark:bg-gray-800 rounded-lg overflow-hidden p-4">
@@ -288,14 +268,6 @@ export default function WorkoutPage() {
                     {exercise.exercises?.name || 'Exercise'}
                   </h3>
 
-                  {/* ✅ NEW summary line (HEVY-like) */}
-                  {prevSummary && (
-                    <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                      <span className="font-medium text-gray-600 dark:text-gray-300">Previous:</span> {prevSummary}
-                    </div>
-                  )}
-
-                  {/* Keep your existing lastTimeData line if present */}
                   {lastTimeData?.[exercise.id] && (
                     <div className="mt-1 text-xs text-gray-600 dark:text-gray-400">
                       Last time: {lastTimeData[exercise.id].bestSet} | Vol:{' '}
@@ -341,7 +313,7 @@ export default function WorkoutPage() {
 
                     <tbody>
                       {(sets[exercise.id] || []).map((set: any, idx: number) => {
-                        const prev = prevSets[idx]; // match set number like HEVY
+                        const prev = prevSets[idx]; // HEVY-style: match set number
                         const prevReps = prev?.reps ?? null;
                         const prevWeight = prev?.weight ?? null;
                         const prevRpe = prev?.rpe ?? null;
