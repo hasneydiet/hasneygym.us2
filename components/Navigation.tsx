@@ -42,22 +42,22 @@ export default function Navigation() {
   return (
     <>
       {/* HEADER (mobile + desktop) */}
-      <nav className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 sticky top-0 z-50">
+      <nav className="sticky top-0 z-50 border-b border-border/60 bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-14 md:h-16">
             {/* Logo (no square background) */}
             <BrandLogo href="/workout/start" iconSize={28} showTagline={true} taglineOnMobile={false} />
 
             {/* Desktop nav links ONLY */}
-            <div className="hidden md:flex items-center gap-2">
+            <div className="hidden md:flex items-center gap-1 rounded-2xl border border-border/60 bg-card/60 p-1 backdrop-blur">
               {navItems.map((item) => (
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                  className={`px-3 py-2 rounded-xl text-sm font-medium transition-all duration-150 ${
                     isActive(item.href)
-                      ? 'bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900'
-                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
+                      ? 'bg-primary text-primary-foreground shadow-sm'
+                      : 'text-foreground/80 hover:bg-accent hover:text-foreground'
                   }`}
                 >
                   {item.label}
@@ -69,7 +69,7 @@ export default function Navigation() {
             <div className="flex items-center gap-2">
               <button
                 onClick={toggleTheme}
-                className="p-2 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
+                className="icon-btn"
                 title="Toggle theme"
                 aria-label="Toggle theme"
               >
@@ -78,7 +78,7 @@ export default function Navigation() {
 
               <button
                 onClick={handleLogout}
-                className="p-2 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
+                className="icon-btn"
                 title="Logout"
               >
                 <LogOut className="w-5 h-5" />
@@ -89,7 +89,7 @@ export default function Navigation() {
       </nav>
 
       {/* MOBILE BOTTOM TAB BAR */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/95 dark:bg-gray-900/95 backdrop-blur border-t border-gray-200 dark:border-gray-800">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-border/60 bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70">
         <div className="pb-[env(safe-area-inset-bottom)]">
           <div className="flex justify-around">
             {navItems.map((item) => {
@@ -99,13 +99,13 @@ export default function Navigation() {
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`flex flex-col items-center py-3 px-2 text-xs font-medium flex-1 ${
+                  className={`tap-target flex flex-col items-center justify-center py-3 px-2 text-xs font-medium flex-1 transition-colors ${
                     active
-                      ? 'text-gray-900 dark:text-white border-t-2 border-gray-900 dark:border-white'
-                      : 'text-gray-500 dark:text-gray-400'
+                      ? 'text-primary border-t-2 border-primary'
+                      : 'text-muted-foreground'
                   }`}
                 >
-                  <Icon className="w-5 h-5 mb-1" />
+                  <Icon className={`w-5 h-5 mb-1 ${active ? '' : 'opacity-90'}`} />
                   {item.label}
                 </Link>
               );

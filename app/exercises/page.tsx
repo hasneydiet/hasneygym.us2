@@ -117,11 +117,11 @@ export default function ExercisesPage() {
 
   return (
     <AuthGuard>
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
+      <div className="app-shell">
         <Navigation />
-        <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
+        <div className="page">
           <div className="flex justify-between items-center mb-6">
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Exercises</h1>
+            <h1 className="page-title">Exercises</h1>
             <button
               onClick={() => {
                 setShowForm(true);
@@ -135,7 +135,7 @@ export default function ExercisesPage() {
                   default_set_scheme: null,
                 });
               }}
-              className="bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 px-4 py-2 rounded-lg hover:bg-gray-800 dark:hover:bg-gray-200 flex items-center space-x-2"
+              className="tap-target inline-flex items-center gap-2 rounded-xl bg-primary text-primary-foreground px-4 py-2 shadow-sm transition-all hover:bg-primary/90 hover:shadow-md active:translate-y-px"
             >
               <Plus className="w-5 h-5" />
               <span>Add Exercise</span>
@@ -144,25 +144,25 @@ export default function ExercisesPage() {
 
           <div className="mb-6">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-5 h-5" />
               <input
                 type="text"
                 placeholder="Search exercises..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-gray-900 dark:focus:ring-gray-100 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                className="w-full pl-10 pr-4 py-3 rounded-xl border border-input bg-background/70 backdrop-blur text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background"
               />
             </div>
           </div>
 
           {showForm && (
-            <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm p-6 mb-6">
-              <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-4">
+            <div className="surface p-6 mb-6">
+              <h2 className="text-lg font-semibold tracking-tight mb-4">
                 {editingExercise ? 'Edit Exercise' : 'New Exercise'}
               </h2>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <label className="block text-sm font-medium text-foreground/80 mb-1">
                     Exercise Name *
                   </label>
                   <input
@@ -170,50 +170,50 @@ export default function ExercisesPage() {
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     required
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-gray-900 dark:focus:ring-gray-100 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                    className="w-full px-4 py-2 rounded-xl border border-input bg-background/70 backdrop-blur text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <label className="block text-sm font-medium text-foreground/80 mb-1">
                     Muscle Group
                   </label>
                   <input
                     type="text"
                     value={formData.muscle_group}
                     onChange={(e) => setFormData({ ...formData, muscle_group: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-gray-900 dark:focus:ring-gray-100 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                    className="w-full px-4 py-2 rounded-xl border border-input bg-background/70 backdrop-blur text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background"
                     placeholder="e.g., Chest, Back, Legs"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <label className="block text-sm font-medium text-foreground/80 mb-1">
                     Equipment
                   </label>
                   <input
                     type="text"
                     value={formData.equipment}
                     onChange={(e) => setFormData({ ...formData, equipment: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-gray-900 dark:focus:ring-gray-100 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                    className="w-full px-4 py-2 rounded-xl border border-input bg-background/70 backdrop-blur text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background"
                     placeholder="e.g., Barbell, Dumbbell, Machine"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <label className="block text-sm font-medium text-foreground/80 mb-1">
                     Notes
                   </label>
                   <textarea
                     value={formData.notes}
                     onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                     rows={3}
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-gray-900 dark:focus:ring-gray-100 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                    className="w-full px-4 py-2 rounded-xl border border-input bg-background/70 backdrop-blur text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label className="block text-sm font-medium text-foreground/80 mb-2">
                     Default Technique Tags
                   </label>
                   <div className="flex flex-wrap gap-2">
@@ -235,7 +235,7 @@ export default function ExercisesPage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label className="block text-sm font-medium text-foreground/80 mb-2">
                     Default Set Scheme
                   </label>
                   <div className="grid grid-cols-2 gap-3">

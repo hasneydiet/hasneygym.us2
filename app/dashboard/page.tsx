@@ -8,6 +8,8 @@ import { supabase } from '@/lib/supabase';
 import { WorkoutSession } from '@/lib/types';
 import { Play, Dumbbell, Calendar, TrendingUp } from 'lucide-react';
 import { format } from 'date-fns';
+import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,74 +41,79 @@ export default function DashboardPage() {
 
   return (
     <AuthGuard>
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
+      <div className="app-shell">
         <Navigation />
-        <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-6">Dashboard</h1>
+        <div className="page">
+          <h1 className="page-title mb-2">Dashboard</h1>
+          <p className="page-subtitle mb-6">Quick actions and your recent training history.</p>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-            <button
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-8">
+            <Button
               onClick={() => router.push('/workout/start')}
-              className="bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 p-6 rounded-lg hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors flex flex-col items-center justify-center space-y-2 min-h-[120px]"
+              className="tile flex flex-col items-center justify-center gap-2 min-h-[120px]"
             >
               <Play className="w-8 h-8" />
               <span className="font-medium">Start Workout</span>
-            </button>
+            </Button>
 
-            <button
+            <Button
               onClick={() => router.push('/exercises')}
-              className="bg-white dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-700 p-6 rounded-lg hover:border-gray-900 dark:hover:border-gray-300 transition-colors flex flex-col items-center justify-center space-y-2 min-h-[120px]"
+              variant="outline"
+              className="tile flex flex-col items-center justify-center gap-2 min-h-[120px]"
             >
               <Dumbbell className="w-8 h-8" />
               <span className="font-medium">Exercises</span>
-            </button>
+            </Button>
 
-            <button
+            <Button
               onClick={() => router.push('/routines')}
-              className="bg-white dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-700 p-6 rounded-lg hover:border-gray-900 dark:hover:border-gray-300 transition-colors flex flex-col items-center justify-center space-y-2 min-h-[120px]"
+              variant="outline"
+              className="tile flex flex-col items-center justify-center gap-2 min-h-[120px]"
             >
               <Calendar className="w-8 h-8" />
               <span className="font-medium">Routines</span>
-            </button>
+            </Button>
 
-            <button
+            <Button
               onClick={() => router.push('/history')}
-              className="bg-white dark:bg-gray-900 border-2 border-gray-200 dark:border-gray-700 p-6 rounded-lg hover:border-gray-900 dark:hover:border-gray-300 transition-colors flex flex-col items-center justify-center space-y-2 min-h-[120px]"
+              variant="outline"
+              className="tile flex flex-col items-center justify-center gap-2 min-h-[120px]"
             >
               <TrendingUp className="w-8 h-8" />
               <span className="font-medium">History</span>
-            </button>
+            </Button>
           </div>
 
-          <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm p-6">
-            <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-4">Recent Workouts</h2>
+          <Card className="shadow-lg shadow-black/5">
+            <CardContent className="p-6">
+              <h2 className="text-lg font-semibold tracking-tight mb-4">Recent Workouts</h2>
 
             {loading ? (
-              <p className="text-gray-500 dark:text-gray-400">Loading...</p>
+              <p className="text-muted-foreground">Loading...</p>
             ) : recentSessions.length === 0 ? (
-              <p className="text-gray-500 dark:text-gray-400">No workouts yet. Start your first workout!</p>
+              <p className="text-muted-foreground">No workouts yet. Start your first workout!</p>
             ) : (
               <div className="space-y-3">
                 {recentSessions.map((session) => (
                   <button
                     key={session.id}
                     onClick={() => router.push(`/history/${session.id}`)}
-                    className="w-full text-left p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:border-gray-900 dark:hover:border-gray-300 transition-colors"
+                    className="surface surface-hover w-full text-left p-4"
                   >
                     <div className="flex justify-between items-start">
                       <div>
-                        <p className="font-medium text-gray-900 dark:text-gray-100">
+                        <p className="font-medium">
                           {session.routines?.name || 'Quick Workout'}
                         </p>
                         {session.routine_days?.name && (
-                          <p className="text-sm text-gray-600 dark:text-gray-400">{session.routine_days.name}</p>
+                          <p className="text-sm text-muted-foreground">{session.routine_days.name}</p>
                         )}
                       </div>
                       <div className="text-right">
-                        <p className="text-sm text-gray-600 dark:text-gray-400">
+                        <p className="text-sm text-muted-foreground">
                           {format(new Date(session.started_at), 'MMM d, yyyy')}
                         </p>
-                        <p className="text-sm text-gray-500 dark:text-gray-500">
+                        <p className="text-sm text-muted-foreground/80">
                           {format(new Date(session.started_at), 'h:mm a')}
                         </p>
                       </div>
@@ -115,7 +122,8 @@ export default function DashboardPage() {
                 ))}
               </div>
             )}
-          </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
     </AuthGuard>

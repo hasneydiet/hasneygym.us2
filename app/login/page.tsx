@@ -4,6 +4,9 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import BrandLogo from '@/components/BrandLogo';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Card, CardContent } from '@/components/ui/card';
 
 export const dynamic = 'force-dynamic';
 
@@ -64,10 +67,11 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 px-4">
+    <div className="app-shell flex items-center justify-center px-4">
       <div className="max-w-md w-full">
-        <div className="bg-white dark:bg-gray-900 rounded-lg shadow-md p-8">
-          <div className="mb-6">
+        <Card className="shadow-lg shadow-black/5">
+          <CardContent className="p-8 sm:p-9">
+            <div className="mb-6">
             <BrandLogo
               iconSize={34}
               showTagline={true}
@@ -77,38 +81,36 @@ export default function LoginPage() {
             />
           </div>
 
-          <p className="text-gray-600 dark:text-gray-400 text-center mb-8">
+            <p className="text-muted-foreground text-center mb-8">
             {isSignUp ? 'Create your account' : 'Sign in to your account'}
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              <label htmlFor="email" className="block text-sm font-medium text-foreground/80 mb-1">
                 Email
               </label>
-              <input
+              <Input
                 id="email"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-gray-900 dark:focus:ring-gray-100 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
                 placeholder="you@example.com"
               />
             </div>
 
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              <label htmlFor="password" className="block text-sm font-medium text-foreground/80 mb-1">
                 Password
               </label>
-              <input
+              <Input
                 id="password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 minLength={6}
-                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-gray-900 dark:focus:ring-gray-100 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
                 placeholder="••••••••"
               />
             </div>
@@ -119,13 +121,13 @@ export default function LoginPage() {
               </div>
             )}
 
-            <button
+            <Button
               type="submit"
               disabled={loading}
-              className="w-full bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 py-3 rounded-lg font-medium hover:bg-gray-800 dark:hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full"
             >
               {loading ? 'Processing...' : isSignUp ? 'Sign Up' : 'Sign In'}
-            </button>
+            </Button>
           </form>
 
           <div className="mt-6 text-center">
@@ -134,12 +136,13 @@ export default function LoginPage() {
                 setIsSignUp(!isSignUp);
                 setError('');
               }}
-              className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 text-sm"
+              className="text-muted-foreground hover:text-foreground text-sm"
             >
               {isSignUp ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
             </button>
           </div>
-        </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
