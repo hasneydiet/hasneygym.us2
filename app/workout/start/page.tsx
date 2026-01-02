@@ -18,53 +18,39 @@ export default function WorkoutStartPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  /**
-   * IMPORTANT:
-   * You only have ONE program (single-user app)
-   * We fetch the latest program and its workout_days
-   */
   useEffect(() => {
     loadWorkoutDays();
   }, []);
 
+  /**
+   * ✅ CORRECT SOURCE OF TRUTH
+   * We load workout_days directly.
+   * No programs table.
+   * No joins.
+   * No RLS traps.
+   */
   const loadWorkoutDays = async () => {
     setLoading(true);
     setError(null);
 
-    // 1️⃣ Get latest program
-    const { data: program, error: programErr } = await supabase
-      .from('programs')
-      .select('id')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single();
-
-    if (programErr || !program) {
-      setError('Failed to load program.');
-      setLoading(false);
-      return;
-    }
-
-    // 2️⃣ Get workout days for that program
-    const { data: daysData, error: daysErr } = await supabase
+    const { data, error } = await supabase
       .from('workout_days')
-      .select('*')
-      .eq('program_id', program.id)
+      .select('id, day_letter, day_name, order_index')
       .order('order_index', { ascending: true });
 
-    if (daysErr) {
+    if (error) {
+      console.error(error);
       setError('Failed to load workout days.');
       setLoading(false);
       return;
     }
 
-    setDays(daysData || []);
+    setDays(data ?? []);
     setLoading(false);
   };
 
   const startWorkout = async (day: WorkoutDay) => {
-    // Create workout session
-    const { data: session, error } = await supabase
+    const { data, error } = await supabase
       .from('workout_sessions')
       .insert({
         workout_day_id: day.id,
@@ -73,12 +59,13 @@ export default function WorkoutStartPage() {
       .select()
       .single();
 
-    if (error || !session) {
+    if (error || !data) {
+      console.error(error);
       alert('Failed to start workout');
       return;
     }
 
-    router.push(`/workout/${session.id}`);
+    router.push(`/workout/${data.id}`);
   };
 
   return (
@@ -89,6 +76,7 @@ export default function WorkoutStartPage() {
         <h1 className="text-3xl font-bold mb-6">Workout</h1>
 
         {loading && <p className="text-gray-400">Loading…</p>}
+
         {error && <p className="text-red-500">{error}</p>}
 
         {!loading && days.length === 0 && (
