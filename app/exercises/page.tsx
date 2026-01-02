@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import AuthGuard from '@/components/AuthGuard';
 import Navigation from '@/components/Navigation';
@@ -42,6 +42,80 @@ const EQUIPMENT_OPTIONS = [
   'Body Weight',
   'Resistance Bands',
 ];
+
+// The native <datalist> UI cannot be reliably themed across browsers.
+// This lightweight autocomplete keeps the field free-form (non-breaking behavior)
+// while rendering a premium, theme-colored suggestion menu.
+function AutocompleteInput(props: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  options: string[];
+}) {
+  const { label, value, onChange, placeholder, options } = props;
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  const filtered = useMemo(() => {
+    const q = value.trim().toLowerCase();
+    if (!q) return options;
+    return options.filter((o) => o.toLowerCase().includes(q));
+  }, [value, options]);
+
+  // Close when clicking outside.
+  useEffect(() => {
+    const onDoc = (e: MouseEvent) => {
+      const el = containerRef.current;
+      if (!el) return;
+      if (!el.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, []);
+
+  return (
+    <div ref={containerRef} className="relative">
+      <label className="block text-sm font-medium text-foreground/80 mb-1">{label}</label>
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => {
+          onChange(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        placeholder={placeholder}
+        className="w-full px-4 py-2 rounded-xl border border-input bg-background/70 backdrop-blur text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background"
+        autoComplete="off"
+      />
+
+      {open && filtered.length > 0 && (
+        <div
+          className="absolute z-50 mt-2 w-full overflow-hidden rounded-xl border border-border/70 bg-primary text-primary-foreground shadow-lg"
+          role="listbox"
+        >
+          <div className="max-h-64 overflow-auto py-1">
+            {filtered.map((opt) => (
+              <button
+                key={opt}
+                type="button"
+                role="option"
+                onClick={() => {
+                  onChange(opt);
+                  setOpen(false);
+                }}
+                className="w-full text-left px-3 py-2 text-sm hover:bg-primary/80 focus:bg-primary/80 focus:outline-none"
+              >
+                {opt}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export const dynamic = 'force-dynamic';
 
@@ -154,7 +228,7 @@ export default function ExercisesPage() {
     <AuthGuard>
       <div className="app-shell">
         <Navigation />
-        <div className="page">
+        <div className="page max-w-none">
           <div className="flex justify-between items-center mb-6">
             <h1 className="page-title">Exercises</h1>
             <button
@@ -209,43 +283,21 @@ export default function ExercisesPage() {
                   />
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-foreground/80 mb-1">
-                    Muscle Group
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.muscle_group}
-                    onChange={(e) => setFormData({ ...formData, muscle_group: e.target.value })}
-                    list="muscle-group-options"
-                    className="w-full px-4 py-2 rounded-xl border border-input bg-background/70 backdrop-blur text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background"
-                    placeholder="E.g., Chest, Back, Legs"
-                  />
-                  <datalist id="muscle-group-options">
-                    {MUSCLE_GROUP_OPTIONS.map((opt) => (
-                      <option key={opt} value={opt} />
-                    ))}
-                  </datalist>
-                </div>
+                <AutocompleteInput
+                  label="Muscle Group"
+                  value={formData.muscle_group}
+                  onChange={(v) => setFormData({ ...formData, muscle_group: v })}
+                  placeholder="E.g., Chest, Back, Legs"
+                  options={MUSCLE_GROUP_OPTIONS}
+                />
 
-                <div>
-                  <label className="block text-sm font-medium text-foreground/80 mb-1">
-                    Equipment
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.equipment}
-                    onChange={(e) => setFormData({ ...formData, equipment: e.target.value })}
-                    list="equipment-options"
-                    className="w-full px-4 py-2 rounded-xl border border-input bg-background/70 backdrop-blur text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background"
-                    placeholder="E.g., Dumbbell, Barbell, Machine"
-                  />
-                  <datalist id="equipment-options">
-                    {EQUIPMENT_OPTIONS.map((opt) => (
-                      <option key={opt} value={opt} />
-                    ))}
-                  </datalist>
-                </div>
+                <AutocompleteInput
+                  label="Equipment"
+                  value={formData.equipment}
+                  onChange={(v) => setFormData({ ...formData, equipment: v })}
+                  placeholder="E.g., Dumbbell, Barbell, Machine"
+                  options={EQUIPMENT_OPTIONS}
+                />
 
                 <div>
                   <label className="block text-sm font-medium text-foreground/80 mb-1">
@@ -367,8 +419,12 @@ export default function ExercisesPage() {
             - Keep the card within the viewport on mobile (no clipped edges)
             - Allow horizontal scroll *inside* the card if the table can't fit
           */}
-          <div className="surface overflow-hidden w-full max-w-full">
-            <div className="w-full max-w-full overflow-x-auto">
+          {/*
+            On mobile we keep the table in a card.
+            On desktop there's plenty of space, so we remove the boxed look.
+          */}
+          <div className="surface overflow-hidden w-full max-w-full md:bg-transparent md:border-0 md:shadow-none md:rounded-none md:overflow-visible">
+            <div className="w-full max-w-full overflow-x-auto md:overflow-x-visible">
               <table className="w-full table-fixed">
                 <colgroup>
                   <col className="w-[70%] md:w-[44%]" />
