@@ -194,17 +194,22 @@ export default function WorkoutStartPage() {
         throw new Error('This routine day has no exercises. Add exercises to the day before starting.');
       }
 
-      // Fetch default technique tags from exercises WITHOUT joins (stable / avoids silent join failures)
+      // Fetch exercise defaults WITHOUT joins (stable / avoids silent join failures)
       const { data: exDefaults, error: exDefaultsErr } = await supabase
         .from('exercises')
-        .select('id, default_technique_tags')
+        .select('id, default_technique_tags, default_set_scheme')
         .in('id', exerciseIds);
 
       if (exDefaultsErr) throw exDefaultsErr;
 
       const defaultsByExerciseId: Record<string, string[]> = {};
+      const setSchemeByExerciseId: Record<
+        string,
+        { sets?: number; reps?: number; restSeconds?: number; notes?: string } | null
+      > = {};
       for (const row of exDefaults || []) {
         defaultsByExerciseId[(row as any).id] = (row as any).default_technique_tags || [];
+        setSchemeByExerciseId[(row as any).id] = (row as any).default_set_scheme || null;
       }
 
       const exercisesToInsert =
@@ -222,23 +227,46 @@ export default function WorkoutStartPage() {
       const { data: weRows, error: weErr } = await supabase
         .from('workout_exercises')
         .insert(exercisesToInsert)
-        .select('id');
+        .select('id, exercise_id');
 
       if (weErr) throw weErr;
       if (!weRows || weRows.length === 0) {
         throw new Error('Failed to create workout exercises. Please try again.');
       }
 
-      // 4) Insert one starter set per workout_exercise
-      const setsToInsert =
-        weRows.map((we: any) => ({
-          workout_exercise_id: we.id,
-          set_index: 0,
-          reps: 0,
-          weight: 0,
-          rpe: null,
-          is_completed: false,
-        })) || [];
+      // 4) Insert default sets per workout_exercise
+      //    - If exercise has default_set_scheme.sets/reps, use it
+      //    - Otherwise fall back to 1 set
+      const setsToInsert: any[] = [];
+      for (const we of weRows || []) {
+        const exerciseId = (we as any).exercise_id as string | undefined;
+        const scheme = exerciseId ? setSchemeByExerciseId[exerciseId] : null;
+
+        const targetSetsRaw = scheme?.sets;
+        const targetRepsRaw = scheme?.reps;
+
+        const targetSets =
+          typeof targetSetsRaw === 'number' && Number.isFinite(targetSetsRaw) && targetSetsRaw > 0
+            ? Math.floor(targetSetsRaw)
+            : 1;
+
+        const targetReps =
+          typeof targetRepsRaw === 'number' && Number.isFinite(targetRepsRaw) && targetRepsRaw > 0
+            ? Math.floor(targetRepsRaw)
+            : 0;
+
+        for (let i = 0; i < targetSets; i++) {
+          setsToInsert.push({
+            workout_exercise_id: (we as any).id,
+            set_index: i,
+            reps: targetReps,
+            weight: 0,
+            rpe: null,
+            is_completed: false,
+            notes: scheme?.notes || '',
+          });
+        }
+      }
 
       if (setsToInsert.length > 0) {
         const { error: wsErr } = await supabase.from('workout_sets').insert(setsToInsert);
