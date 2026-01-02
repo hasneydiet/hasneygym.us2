@@ -20,6 +20,13 @@ function formatDate(d: string | null) {
   return dt.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
+function safeInt(v: any, fallback: number) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return fallback;
+  const i = Math.floor(n);
+  return i < 0 ? fallback : i;
+}
+
 export default function WorkoutStartPage() {
   const router = useRouter();
 
@@ -31,31 +38,6 @@ export default function WorkoutStartPage() {
 
   const dayIds = useMemo(() => days.map((d) => d.id), [days]);
 
-  const safeGetUser = async () => {
-    const res = await supabase.auth.getUser();
-    const user = res.data?.user ?? null;
-    const userErr = res.error as any;
-
-    // Some browsers/environments can return "Auth session missing!".
-    // Treat as logged-out and redirect (prevents desktop from showing the error banner).
-    if (userErr) {
-      const name = userErr?.name;
-      const msg = userErr?.message;
-
-      if (
-        name === 'AuthSessionMissingError' ||
-        msg === 'Auth session missing!' ||
-        /Auth session missing/i.test(String(msg))
-      ) {
-        return { user: null, isMissingSession: true } as const;
-      }
-
-      return { user: null, error: userErr, isMissingSession: false } as const;
-    }
-
-    return { user, isMissingSession: false } as const;
-  };
-
   useEffect(() => {
     let mounted = true;
 
@@ -64,13 +46,16 @@ export default function WorkoutStartPage() {
       setError(null);
 
       try {
-        const { user, error: userErr, isMissingSession } = await safeGetUser();
-        if (isMissingSession || !user) {
+        const {
+          data: { user },
+          error: userErr,
+        } = await supabase.auth.getUser();
+
+        if (userErr) throw userErr;
+        if (!user) {
           router.push('/login');
           return;
         }
-
-        if (userErr) throw userErr;
 
         // Load routine days + routine name
         const { data: dayRows, error: daysErr } = await supabase
@@ -135,7 +120,7 @@ export default function WorkoutStartPage() {
             const did = (s as any).routine_day_id as string | null;
             const started = (s as any).started_at as string | null;
             if (!did || !started) continue;
-            if (!lastByDay[did]) lastByDay[did] = started; // newest due to desc
+            if (!lastByDay[did]) lastByDay[did] = started; // already newest due to order desc
           }
 
           for (const d of baseDays) {
@@ -166,13 +151,16 @@ export default function WorkoutStartPage() {
       setStartingId(day.id);
       setError(null);
 
-      const { user, error: userErr, isMissingSession } = await safeGetUser();
-      if (isMissingSession || !user) {
+      const {
+        data: { user },
+        error: userErr,
+      } = await supabase.auth.getUser();
+
+      if (userErr) throw userErr;
+      if (!user) {
         router.push('/login');
         return;
       }
-
-      if (userErr) throw userErr;
 
       // 1) Create session
       const { data: session, error: sessErr } = await supabase
@@ -191,14 +179,34 @@ export default function WorkoutStartPage() {
       if (sessErr) throw sessErr;
       if (!session?.id) throw new Error('Failed to create workout session.');
 
-      // 2) Pull routine_day_exercises
+      // 2) Pull routine_day_exercises + exercise default scheme
       const { data: rdeRows, error: rdeErr } = await supabase
         .from('routine_day_exercises')
-        .select('exercise_id, order_index')
+        .select('exercise_id, order_index, default_sets, exercises(default_set_scheme)')
         .eq('routine_day_id', day.id)
         .order('order_index', { ascending: true });
 
       if (rdeErr) throw rdeErr;
+
+      // Build lookup by exercise_id so we know how many sets to create
+      const rdeByExerciseId: Record<
+        string,
+        {
+          order_index: number;
+          default_sets: any[];
+          default_set_scheme: any | null;
+        }
+      > = {};
+
+      for (const row of rdeRows || []) {
+        const exerciseId = (row as any).exercise_id as string | undefined;
+        if (!exerciseId) continue;
+        rdeByExerciseId[exerciseId] = {
+          order_index: (row as any).order_index ?? 0,
+          default_sets: Array.isArray((row as any).default_sets) ? (row as any).default_sets : [],
+          default_set_scheme: (row as any).exercises?.default_set_scheme ?? null,
+        };
+      }
 
       const exercisesToInsert =
         (rdeRows || [])
@@ -211,24 +219,54 @@ export default function WorkoutStartPage() {
           })) || [];
 
       if (exercisesToInsert.length > 0) {
-        // 3) Insert workout_exercises
+        // 3) Insert workout_exercises (return id + exercise_id)
         const { data: weRows, error: weErr } = await supabase
           .from('workout_exercises')
           .insert(exercisesToInsert)
-          .select('id');
+          .select('id, exercise_id');
 
         if (weErr) throw weErr;
 
-        // 4) Insert one starter set per workout_exercise
-        const setsToInsert =
-          (weRows || []).map((we: any) => ({
-            workout_exercise_id: we.id,
-            set_index: 0,
-            reps: 0,
-            weight: 0,
-            rpe: null,
-            is_completed: false,
-          })) || [];
+        // 4) Insert starter sets (N sets per exercise based on default scheme)
+        const setsToInsert: any[] = [];
+
+        for (const we of weRows || []) {
+          const workoutExerciseId = (we as any).id as string;
+          const exerciseId = (we as any).exercise_id as string;
+
+          const meta = rdeByExerciseId[exerciseId];
+          const scheme = meta?.default_set_scheme || null;
+          const defaultSetsArray = meta?.default_sets || [];
+
+          let setsCount = 1;
+          let defaultReps = 0;
+
+          // If routine_day_exercises.default_sets is used (array), it wins
+          if (Array.isArray(defaultSetsArray) && defaultSetsArray.length > 0) {
+            setsCount = Math.max(1, defaultSetsArray.length);
+          } else if (scheme && typeof scheme === 'object') {
+            setsCount = Math.max(1, safeInt(scheme.sets, 1));
+          }
+
+          if (scheme && typeof scheme === 'object') {
+            defaultReps = Math.max(0, safeInt(scheme.reps, 0));
+          }
+
+          for (let i = 0; i < setsCount; i++) {
+            const fromDefaultArray = Array.isArray(defaultSetsArray) ? defaultSetsArray[i] : null;
+            const repsFromArray = fromDefaultArray && typeof fromDefaultArray === 'object' ? fromDefaultArray.reps : undefined;
+            const weightFromArray = fromDefaultArray && typeof fromDefaultArray === 'object' ? fromDefaultArray.weight : undefined;
+
+            setsToInsert.push({
+              workout_exercise_id: workoutExerciseId,
+              set_index: i,
+              reps: Number.isFinite(Number(repsFromArray)) ? Number(repsFromArray) : defaultReps,
+              weight: Number.isFinite(Number(weightFromArray)) ? Number(weightFromArray) : 0,
+              rpe: null,
+              is_completed: false,
+            });
+          }
+        }
 
         if (setsToInsert.length > 0) {
           const { error: wsErr } = await supabase.from('workout_sets').insert(setsToInsert);
