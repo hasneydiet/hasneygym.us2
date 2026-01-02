@@ -2,289 +2,277 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import AuthGuard from '@/components/AuthGuard';
 import Navigation from '@/components/Navigation';
 import { supabase } from '@/lib/supabase';
-import type { Routine, RoutineDay, RoutineDayExercise, WorkoutSession } from '@/lib/types';
+import type { RoutineDay, Routine } from '@/lib/types';
 
-export const dynamic = 'force-dynamic';
+type RoutineDayCard = RoutineDay & {
+  routineName: string;
+  preview: string;
+  exerciseCount: number;
+  lastPerformed: string | null;
+};
 
-type RoutineWithDays = Routine & { routine_days: RoutineDay[] };
+function formatDate(d: string | null) {
+  if (!d) return 'Never';
+  const dt = new Date(d);
+  if (Number.isNaN(dt.getTime())) return 'Never';
+  return dt.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}
 
 export default function WorkoutStartPage() {
   const router = useRouter();
+
   const [loading, setLoading] = useState(true);
-  const [startingDayId, setStartingDayId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const [routines, setRoutines] = useState<RoutineWithDays[]>([]);
-  const [lastPerformedByDay, setLastPerformedByDay] = useState<Record<string, string>>({});
+  const [days, setDays] = useState<RoutineDayCard[]>([]);
+  const [startingId, setStartingId] = useState<string | null>(null);
+
+  const dayIds = useMemo(() => days.map((d) => d.id), [days]);
 
   useEffect(() => {
-    void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    let mounted = true;
 
-  const load = async () => {
-    setLoading(true);
-    setError(null);
+    const load = async () => {
+      setLoading(true);
+      setError(null);
 
-    const { data: userRes } = await supabase.auth.getUser();
-    const user = userRes?.user;
-    if (!user) {
-      setLoading(false);
-      return;
-    }
+      try {
+        const {
+          data: { user },
+          error: userErr,
+        } = await supabase.auth.getUser();
 
-    // Load routines with days (single request)
-    const { data: routinesData, error: routinesErr } = await supabase
-      .from('routines')
-      .select('*, routine_days(*)')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false });
+        if (userErr) throw userErr;
+        if (!user) {
+          router.push('/login');
+          return;
+        }
 
-    if (routinesErr) {
-      console.error(routinesErr);
-      setError('Failed to load routines');
-      setLoading(false);
-      return;
-    }
+        // Load routine days + routine name
+        const { data: dayRows, error: daysErr } = await supabase
+          .from('routine_days')
+          .select('id, routine_id, day_index, name, created_at, routines(name)')
+          .order('created_at', { ascending: true })
+          .order('day_index', { ascending: true });
 
-    const normalized: RoutineWithDays[] = (routinesData || []).map((r: any) => ({
-      ...r,
-      routine_days: (r.routine_days || []).sort((a: any, b: any) => (a.day_index ?? 0) - (b.day_index ?? 0)),
-    }));
-    setRoutines(normalized);
+        if (daysErr) throw daysErr;
 
-    // Last performed per routine day (fast single query)
-    const { data: sessionsData, error: sessionsErr } = await supabase
-      .from('workout_sessions')
-      .select('routine_day_id, started_at')
-      .eq('user_id', user.id)
-      .not('routine_day_id', 'is', null)
-      .order('started_at', { ascending: false })
-      .limit(300);
+        const baseDays: RoutineDayCard[] = (dayRows || []).map((r: any) => ({
+          id: r.id,
+          routine_id: r.routine_id,
+          day_index: r.day_index,
+          name: r.name,
+          created_at: r.created_at,
+          routineName: r.routines?.name || 'Routine',
+          preview: 'No exercises added yet',
+          exerciseCount: 0,
+          lastPerformed: null,
+        }));
 
-    if (!sessionsErr && sessionsData) {
-      const map: Record<string, string> = {};
-      for (const s of sessionsData as any[]) {
-        if (!s.routine_day_id) continue;
-        if (map[s.routine_day_id]) continue; // keep most recent
-        map[s.routine_day_id] = s.started_at;
+        // Build preview with ONE query
+        const ids = baseDays.map((d) => d.id);
+        if (ids.length > 0) {
+          const { data: exRows, error: exErr } = await supabase
+            .from('routine_day_exercises')
+            .select('routine_day_id, order_index, exercises(name)')
+            .in('routine_day_id', ids)
+            .order('routine_day_id', { ascending: true })
+            .order('order_index', { ascending: true });
+
+          if (exErr) throw exErr;
+
+          const byDay: Record<string, string[]> = {};
+          for (const row of exRows || []) {
+            const did = (row as any).routine_day_id as string;
+            const nm = (row as any).exercises?.name as string | undefined;
+            if (!did) continue;
+            if (!byDay[did]) byDay[did] = [];
+            if (nm) byDay[did].push(nm);
+          }
+
+          for (const d of baseDays) {
+            const list = byDay[d.id] || [];
+            d.exerciseCount = list.length;
+            d.preview = list.length ? list.slice(0, 6).join(' • ') : 'No exercises added yet';
+          }
+
+          // Last performed date per day (use latest started_at)
+          const { data: sessRows, error: sessErr } = await supabase
+            .from('workout_sessions')
+            .select('routine_day_id, started_at')
+            .in('routine_day_id', ids)
+            .order('started_at', { ascending: false })
+            .limit(500);
+
+          if (sessErr) throw sessErr;
+
+          const lastByDay: Record<string, string> = {};
+          for (const s of sessRows || []) {
+            const did = (s as any).routine_day_id as string | null;
+            const started = (s as any).started_at as string | null;
+            if (!did || !started) continue;
+            if (!lastByDay[did]) lastByDay[did] = started; // already newest due to order desc
+          }
+
+          for (const d of baseDays) {
+            d.lastPerformed = lastByDay[d.id] || null;
+          }
+        }
+
+        if (!mounted) return;
+        setDays(baseDays);
+      } catch (e: any) {
+        console.error(e);
+        if (!mounted) return;
+        setError(e?.message || 'Failed to load routines.');
+        setDays([]);
+      } finally {
+        if (mounted) setLoading(false);
       }
-      setLastPerformedByDay(map);
-    }
+    };
 
-    setLoading(false);
-  };
+    load();
+    return () => {
+      mounted = false;
+    };
+  }, [router]);
 
-  const hasAnyRoutines = routines.length > 0;
-
-  const formatDate = (iso: string) => {
+  const startRoutineDay = async (day: RoutineDayCard) => {
     try {
-      const d = new Date(iso);
-      return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-    } catch {
-      return '';
-    }
-  };
+      setStartingId(day.id);
+      setError(null);
 
-  const startRoutineDay = async (routine: Routine, day: RoutineDay) => {
-    if (startingDayId) return;
-    setStartingDayId(day.id);
-    setError(null);
+      const {
+        data: { user },
+        error: userErr,
+      } = await supabase.auth.getUser();
 
-    try {
-      const { data: userRes } = await supabase.auth.getUser();
-      const user = userRes?.user;
+      if (userErr) throw userErr;
       if (!user) {
-        setError('You must be logged in');
+        router.push('/login');
         return;
       }
 
-      // 1) Create workout session
-      const { data: session, error: sessionErr } = await supabase
+      // 1) Create session
+      const { data: session, error: sessErr } = await supabase
         .from('workout_sessions')
         .insert({
           user_id: user.id,
-          routine_id: routine.id,
+          routine_id: day.routine_id,
           routine_day_id: day.id,
           started_at: new Date().toISOString(),
+          ended_at: null,
+          notes: '',
         })
         .select()
-        .single<WorkoutSession>();
+        .single();
 
-      if (sessionErr || !session) {
-        console.error(sessionErr);
-        setError('Failed to start workout');
-        return;
-      }
+      if (sessErr) throw sessErr;
+      if (!session?.id) throw new Error('Failed to create workout session.');
 
-      // 2) Copy template exercises -> workout_exercises
-      const { data: templateExercises, error: templateErr } = await supabase
+      // 2) Pull routine_day_exercises
+      const { data: rdeRows, error: rdeErr } = await supabase
         .from('routine_day_exercises')
-        .select('id, exercise_id, order_index, superset_group_id')
+        .select('exercise_id, order_index')
         .eq('routine_day_id', day.id)
-        .order('order_index', { ascending: true })
-        .returns<RoutineDayExercise[]>();
-
-      if (templateErr) {
-        console.error(templateErr);
-        setError('Failed to load routine exercises');
-        return;
-      }
-
-      if (!templateExercises || templateExercises.length === 0) {
-        // No exercises in this day yet
-        router.push(`/workout/${session.id}`);
-        return;
-      }
-
-      const workoutExercisesPayload = templateExercises.map((te: any, idx: number) => ({
-        workout_session_id: session.id,
-        exercise_id: te.exercise_id,
-        order_index: te.order_index ?? idx,
-        superset_group_id: te.superset_group_id ?? null,
-        technique_tags: [],
-      }));
-
-      const { data: insertedWorkoutExercises, error: weErr } = await supabase
-        .from('workout_exercises')
-        .insert(workoutExercisesPayload)
-        .select('id')
         .order('order_index', { ascending: true });
 
-      if (weErr) {
-        console.error(weErr);
-        setError('Failed to create workout exercises');
-        return;
-      }
+      if (rdeErr) throw rdeErr;
 
-      // 3) Create one starter set per exercise (nice UX)
-      const weIds = (insertedWorkoutExercises || []).map((r: any) => r.id);
-      if (weIds.length) {
-        const setsPayload = weIds.map((id: string) => ({
-          workout_exercise_id: id,
-          set_index: 0,
-          reps: 0,
-          weight: 0,
-          rpe: null,
-          is_completed: false,
-          notes: '',
-        }));
+      const exercisesToInsert =
+        (rdeRows || [])
+          .filter((r: any) => r.exercise_id)
+          .map((r: any) => ({
+            workout_session_id: session.id,
+            exercise_id: r.exercise_id,
+            order_index: r.order_index ?? 0,
+            technique_tags: [],
+          })) || [];
 
-        const { error: setErr } = await supabase.from('workout_sets').insert(setsPayload);
-        if (setErr) {
-          // Non-fatal; workout page can still run.
-          console.warn('Starter set insert failed:', setErr);
+      if (exercisesToInsert.length > 0) {
+        // 3) Insert workout_exercises
+        const { data: weRows, error: weErr } = await supabase
+          .from('workout_exercises')
+          .insert(exercisesToInsert)
+          .select('id');
+
+        if (weErr) throw weErr;
+
+        // 4) Insert one starter set per workout_exercise
+        const setsToInsert =
+          (weRows || []).map((we: any, idx: number) => ({
+            workout_exercise_id: we.id,
+            set_index: 0,
+            reps: 0,
+            weight: 0,
+            rpe: null,
+            is_completed: false,
+          })) || [];
+
+        if (setsToInsert.length > 0) {
+          const { error: wsErr } = await supabase.from('workout_sets').insert(setsToInsert);
+          if (wsErr) throw wsErr;
         }
       }
 
       router.push(`/workout/${session.id}`);
+    } catch (e: any) {
+      console.error(e);
+      setError(e?.message || 'Failed to start routine.');
     } finally {
-      setStartingDayId(null);
+      setStartingId(null);
     }
   };
 
-  const routineCountLabel = useMemo(() => {
-    if (routines.length === 0) return '';
-    return `${routines.length} routine${routines.length === 1 ? '' : 's'}`;
-  }, [routines.length]);
-
   return (
-    <AuthGuard>
-      <div className="min-h-screen bg-black text-white pb-28">
-        <Navigation />
+    <div className="min-h-screen bg-black text-white pb-24">
+      <Navigation />
 
-        <div className="max-w-3xl mx-auto px-4 pt-6">
-          <div className="flex items-end justify-between gap-4 mb-4">
-            <div>
-              <h1 className="text-3xl font-bold">Workout</h1>
-              {routineCountLabel && <p className="text-sm text-gray-400 mt-1">{routineCountLabel}</p>}
-            </div>
-            <button
-              onClick={() => router.push('/routines')}
-              className="rounded-xl bg-white/10 px-4 py-2 text-sm font-semibold hover:bg-white/15"
+      <div className="max-w-3xl mx-auto px-4 pt-6">
+        <h1 className="text-3xl font-bold mb-4">Workout</h1>
+
+        {error && (
+          <div className="mb-4 rounded-lg bg-red-900/30 px-4 py-3 text-red-300">{error}</div>
+        )}
+
+        {loading && <div className="text-gray-400">Loading routines…</div>}
+
+        {!loading && days.length === 0 && (
+          <div className="text-gray-400">No routine days found. Create a routine first.</div>
+        )}
+
+        <div className="space-y-4">
+          {days.map((day) => (
+            <div
+              key={day.id}
+              className="rounded-2xl bg-gradient-to-br from-slate-800 to-slate-900 p-5 shadow-lg"
             >
-              Edit Routines
-            </button>
-          </div>
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <h2 className="text-xl font-semibold truncate">{day.routineName}</h2>
+                  <p className="text-sm text-gray-300">{day.name}</p>
 
-          {error && (
-            <div className="mb-4 rounded-lg bg-red-900/30 px-4 py-3 text-red-300">{error}</div>
-          )}
+                  <p className="text-sm text-gray-400 mt-2 line-clamp-2">{day.preview}</p>
 
-          {loading && <div className="text-gray-400">Loading routines…</div>}
+                  <p className="text-sm text-gray-400 mt-2">
+                    Last performed: {formatDate(day.lastPerformed)}
+                  </p>
+                </div>
+              </div>
 
-          {!loading && !hasAnyRoutines && (
-            <div className="rounded-2xl bg-white/5 p-5">
-              <p className="text-gray-200 font-semibold mb-1">No routines yet</p>
-              <p className="text-gray-400 text-sm mb-4">
-                Create a routine with workout days, then come back here to start.
-              </p>
               <button
-                onClick={() => router.push('/routines')}
-                className="w-full rounded-xl bg-sky-500 py-4 text-lg font-semibold text-black hover:bg-sky-400 transition"
+                disabled={startingId === day.id}
+                onClick={() => startRoutineDay(day)}
+                className="mt-4 w-full rounded-xl bg-sky-500 py-4 text-lg font-semibold text-black hover:bg-sky-400 transition disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                Create Routine
+                {startingId === day.id ? 'Starting…' : 'Start Routine'}
               </button>
             </div>
-          )}
-
-          {!loading && hasAnyRoutines && (
-            <div className="space-y-4">
-              {routines.map((routine) => (
-                <div key={routine.id} className="rounded-2xl bg-gradient-to-br from-slate-800 to-slate-900 p-5 shadow-lg">
-                  <div className="mb-4">
-                    <h2 className="text-xl font-semibold">{routine.name}</h2>
-                    {routine.notes ? (
-                      <p className="text-sm text-gray-400 mt-1">{routine.notes}</p>
-                    ) : (
-                      <p className="text-sm text-gray-500 mt-1">Pick a day to start</p>
-                    )}
-                  </div>
-
-                  <div className="space-y-3">
-                    {(routine.routine_days || []).map((day) => {
-                      const last = lastPerformedByDay[day.id];
-                      const isStarting = startingDayId === day.id;
-                      return (
-                        <button
-                          key={day.id}
-                          onClick={() => startRoutineDay(routine, day)}
-                          disabled={!!startingDayId}
-                          className="w-full rounded-xl bg-white/10 hover:bg-white/15 transition p-4 text-left disabled:opacity-60"
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <div>
-                              <div className="text-lg font-semibold">{day.name}</div>
-                              <div className="text-xs text-gray-400 mt-1">
-                                {last ? `Last performed: ${formatDate(last)}` : 'Last performed: —'}
-                              </div>
-                            </div>
-                            <div className="shrink-0">
-                              <span className="inline-flex items-center rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-black">
-                                {isStarting ? 'Starting…' : 'Start'}
-                              </span>
-                            </div>
-                          </div>
-                        </button>
-                      );
-                    })}
-
-                    {(routine.routine_days || []).length === 0 && (
-                      <div className="rounded-xl bg-white/5 p-4 text-gray-300">
-                        <div className="font-semibold">No workout days in this routine</div>
-                        <div className="text-sm text-gray-400 mt-1">Go to Edit Routines and add days.</div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+          ))}
         </div>
       </div>
-    </AuthGuard>
+    </div>
   );
 }
