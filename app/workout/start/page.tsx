@@ -172,10 +172,10 @@ export default function WorkoutStartPage() {
       if (sessErr) throw sessErr;
       if (!session?.id) throw new Error('Failed to create workout session.');
 
-      // 2) Pull routine_day_exercises
+      // 2) Pull routine_day_exercises (include exercise defaults)
       const { data: rdeRows, error: rdeErr } = await supabase
         .from('routine_day_exercises')
-        .select('exercise_id, order_index')
+        .select('exercise_id, order_index, exercises(default_technique_tags)')
         .eq('routine_day_id', day.id)
         .order('order_index', { ascending: true });
 
@@ -188,7 +188,8 @@ export default function WorkoutStartPage() {
             workout_session_id: session.id,
             exercise_id: r.exercise_id,
             order_index: r.order_index ?? 0,
-            technique_tags: [],
+            // Carry defaults from the exercise (selected during exercise creation)
+            technique_tags: r.exercises?.default_technique_tags || [],
           })) || [];
 
       if (exercisesToInsert.length > 0) {
@@ -202,7 +203,7 @@ export default function WorkoutStartPage() {
 
         // 4) Insert one starter set per workout_exercise
         const setsToInsert =
-          (weRows || []).map((we: any, idx: number) => ({
+          (weRows || []).map((we: any) => ({
             workout_exercise_id: we.id,
             set_index: 0,
             reps: 0,
