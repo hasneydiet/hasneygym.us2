@@ -1,6 +1,5 @@
 'use client';
 
-import { useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -11,15 +10,6 @@ export default function Navigation() {
   const pathname = usePathname();
   const router = useRouter();
   const { theme, toggleTheme } = useTheme();
-
-  // Prevent content from being hidden behind bottom tab bar
-  useEffect(() => {
-    const prev = document.body.style.paddingBottom;
-    document.body.style.paddingBottom = '80px';
-    return () => {
-      document.body.style.paddingBottom = prev;
-    };
-  }, []);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
