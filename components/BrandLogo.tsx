@@ -18,13 +18,11 @@ export default function BrandLogo({
   centered = false,
 }: BrandLogoProps) {
   const content = (
-    <div
-      className={`flex items-center ${centered ? 'justify-center' : ''} ${className}`}
-    >
+    <div className={`flex items-center ${centered ? 'justify-center' : ''} ${className}`}>
       <div className={`leading-tight ${centered ? 'text-center' : ''}`}>
         <div className="text-lg md:text-xl font-bold">
-          <span className="text-white">Spartan</span>
-          <span className="text-green-500 font-extrabold">X</span>
+          <span className="text-gray-900 dark:text-white">Spartan</span>
+          <span className="text-green-600 dark:text-green-500 font-extrabold">X</span>
         </div>
 
         {showTagline && (
