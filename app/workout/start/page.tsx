@@ -278,7 +278,6 @@ export default function WorkoutStartPage() {
       }
 
       // 4) Bulk insert workout_sets (batched)
- (batched)
       const setsPayloads: any[] = [];
       for (const ex of reList) {
         const row = insertedMap.get(key(ex.exercise_id, ex.order_index, ex.superset_group_id));
