@@ -36,6 +36,10 @@ export default function WorkoutPage() {
     }));
   };
 
+  const getDraftRaw = (setId: string, field: string) => {
+    return draft[setId]?.[field];
+  };
+
   const getDraftValue = (setId: string, field: string, fallback: number | null | undefined) => {
     const v = draft[setId]?.[field];
     if (v !== undefined) return v;
@@ -397,13 +401,18 @@ export default function WorkoutPage() {
                               <input
                                 type="number"
                                 inputMode="numeric"
-                                placeholder="0"
-                                value={getDraftValue(set.id, 'reps', set.reps)}
+                                placeholder={(set.reps ?? 0).toString()}
+                                value={getDraftRaw(set.id, 'reps') ?? ''}
                                 onChange={(e) => setDraftValue(set.id, 'reps', e.target.value)}
                                 onBlur={() => {
-                                  const raw = getDraftValue(set.id, 'reps', set.reps);
-                                  const num = raw.trim() === '' ? 0 : Number(raw);
-                                  saveSet(set.id, 'reps', Number.isFinite(num) ? num : 0);
+                                  const raw = getDraftRaw(set.id, 'reps');
+                                  // If user didn't type anything, keep the existing reps (defaults stay as reference).
+                                  if (raw === undefined || raw.trim() === '') {
+                                    clearDraftField(set.id, 'reps');
+                                    return;
+                                  }
+                                  const num = Number(raw);
+                                  saveSet(set.id, 'reps', Number.isFinite(num) ? num : set.reps ?? 0);
                                   clearDraftField(set.id, 'reps');
                                 }}
                                 className={`w-full h-11 px-2 py-2 border rounded text-center bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 ${
