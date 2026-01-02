@@ -211,8 +211,10 @@ export default function WorkoutStartPage() {
         return;
       }
 
-      // 3) Bulk insert workout_exercises (single request)
-      const workoutExercisePayloads = reList.map((ex) => ({
+      // 3) Insert workout_exercises (fast + resilient)
+      // We try bulk inserts first (much faster). If a chunk fails (e.g., constraint on a single row),
+      // we fall back to inserting rows one-by-one for that chunk so the workout still starts.
+      const workoutExercisePayloadsAll = reList.map((ex) => ({
         workout_session_id: session.id,
         exercise_id: ex.exercise_id,
         order_index: ex.order_index,
@@ -220,13 +222,48 @@ export default function WorkoutStartPage() {
         technique_tags: ex.exercises?.default_technique_tags || [],
       }));
 
-      const { data: insertedWorkoutExercises, error: weBulkErr } = await supabase
-        .from('workout_exercises')
-        .insert(workoutExercisePayloads)
-        .select('id, exercise_id, order_index, superset_group_id');
+      // De-dupe exact duplicates just in case (prevents one bad duplicate from breaking the whole bulk insert)
+      const seen = new Set<string>();
+      const workoutExercisePayloads = workoutExercisePayloadsAll.filter((p) => {
+        const k = `${p.exercise_id ?? ''}::${p.order_index ?? ''}::${p.superset_group_id ?? ''}`;
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      });
 
-      if (weBulkErr || !insertedWorkoutExercises) {
-        console.error('Failed to create workout exercises (bulk):', weBulkErr);
+      const insertedWorkoutExercises: any[] = [];
+      const weChunks = chunkArray(workoutExercisePayloads, 50);
+
+      for (const c of weChunks) {
+        const { data: bulkRows, error: bulkErr } = await supabase
+          .from('workout_exercises')
+          .insert(c)
+          .select('id, exercise_id, order_index, superset_group_id');
+
+        if (!bulkErr && bulkRows) {
+          insertedWorkoutExercises.push(...(bulkRows as any[]));
+          continue;
+        }
+
+        console.warn('Bulk insert workout_exercises failed, falling back to row inserts:', bulkErr);
+
+        for (const row of c) {
+          const { data: oneRow, error: oneErr } = await supabase
+            .from('workout_exercises')
+            .insert(row)
+            .select('id, exercise_id, order_index, superset_group_id')
+            .single();
+
+          if (oneErr) {
+            console.error('Failed to create workout exercise:', oneErr, row);
+            continue;
+          }
+          if (oneRow) insertedWorkoutExercises.push(oneRow);
+        }
+      }
+
+      if (insertedWorkoutExercises.length === 0) {
+        console.error('No workout exercises were created. Aborting set creation.');
         router.push(`/workout/${session.id}`);
         return;
       }
@@ -241,6 +278,7 @@ export default function WorkoutStartPage() {
       }
 
       // 4) Bulk insert workout_sets (batched)
+ (batched)
       const setsPayloads: any[] = [];
       for (const ex of reList) {
         const row = insertedMap.get(key(ex.exercise_id, ex.order_index, ex.superset_group_id));
