@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Navigation from '@/components/Navigation';
 import { supabase } from '@/lib/supabase';
@@ -20,14 +20,6 @@ function formatDate(d: string | null) {
   return dt.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
-// Supabase relationship field can be typed as object OR array depending on schema/typing.
-function getExerciseName(rel: any): string | null {
-  if (!rel) return null;
-  if (Array.isArray(rel)) return rel[0]?.name ?? null;
-  if (typeof rel === 'object') return rel.name ?? null;
-  return null;
-}
-
 export default function WorkoutStartPage() {
   const router = useRouter();
 
@@ -37,6 +29,33 @@ export default function WorkoutStartPage() {
   const [days, setDays] = useState<RoutineDayCard[]>([]);
   const [startingId, setStartingId] = useState<string | null>(null);
 
+  const dayIds = useMemo(() => days.map((d) => d.id), [days]);
+
+  const safeGetUser = async () => {
+    const res = await supabase.auth.getUser();
+    const user = res.data?.user ?? null;
+    const userErr = res.error as any;
+
+    // Some browsers/environments can return "Auth session missing!".
+    // Treat as logged-out and redirect (prevents desktop from showing the error banner).
+    if (userErr) {
+      const name = userErr?.name;
+      const msg = userErr?.message;
+
+      if (
+        name === 'AuthSessionMissingError' ||
+        msg === 'Auth session missing!' ||
+        /Auth session missing/i.test(String(msg))
+      ) {
+        return { user: null, isMissingSession: true } as const;
+      }
+
+      return { user: null, error: userErr, isMissingSession: false } as const;
+    }
+
+    return { user, isMissingSession: false } as const;
+  };
+
   useEffect(() => {
     let mounted = true;
 
@@ -45,16 +64,13 @@ export default function WorkoutStartPage() {
       setError(null);
 
       try {
-        const {
-          data: { user },
-          error: userErr,
-        } = await supabase.auth.getUser();
-
-        if (userErr) throw userErr;
-        if (!user) {
+        const { user, error: userErr, isMissingSession } = await safeGetUser();
+        if (isMissingSession || !user) {
           router.push('/login');
           return;
         }
+
+        if (userErr) throw userErr;
 
         // Load routine days + routine name
         const { data: dayRows, error: daysErr } = await supabase
@@ -77,9 +93,9 @@ export default function WorkoutStartPage() {
           lastPerformed: null,
         }));
 
+        // Build preview with ONE query
         const ids = baseDays.map((d) => d.id);
         if (ids.length > 0) {
-          // Preview: exercise names per day
           const { data: exRows, error: exErr } = await supabase
             .from('routine_day_exercises')
             .select('routine_day_id, order_index, exercises(name)')
@@ -92,7 +108,7 @@ export default function WorkoutStartPage() {
           const byDay: Record<string, string[]> = {};
           for (const row of exRows || []) {
             const did = (row as any).routine_day_id as string;
-            const nm = getExerciseName((row as any).exercises);
+            const nm = (row as any).exercises?.name as string | undefined;
             if (!did) continue;
             if (!byDay[did]) byDay[did] = [];
             if (nm) byDay[did].push(nm);
@@ -104,7 +120,7 @@ export default function WorkoutStartPage() {
             d.preview = list.length ? list.slice(0, 6).join(' • ') : 'No exercises added yet';
           }
 
-          // Last performed date per day (latest started_at)
+          // Last performed date per day (use latest started_at)
           const { data: sessRows, error: sessErr } = await supabase
             .from('workout_sessions')
             .select('routine_day_id, started_at')
@@ -119,7 +135,7 @@ export default function WorkoutStartPage() {
             const did = (s as any).routine_day_id as string | null;
             const started = (s as any).started_at as string | null;
             if (!did || !started) continue;
-            if (!lastByDay[did]) lastByDay[did] = started;
+            if (!lastByDay[did]) lastByDay[did] = started; // newest due to desc
           }
 
           for (const d of baseDays) {
@@ -146,22 +162,17 @@ export default function WorkoutStartPage() {
   }, [router]);
 
   const startRoutineDay = async (day: RoutineDayCard) => {
-    let createdSessionId: string | null = null;
-
     try {
       setStartingId(day.id);
       setError(null);
 
-      const {
-        data: { user },
-        error: userErr,
-      } = await supabase.auth.getUser();
-
-      if (userErr) throw userErr;
-      if (!user) {
+      const { user, error: userErr, isMissingSession } = await safeGetUser();
+      if (isMissingSession || !user) {
         router.push('/login');
         return;
       }
+
+      if (userErr) throw userErr;
 
       // 1) Create session
       const { data: session, error: sessErr } = await supabase
@@ -180,8 +191,6 @@ export default function WorkoutStartPage() {
       if (sessErr) throw sessErr;
       if (!session?.id) throw new Error('Failed to create workout session.');
 
-      createdSessionId = session.id;
-
       // 2) Pull routine_day_exercises
       const { data: rdeRows, error: rdeErr } = await supabase
         .from('routine_day_exercises')
@@ -191,31 +200,6 @@ export default function WorkoutStartPage() {
 
       if (rdeErr) throw rdeErr;
 
-      const exerciseIds = Array.from(
-        new Set((rdeRows || []).map((r: any) => r.exercise_id).filter(Boolean))
-      ) as string[];
-
-      if (exerciseIds.length === 0) {
-        throw new Error('This routine day has no exercises. Add exercises to the day before starting.');
-      }
-
-      // 3) Fetch defaults from exercises: tags + set scheme
-      const { data: exDefaults, error: exDefaultsErr } = await supabase
-        .from('exercises')
-        .select('id, default_technique_tags, default_set_scheme')
-        .in('id', exerciseIds);
-
-      if (exDefaultsErr) throw exDefaultsErr;
-
-      const defaultsTagsById: Record<string, string[]> = {};
-      const setSchemeById: Record<string, { sets?: number; reps?: number; notes?: string } | null> = {};
-
-      for (const row of exDefaults || []) {
-        defaultsTagsById[(row as any).id] = (row as any).default_technique_tags || [];
-        setSchemeById[(row as any).id] = (row as any).default_set_scheme || null;
-      }
-
-      // 4) Insert workout_exercises (copy default tags)
       const exercisesToInsert =
         (rdeRows || [])
           .filter((r: any) => r.exercise_id)
@@ -223,68 +207,38 @@ export default function WorkoutStartPage() {
             workout_session_id: session.id,
             exercise_id: r.exercise_id,
             order_index: r.order_index ?? 0,
-            technique_tags: defaultsTagsById[r.exercise_id] || [],
+            technique_tags: [],
           })) || [];
 
-      const { data: weRows, error: weErr } = await supabase
-        .from('workout_exercises')
-        .insert(exercisesToInsert)
-        .select('id, exercise_id');
+      if (exercisesToInsert.length > 0) {
+        // 3) Insert workout_exercises
+        const { data: weRows, error: weErr } = await supabase
+          .from('workout_exercises')
+          .insert(exercisesToInsert)
+          .select('id');
 
-      if (weErr) throw weErr;
-      if (!weRows || weRows.length === 0) {
-        throw new Error('Failed to create workout exercises. Please try again.');
-      }
+        if (weErr) throw weErr;
 
-      // 5) Insert default sets per workout_exercise (copy default sets + reps)
-      const setsToInsert: any[] = [];
-      for (const we of weRows) {
-        const exId = (we as any).exercise_id as string | undefined;
-        const scheme = exId ? setSchemeById[exId] : null;
-
-        const targetSetsRaw = scheme?.sets;
-        const targetRepsRaw = scheme?.reps;
-
-        const targetSets =
-          typeof targetSetsRaw === 'number' && Number.isFinite(targetSetsRaw) && targetSetsRaw > 0
-            ? Math.floor(targetSetsRaw)
-            : 1;
-
-        const targetReps =
-          typeof targetRepsRaw === 'number' && Number.isFinite(targetRepsRaw) && targetRepsRaw > 0
-            ? Math.floor(targetRepsRaw)
-            : 0;
-
-        for (let i = 0; i < targetSets; i++) {
-          setsToInsert.push({
-            workout_exercise_id: (we as any).id,
-            set_index: i,
-            reps: targetReps,
+        // 4) Insert one starter set per workout_exercise
+        const setsToInsert =
+          (weRows || []).map((we: any) => ({
+            workout_exercise_id: we.id,
+            set_index: 0,
+            reps: 0,
             weight: 0,
             rpe: null,
             is_completed: false,
-            notes: scheme?.notes || '',
-          });
-        }
-      }
+          })) || [];
 
-      if (setsToInsert.length > 0) {
-        const { error: wsErr } = await supabase.from('workout_sets').insert(setsToInsert);
-        if (wsErr) throw wsErr;
+        if (setsToInsert.length > 0) {
+          const { error: wsErr } = await supabase.from('workout_sets').insert(setsToInsert);
+          if (wsErr) throw wsErr;
+        }
       }
 
       router.push(`/workout/${session.id}`);
     } catch (e: any) {
       console.error(e);
-
-      if (createdSessionId) {
-        try {
-          await supabase.from('workout_sessions').delete().eq('id', createdSessionId);
-        } catch (cleanupErr) {
-          console.error('Failed to cleanup workout session after start error:', cleanupErr);
-        }
-      }
-
       setError(e?.message || 'Failed to start routine.');
     } finally {
       setStartingId(null);
@@ -298,9 +252,7 @@ export default function WorkoutStartPage() {
       <div className="max-w-3xl mx-auto px-4 pt-6">
         <h1 className="text-3xl font-bold mb-4">Workout</h1>
 
-        {error && (
-          <div className="mb-4 rounded-lg bg-red-900/30 px-4 py-3 text-red-300">{error}</div>
-        )}
+        {error && <div className="mb-4 rounded-lg bg-red-900/30 px-4 py-3 text-red-300">{error}</div>}
 
         {loading && <div className="text-gray-400">Loading routines…</div>}
 
@@ -310,16 +262,17 @@ export default function WorkoutStartPage() {
 
         <div className="space-y-4">
           {days.map((day) => (
-            <div
-              key={day.id}
-              className="rounded-2xl bg-gradient-to-br from-slate-800 to-slate-900 p-5 shadow-lg"
-            >
-              {/* ✅ DAY ONLY (no routine name like ABCD) */}
-              <h2 className="text-xl font-semibold truncate">{day.name}</h2>
+            <div key={day.id} className="rounded-2xl bg-gradient-to-br from-slate-800 to-slate-900 p-5 shadow-lg">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <h2 className="text-xl font-semibold truncate">{day.routineName}</h2>
+                  <p className="text-sm text-gray-300">{day.name}</p>
 
-              <p className="text-sm text-gray-400 mt-2 line-clamp-2">{day.preview}</p>
+                  <p className="text-sm text-gray-400 mt-2 line-clamp-2">{day.preview}</p>
 
-              <p className="text-sm text-gray-400 mt-2">Last performed: {formatDate(day.lastPerformed)}</p>
+                  <p className="text-sm text-gray-400 mt-2">Last performed: {formatDate(day.lastPerformed)}</p>
+                </div>
+              </div>
 
               <button
                 disabled={startingId === day.id}
