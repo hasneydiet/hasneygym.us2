@@ -19,15 +19,15 @@ export default function WorkoutPage() {
   const [sets, setSets] = useState<{ [exerciseId: string]: WorkoutSet[] }>({});
   const [lastTimeData, setLastTimeData] = useState<ExerciseLastTime>({});
 
-  const [ending, setEnding] = useState(false);
-  const [discarding, setDiscarding] = useState(false);
-
-
   // HEVY-style: previous sets per exercise (indexed by set number)
   const [prevSetsByExercise, setPrevSetsByExercise] = useState<Record<string, WorkoutSet[]>>({});
 
   // Draft input state (smooth typing)
   const [draft, setDraft] = useState<Record<string, Record<string, string>>>({});
+
+  // End/Discard states
+  const [ending, setEnding] = useState(false);
+  const [discarding, setDiscarding] = useState(false);
 
   const setDraftValue = (setId: string, field: string, value: string) => {
     setDraft((prev) => ({
@@ -78,38 +78,29 @@ export default function WorkoutPage() {
 
     setExercises(exData);
 
-        const setsMap: { [exerciseId: string]: WorkoutSet[] } = {};
+    // Load ALL sets in one go (faster than N+1)
+    const exIds = exData.map((e: any) => e.id);
+    const { data: allSets } = await supabase
+      .from('workout_sets')
+      .select('*')
+      .in('workout_exercise_id', exIds)
+      .order('set_index');
 
-    const exIds = (exData || []).map((ex: any) => ex.id);
-    if (exIds.length > 0) {
-      const { data: allSetsData, error: allSetsErr } = await supabase
-        .from('workout_sets')
-        .select('*')
-        .in('workout_exercise_id', exIds)
-        .order('workout_exercise_id', { ascending: true })
-        .order('set_index', { ascending: true });
-
-      if (allSetsErr) console.error('Failed to load sets:', allSetsErr);
-
-      for (const exId of exIds) setsMap[exId] = [];
-      for (const s of (allSetsData || []) as any[]) {
-        if (!setsMap[s.workout_exercise_id]) setsMap[s.workout_exercise_id] = [];
-        setsMap[s.workout_exercise_id].push(s);
-      }
+    const map: { [exerciseId: string]: WorkoutSet[] } = {};
+    for (const ex of exData) map[ex.id] = [];
+    for (const s of allSets || []) {
+      map[s.workout_exercise_id] = map[s.workout_exercise_id] || [];
+      map[s.workout_exercise_id].push(s);
     }
+    setSets(map);
 
-    setSets(setsMap);
-
-    // load previous sets (HEVY-style)
-    loadPreviousSetsForExercises(exData, sessionData.started_at); // defer (faster initial render)
+    // HEVY-style previous sets
+    await loadPreviousSetsForExercises(exData, sessionData.started_at);
 
     // keep any existing last-time summary function (if your project has it)
     if (typeof (globalThis as any).loadLastTimeData === 'function') {
-      // defer to keep first paint fast
-      setTimeout(async () => {
-        const res = await (globalThis as any).loadLastTimeData(exData, sessionData.started_at);
-        if (res) setLastTimeData(res);
-      }, 0);
+      const res = await (globalThis as any).loadLastTimeData(exData, sessionData.started_at);
+      if (res) setLastTimeData(res);
     }
   };
 
@@ -187,11 +178,21 @@ export default function WorkoutPage() {
   };
 
   const endWorkout = async () => {
-    await supabase
-      .from('workout_sessions')
-      .update({ ended_at: new Date().toISOString() })
-      .eq('id', sessionId);
+    const ok = window.confirm('End workout? This will save it to History.');
+    if (!ok) return;
 
+    try {
+      setEnding(true);
+      await supabase
+        .from('workout_sessions')
+        .update({ ended_at: new Date().toISOString() })
+        .eq('id', sessionId);
+
+      router.push('/history');
+    } finally {
+      setEnding(false);
+    }
+  };
 
   const discardWorkout = async () => {
     const ok = window.confirm('Discard workout? This will permanently delete this session and all sets.');
@@ -200,7 +201,6 @@ export default function WorkoutPage() {
     try {
       setDiscarding(true);
 
-      // 1) Get workout_exercise ids
       const { data: exRows, error: exErr } = await supabase
         .from('workout_exercises')
         .select('id')
@@ -210,7 +210,6 @@ export default function WorkoutPage() {
 
       const exIds = (exRows || []).map((r: any) => r.id);
 
-      // 2) Delete sets for those exercises
       if (exIds.length > 0) {
         const { error: delSetsErr } = await supabase
           .from('workout_sets')
@@ -220,7 +219,6 @@ export default function WorkoutPage() {
         if (delSetsErr) console.error('Failed deleting workout sets:', delSetsErr);
       }
 
-      // 3) Delete workout exercises
       const { error: delExErr } = await supabase
         .from('workout_exercises')
         .delete()
@@ -228,7 +226,6 @@ export default function WorkoutPage() {
 
       if (delExErr) console.error('Failed deleting workout exercises:', delExErr);
 
-      // 4) Delete the workout session
       const { error: delSessionErr } = await supabase
         .from('workout_sessions')
         .delete()
@@ -240,9 +237,6 @@ export default function WorkoutPage() {
     } finally {
       setDiscarding(false);
     }
-  };
-
-    router.push('/history');
   };
 
   const addSet = async (exerciseId: string) => {
@@ -264,11 +258,9 @@ export default function WorkoutPage() {
     if (data) loadWorkout();
   };
 
-  // ✅ RESTORED: deleteSet (this is what your build complained about)
   const deleteSet = async (exerciseId: string, setId: string) => {
     await supabase.from('workout_sets').delete().eq('id', setId);
 
-    // Re-index remaining sets
     const remaining = (sets[exerciseId] || []).filter((s: any) => s.id !== setId);
     for (let i = 0; i < remaining.length; i++) {
       await supabase.from('workout_sets').update({ set_index: i }).eq('id', remaining[i].id);
@@ -319,6 +311,7 @@ export default function WorkoutPage() {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <div className="max-w-5xl mx-auto px-4 py-6">
+        {/* Header WITHOUT End button */}
         <div className="flex items-start justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
@@ -328,7 +321,7 @@ export default function WorkoutPage() {
               <p className="text-gray-600 dark:text-gray-400">{session.routine_days.name}</p>
             )}
           </div>
-</div>
+        </div>
 
         <div className="space-y-6">
           {exercises.map((exercise: any) => {
@@ -385,7 +378,7 @@ export default function WorkoutPage() {
 
                     <tbody>
                       {(sets[exercise.id] || []).map((set: any, idx: number) => {
-                        const prev = prevSets[idx]; // match set number
+                        const prev = prevSets[idx];
                         const prevReps = prev?.reps ?? null;
                         const prevWeight = prev?.weight ?? null;
 
@@ -409,7 +402,6 @@ export default function WorkoutPage() {
                               </div>
                             </td>
 
-                            {/* REPS */}
                             <td className="px-2 py-2">
                               <input
                                 type="number"
@@ -423,15 +415,12 @@ export default function WorkoutPage() {
                                   clearDraftField(set.id, 'reps');
                                 }}
                                 className={`w-full px-2 py-1 border rounded text-center bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 ${
-                                  pr
-                                    ? 'border-green-400 dark:border-green-500'
-                                    : 'border-gray-300 dark:border-gray-700'
+                                  pr ? 'border-green-400 dark:border-green-500' : 'border-gray-300 dark:border-gray-700'
                                 }`}
                               />
                               {formatPrevLine('Prev:', prevReps)}
                             </td>
 
-                            {/* WEIGHT */}
                             <td className="px-2 py-2">
                               <input
                                 type="number"
@@ -446,15 +435,12 @@ export default function WorkoutPage() {
                                   clearDraftField(set.id, 'weight');
                                 }}
                                 className={`w-full px-2 py-1 border rounded text-center bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 ${
-                                  pr
-                                    ? 'border-green-400 dark:border-green-500'
-                                    : 'border-gray-300 dark:border-gray-700'
+                                  pr ? 'border-green-400 dark:border-green-500' : 'border-gray-300 dark:border-gray-700'
                                 }`}
                               />
                               {formatPrevLine('Prev:', prevWeight)}
                             </td>
 
-                            {/* Done */}
                             <td className="px-2 py-2 text-center">
                               <button
                                 onClick={() => saveSet(set.id, 'is_completed', !set.is_completed)}
@@ -468,7 +454,6 @@ export default function WorkoutPage() {
                               </button>
                             </td>
 
-                            {/* Delete */}
                             <td className="px-2 py-2 text-center">
                               <button
                                 onClick={() => deleteSet(exercise.id, set.id)}
@@ -497,8 +482,7 @@ export default function WorkoutPage() {
             );
           })}
 
-          
-          {/* End / Discard actions (HEVY-style) */}
+          {/* Bottom actions (HEVY-style) */}
           <div className="pt-6 space-y-3">
             <button
               onClick={endWorkout}
@@ -517,7 +501,7 @@ export default function WorkoutPage() {
             </button>
           </div>
 
-{exercises.length === 0 && (
+          {exercises.length === 0 && (
             <div className="text-gray-600 dark:text-gray-400">No exercises found for this session.</div>
           )}
         </div>
