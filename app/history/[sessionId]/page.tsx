@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabase';
 import { WorkoutSession, WorkoutExercise, WorkoutSet } from '@/lib/types';
 import { format } from 'date-fns';
 import { Trash2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 export const dynamic = 'force-dynamic';
 
