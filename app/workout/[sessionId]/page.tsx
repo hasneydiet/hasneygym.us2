@@ -43,7 +43,6 @@ export default function WorkoutPage() {
   const getDraftValue = (setId: string, field: string, fallback: number | null | undefined) => {
     const v = draft[setId]?.[field];
     if (v !== undefined) return v;
-    // Mobile typing fix: avoid leading "0" being part of the input value.
     if (fallback === 0) return '';
     return (fallback ?? '').toString();
   };
@@ -165,9 +164,6 @@ export default function WorkoutPage() {
     setPrevSetsByExercise(map);
   };
 
-  /**
-   * Save onBlur (no lag) + optimistic UI update
-   */
   const saveSet = async (setId: string, field: string, value: any) => {
     setSets((prev) => {
       const next: { [exerciseId: string]: WorkoutSet[] } = {};
@@ -258,7 +254,7 @@ export default function WorkoutPage() {
         set_index: currentSets.length,
         reps: lastSet?.reps || 0,
         weight: lastSet?.weight || 0,
-        rpe: null, // keep DB compatible even though UI removed
+        rpe: null,
       })
       .select()
       .single();
@@ -286,7 +282,6 @@ export default function WorkoutPage() {
     );
   };
 
-  // PR logic: green if you beat previous weight/reps for the same set number
   const isPR = (current: any, prev: any) => {
     if (!prev) return false;
 
@@ -307,7 +302,6 @@ export default function WorkoutPage() {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <div className="max-w-5xl mx-auto px-4 py-6">
-        {/* Header WITHOUT End button */}
         <div className="flex items-start justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
@@ -334,14 +328,6 @@ export default function WorkoutPage() {
                   <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">
                     {exercise.exercises?.name || 'Exercise'}
                   </h3>
-
-                  {lastTimeData?.[exercise.id] && (
-                    <div className="mt-1 text-xs text-gray-600 dark:text-gray-400">
-                      Last time: {lastTimeData[exercise.id].bestSet} | Vol:{' '}
-                      {lastTimeData[exercise.id].volume?.toFixed?.(0)} | 1RM:{' '}
-                      {lastTimeData[exercise.id].est1RM > 0 ? lastTimeData[exercise.id].est1RM.toFixed(0) : 'N/A'}
-                    </div>
-                  )}
                 </div>
 
                 {effectiveTags.length > 0 && (
@@ -379,6 +365,12 @@ export default function WorkoutPage() {
 
                         const pr = isPR(set, prev);
 
+                        const repsPlaceholder =
+                          prevReps !== null && prevReps !== undefined && prevReps !== '' ? String(prevReps) : String(set.reps ?? 0);
+
+                        const weightPlaceholder =
+                          prevWeight !== null && prevWeight !== undefined && prevWeight !== '' ? String(prevWeight) : '0';
+
                         return (
                           <tr
                             key={set.id}
@@ -401,12 +393,12 @@ export default function WorkoutPage() {
                               <input
                                 type="number"
                                 inputMode="numeric"
-                                placeholder={(set.reps ?? 0).toString()}
+                                placeholder={repsPlaceholder}
                                 value={getDraftRaw(set.id, 'reps') ?? ''}
                                 onChange={(e) => setDraftValue(set.id, 'reps', e.target.value)}
                                 onBlur={() => {
                                   const raw = getDraftRaw(set.id, 'reps');
-                                  // If user didn't type anything, keep the existing reps (defaults stay as reference).
+                                  // If user didn't type anything, keep existing reps.
                                   if (raw === undefined || raw.trim() === '') {
                                     clearDraftField(set.id, 'reps');
                                     return;
@@ -427,13 +419,18 @@ export default function WorkoutPage() {
                                 type="number"
                                 inputMode="decimal"
                                 step="0.5"
-                                placeholder="0"
-                                value={getDraftValue(set.id, 'weight', set.weight)}
+                                placeholder={weightPlaceholder}
+                                value={getDraftRaw(set.id, 'weight') ?? ''}
                                 onChange={(e) => setDraftValue(set.id, 'weight', e.target.value)}
                                 onBlur={() => {
-                                  const raw = getDraftValue(set.id, 'weight', set.weight);
-                                  const num = raw.trim() === '' ? 0 : Number(raw);
-                                  saveSet(set.id, 'weight', Number.isFinite(num) ? num : 0);
+                                  const raw = getDraftRaw(set.id, 'weight');
+                                  // If user didn't type anything, keep existing weight.
+                                  if (raw === undefined || raw.trim() === '') {
+                                    clearDraftField(set.id, 'weight');
+                                    return;
+                                  }
+                                  const num = Number(raw);
+                                  saveSet(set.id, 'weight', Number.isFinite(num) ? num : set.weight ?? 0);
                                   clearDraftField(set.id, 'weight');
                                 }}
                                 className={`w-full h-11 px-2 py-2 border rounded text-center bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 ${
@@ -484,7 +481,6 @@ export default function WorkoutPage() {
             );
           })}
 
-          {/* Bottom actions (HEVY-style) */}
           <div className="pt-6 space-y-3">
             <button
               onClick={endWorkout}
