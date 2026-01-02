@@ -19,6 +19,10 @@ export default function WorkoutPage() {
   const [sets, setSets] = useState<{ [exerciseId: string]: WorkoutSet[] }>({});
   const [lastTimeData, setLastTimeData] = useState<ExerciseLastTime>({});
 
+  const [ending, setEnding] = useState(false);
+  const [discarding, setDiscarding] = useState(false);
+
+
   // HEVY-style: previous sets per exercise (indexed by set number)
   const [prevSetsByExercise, setPrevSetsByExercise] = useState<Record<string, WorkoutSet[]>>({});
 
@@ -188,6 +192,56 @@ export default function WorkoutPage() {
       .update({ ended_at: new Date().toISOString() })
       .eq('id', sessionId);
 
+
+  const discardWorkout = async () => {
+    const ok = window.confirm('Discard workout? This will permanently delete this session and all sets.');
+    if (!ok) return;
+
+    try {
+      setDiscarding(true);
+
+      // 1) Get workout_exercise ids
+      const { data: exRows, error: exErr } = await supabase
+        .from('workout_exercises')
+        .select('id')
+        .eq('workout_session_id', sessionId);
+
+      if (exErr) console.error('Failed loading workout exercises for discard:', exErr);
+
+      const exIds = (exRows || []).map((r: any) => r.id);
+
+      // 2) Delete sets for those exercises
+      if (exIds.length > 0) {
+        const { error: delSetsErr } = await supabase
+          .from('workout_sets')
+          .delete()
+          .in('workout_exercise_id', exIds);
+
+        if (delSetsErr) console.error('Failed deleting workout sets:', delSetsErr);
+      }
+
+      // 3) Delete workout exercises
+      const { error: delExErr } = await supabase
+        .from('workout_exercises')
+        .delete()
+        .eq('workout_session_id', sessionId);
+
+      if (delExErr) console.error('Failed deleting workout exercises:', delExErr);
+
+      // 4) Delete the workout session
+      const { error: delSessionErr } = await supabase
+        .from('workout_sessions')
+        .delete()
+        .eq('id', sessionId);
+
+      if (delSessionErr) console.error('Failed deleting workout session:', delSessionErr);
+
+      router.push('/workout/start');
+    } finally {
+      setDiscarding(false);
+    }
+  };
+
     router.push('/history');
   };
 
@@ -274,14 +328,7 @@ export default function WorkoutPage() {
               <p className="text-gray-600 dark:text-gray-400">{session.routine_days.name}</p>
             )}
           </div>
-
-          <button
-            onClick={endWorkout}
-            className="px-4 py-2 rounded bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 font-semibold"
-          >
-            End Workout
-          </button>
-        </div>
+</div>
 
         <div className="space-y-6">
           {exercises.map((exercise: any) => {
@@ -450,7 +497,27 @@ export default function WorkoutPage() {
             );
           })}
 
-          {exercises.length === 0 && (
+          
+          {/* End / Discard actions (HEVY-style) */}
+          <div className="pt-6 space-y-3">
+            <button
+              onClick={endWorkout}
+              disabled={ending || discarding}
+              className="w-full px-4 py-3 rounded-lg bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {ending ? 'Ending…' : 'End Workout'}
+            </button>
+
+            <button
+              onClick={discardWorkout}
+              disabled={ending || discarding}
+              className="w-full px-4 py-3 rounded-lg border border-red-500/60 text-red-600 dark:text-red-400 font-semibold bg-transparent disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {discarding ? 'Discarding…' : 'Discard Workout'}
+            </button>
+          </div>
+
+{exercises.length === 0 && (
             <div className="text-gray-600 dark:text-gray-400">No exercises found for this session.</div>
           )}
         </div>
