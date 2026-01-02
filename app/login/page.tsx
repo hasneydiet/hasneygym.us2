@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import BrandLogo from '@/components/BrandLogo';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,7 +17,9 @@ export default function LoginPage() {
 
   useEffect(() => {
     const checkAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       if (session) {
         router.push('/workout/start');
       }
@@ -64,7 +67,16 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 px-4">
       <div className="max-w-md w-full">
         <div className="bg-white dark:bg-gray-900 rounded-lg shadow-md p-8">
-          <h1 className="text-3xl font-bold text-center mb-2 text-gray-900 dark:text-gray-100">TrackFit</h1>
+          <div className="mb-6">
+            <BrandLogo
+              iconSize={34}
+              showTagline={true}
+              taglineOnMobile={true}
+              centered={true}
+              className="text-gray-900 dark:text-white"
+            />
+          </div>
+
           <p className="text-gray-600 dark:text-gray-400 text-center mb-8">
             {isSignUp ? 'Create your account' : 'Sign in to your account'}
           </p>
@@ -124,9 +136,7 @@ export default function LoginPage() {
               }}
               className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 text-sm"
             >
-              {isSignUp
-                ? 'Already have an account? Sign in'
-                : "Don't have an account? Sign up"}
+              {isSignUp ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
             </button>
           </div>
         </div>

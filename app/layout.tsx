@@ -6,8 +6,8 @@ import { ThemeProvider } from '@/lib/theme';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'TrackFit - Workout Tracker',
-  description: 'Track your workouts and progress',
+  title: 'SpartanX - Hasney Personal Workout Tracker',
+  description: 'Hasney Personal Workout Tracker',
   viewport: 'width=device-width, initial-scale=1, maximum-scale=5',
 };
 
@@ -18,9 +18,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body
-        className={`${inter.className} min-h-screen bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100 overflow-x-hidden pb-[calc(80px+env(safe-area-inset-bottom))] md:pb-0`}
-      >
+      <body className={`${inter.className} min-h-screen bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100`}>
         <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>

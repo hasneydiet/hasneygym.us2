@@ -1,15 +1,26 @@
 'use client';
 
+import { useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { Dumbbell, Calendar, History, LogOut, Sun, Moon, Play } from 'lucide-react';
 import { useTheme } from '@/lib/theme';
+import BrandLogo from '@/components/BrandLogo';
 
 export default function Navigation() {
   const pathname = usePathname();
   const router = useRouter();
   const { theme, toggleTheme } = useTheme();
+
+  // Prevent content from being hidden behind bottom tab bar
+  useEffect(() => {
+    const prev = document.body.style.paddingBottom;
+    document.body.style.paddingBottom = '80px';
+    return () => {
+      document.body.style.paddingBottom = prev;
+    };
+  }, []);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -34,20 +45,8 @@ export default function Navigation() {
       <nav className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-14 md:h-16">
-            {/* Logo */}
-            <Link href="/workout/start" className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-gray-900 dark:bg-gray-100 flex items-center justify-center">
-                <Dumbbell className="w-5 h-5 text-white dark:text-gray-900" />
-              </div>
-              <div className="leading-tight">
-                <div className="text-sm md:text-lg font-bold text-gray-900 dark:text-white">
-                  HasneyGym
-                </div>
-                <div className="hidden md:block text-xs text-gray-500 dark:text-gray-400">
-                  Workout Tracker
-                </div>
-              </div>
-            </Link>
+            {/* Logo (no square background) */}
+            <BrandLogo href="/workout/start" iconSize={28} showTagline={true} taglineOnMobile={false} />
 
             {/* Desktop nav links ONLY */}
             <div className="hidden md:flex items-center gap-2">
