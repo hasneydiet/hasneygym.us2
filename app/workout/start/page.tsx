@@ -27,44 +27,6 @@ function safeInt(v: any, fallback: number) {
   return i < 0 ? fallback : i;
 }
 
-// Normalize JSON-ish columns that may arrive as arrays, objects, or strings.
-// Keeps existing behavior but prevents "off-by-one" set creation when default_sets
-// is stored as JSON text.
-function normalizeDefaultSets(raw: any): any[] {
-  if (Array.isArray(raw)) return raw;
-  if (typeof raw === 'string') {
-    try {
-      const parsed = JSON.parse(raw);
-      // Some clients store JSON as an array, others wrap it as an object like
-      // { sets: [...] } or { default_sets: [...] }.
-      if (Array.isArray(parsed)) return parsed;
-      if (parsed && typeof parsed === 'object') {
-        const maybeSets = (parsed as any).sets ?? (parsed as any).default_sets ?? (parsed as any).value;
-        if (Array.isArray(maybeSets)) return maybeSets;
-      }
-      return [];
-    } catch {
-      return [];
-    }
-  }
-  // Some environments may coerce JSON to an object with numeric keys.
-  if (raw && typeof raw === 'object') {
-    // If wrapped: { sets: [...] }
-    const maybeSets = (raw as any).sets ?? (raw as any).default_sets ?? (raw as any).value;
-    if (Array.isArray(maybeSets)) return maybeSets;
-
-    // Otherwise, treat it as an object with numeric keys.
-    const keys = Object.keys(raw)
-      .filter((k) => /^\d+$/.test(k))
-      .map((k) => Number(k))
-      .sort((a, b) => a - b);
-
-    if (keys.length) return keys.map((k) => (raw as any)[String(k)]);
-    return [];
-  }
-  return [];
-}
-
 async function getAuthedUser() {
   // Prefer session (fast + avoids AuthSessionMissingError edge cases)
   const { data: sessData } = await supabase.auth.getSession();
@@ -272,7 +234,7 @@ export default function WorkoutStartPage() {
           const exerciseId = (row as any).exercise_id as string | undefined;
           if (!exerciseId) continue;
           rdeByExerciseId[exerciseId] = {
-	            default_sets: normalizeDefaultSets((row as any).default_sets),
+            default_sets: Array.isArray((row as any).default_sets) ? (row as any).default_sets : [],
             default_set_scheme: (row as any).exercises?.default_set_scheme ?? null,
           };
         }

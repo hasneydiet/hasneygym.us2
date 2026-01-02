@@ -135,9 +135,6 @@ const openTechnique = (key: string) => {
   const inputRefs = useRef<Map<string, HTMLInputElement>>(new Map());
   const [pendingFocusKey, setPendingFocusKey] = useState<string | null>(null);
 
-  // Exercise container refs for auto-advance scrolling
-  const exerciseRefs = useRef<Map<string, HTMLDivElement>>(new Map());
-
   const focusByKey = (key: string) => {
     const el = inputRefs.current.get(key);
     if (el) {
@@ -305,52 +302,6 @@ const openTechnique = (key: string) => {
       map[s.workout_exercise_id] = map[s.workout_exercise_id] || [];
       map[s.workout_exercise_id].push(s);
     }
-
-    const safeInt = (v: any, fallback = 0) => {
-      const n = Number(v);
-      return Number.isFinite(n) ? Math.trunc(n) : fallback;
-    };
-
-    // Safety net: ensure each workout exercise has the intended number of sets.
-    // Some sessions may have been created with fewer sets (e.g., fallback to exercise scheme),
-    // so we auto-backfill missing sets on load (frontend-only, no backend changes).
-    const missing: any[] = [];
-    for (const ex of exData) {
-      const desired = Math.max(0, safeInt((ex as any).exercises?.default_set_scheme?.sets, 0));
-      if (desired <= 0) continue;
-      const current = map[ex.id]?.length ?? 0;
-      if (current >= desired) continue;
-
-      const defaultReps = Math.max(0, safeInt((ex as any).exercises?.default_set_scheme?.reps, 0));
-      for (let i = current; i < desired; i++) {
-        missing.push({
-          workout_exercise_id: ex.id,
-          set_index: i,
-          reps: defaultReps,
-          weight: 0,
-          rpe: null,
-          is_completed: false,
-        });
-      }
-    }
-
-    if (missing.length > 0) {
-      const { error: insErr } = await supabase.from('workout_sets').insert(missing);
-      if (!insErr) {
-        const { data: refreshed } = await supabase
-          .from('workout_sets')
-          .select('*')
-          .in('workout_exercise_id', exIds)
-          .order('set_index');
-
-        // Rebuild map with refreshed data (includes inserted set ids)
-        for (const ex of exData) map[ex.id] = [];
-        for (const s of refreshed || []) {
-          map[s.workout_exercise_id] = map[s.workout_exercise_id] || [];
-          map[s.workout_exercise_id].push(s as any);
-        }
-      }
-    }
     setSets(map);
 
     await loadPreviousSetsForExercises(exData, sessionData.started_at);
@@ -427,34 +378,10 @@ const openTechnique = (key: string) => {
     }
   };
 
-  const handleToggleCompleted = async (exerciseId: string, setRow: any) => {
+  const handleToggleCompleted = async (setRow: any) => {
     const willComplete = !setRow.is_completed;
-
-    // compute completion state optimistically for auto-advance
-    const exSetsAfter = (sets[exerciseId] || []).map((s: any) =>
-      s.id === setRow.id ? { ...s, is_completed: willComplete } : s
-    );
-
     await saveSet(setRow.id, 'is_completed', willComplete);
     if (willComplete) startRestTimer(restDurationSeconds);
-
-    // Auto-advance only when the exercise becomes fully completed
-    const allCompleted = exSetsAfter.length > 0 && exSetsAfter.every((s: any) => !!s.is_completed);
-    if (willComplete && allCompleted) {
-      // Find next exercise in order and scroll into view
-      const idx = exercises.findIndex((e: any) => e.id === exerciseId);
-      const next = idx >= 0 ? exercises[idx + 1] : null;
-      if (next?.id) {
-        // subtle haptic confirmation
-        vibrate([8, 10, 8]);
-        const el = exerciseRefs.current.get(next.id);
-        if (el) {
-          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
-        // Focus first reps input on the next exercise (set 0) after scroll/layout
-        setPendingFocusKey(`${next.id}:0:reps`);
-      }
-    }
   };
 
   const endWorkout = async () => {
@@ -659,14 +586,7 @@ const openTechnique = (key: string) => {
             const prevSets = prevSetsByExercise[exercise.id] || [];
 
             return (
-              <div
-                key={exercise.id}
-                ref={(el) => {
-                  if (el) exerciseRefs.current.set(exercise.id, el);
-                  else exerciseRefs.current.delete(exercise.id);
-                }}
-                className="bg-gray-900/40 border border-gray-800 rounded-xl p-4 scroll-mt-24"
-              >
+              <div key={exercise.id} className="bg-gray-900/40 border border-gray-800 rounded-xl p-4">
 <div className="mb-2 flex items-start justify-between gap-3">
   <h3 className="text-lg font-bold">{exercise.exercises?.name || 'Exercise'}</h3>
   {exercise.exercises?.default_technique_tags?.[0] ? (
@@ -683,11 +603,7 @@ const openTechnique = (key: string) => {
   ) : null}
 </div>
 
-                {/*
-                  Mobile-only padding so the sticky "+ Add Set" bar doesn't visually
-                  cover the last set row when it sticks to the bottom of the screen.
-                */}
-                <div className="overflow-x-auto pb-24 md:pb-0">
+                <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="text-left text-gray-300 border-b border-gray-800">
@@ -781,7 +697,7 @@ const openTechnique = (key: string) => {
 
                             <td className="px-2 py-2 text-center">
                               <button
-                                onClick={() => handleToggleCompleted(exercise.id, set)}
+                                onClick={() => handleToggleCompleted(set)}
                                 className={`w-11 h-11 rounded border-2 flex items-center justify-center ${
                                   set.is_completed ? 'bg-white border-white text-gray-900' : 'border-gray-700'
                                 }`}
@@ -806,18 +722,13 @@ const openTechnique = (key: string) => {
                     </tbody>
                   </table>
 
-                  {/* Sticky add-set bar on mobile for one-hand logging */}
-                  <div
-                    className="mt-3 md:mt-3 md:static sticky bottom-[calc(84px+env(safe-area-inset-bottom))] z-10"
-                  >
-                    <div className="-mx-4 px-4 py-3 md:mx-0 md:px-0 md:py-0 border-t border-white/10 md:border-t-0 bg-gray-950/80 md:bg-transparent backdrop-blur md:backdrop-blur-0">
-                      <button
-                        onClick={() => addSet(exercise.id)}
-                        className="w-full md:w-auto min-h-[48px] px-4 py-3 rounded bg-white text-gray-900 font-semibold"
-                      >
-                        + Add Set
-                      </button>
-                    </div>
+                  <div className="mt-3">
+                    <button
+                      onClick={() => addSet(exercise.id)}
+                      className="min-h-[44px] px-4 py-2 rounded bg-white text-gray-900 font-semibold"
+                    >
+                      + Add Set
+                    </button>
                   </div>
                 </div>
               </div>
