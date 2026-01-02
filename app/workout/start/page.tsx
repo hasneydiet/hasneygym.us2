@@ -35,15 +35,32 @@ function normalizeDefaultSets(raw: any): any[] {
   if (typeof raw === 'string') {
     try {
       const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed : [];
+      // Some clients store JSON as an array, others wrap it as an object like
+      // { sets: [...] } or { default_sets: [...] }.
+      if (Array.isArray(parsed)) return parsed;
+      if (parsed && typeof parsed === 'object') {
+        const maybeSets = (parsed as any).sets ?? (parsed as any).default_sets ?? (parsed as any).value;
+        if (Array.isArray(maybeSets)) return maybeSets;
+      }
+      return [];
     } catch {
       return [];
     }
   }
   // Some environments may coerce JSON to an object with numeric keys.
   if (raw && typeof raw === 'object') {
-    const vals = Object.values(raw);
-    return Array.isArray(vals) ? vals : [];
+    // If wrapped: { sets: [...] }
+    const maybeSets = (raw as any).sets ?? (raw as any).default_sets ?? (raw as any).value;
+    if (Array.isArray(maybeSets)) return maybeSets;
+
+    // Otherwise, treat it as an object with numeric keys.
+    const keys = Object.keys(raw)
+      .filter((k) => /^\d+$/.test(k))
+      .map((k) => Number(k))
+      .sort((a, b) => a - b);
+
+    if (keys.length) return keys.map((k) => (raw as any)[String(k)]);
+    return [];
   }
   return [];
 }
