@@ -67,23 +67,23 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="app-shell flex items-center justify-center px-4">
+    <div className="app-shell flex items-center justify-center px-4 py-10">
       <div className="max-w-md w-full">
-        <Card className="shadow-lg shadow-black/5">
+        <Card className="shadow-xl shadow-black/10">
           <CardContent className="p-8 sm:p-9">
             <div className="mb-6">
-            <BrandLogo
-              iconSize={34}
-              showTagline={true}
-              taglineOnMobile={true}
-              centered={true}
-              className="text-gray-900 dark:text-white"
-            />
-          </div>
+              <BrandLogo
+                iconSize={34}
+                showTagline={true}
+                taglineOnMobile={true}
+                centered={true}
+                className="text-foreground"
+              />
+            </div>
 
             <p className="text-muted-foreground text-center mb-8">
-            {isSignUp ? 'Create your account' : 'Sign in to your account'}
-          </p>
+              {isSignUp ? 'Create your account' : 'Sign in to your account'}
+            </p>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
@@ -116,7 +116,11 @@ export default function LoginPage() {
             </div>
 
             {error && (
-              <div className="bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg text-sm">
+              <div
+                className="bg-destructive/10 text-destructive px-4 py-3 rounded-xl text-sm border border-destructive/20"
+                role="alert"
+                aria-live="polite"
+              >
                 {error}
               </div>
             )}
@@ -130,17 +134,17 @@ export default function LoginPage() {
             </Button>
           </form>
 
-          <div className="mt-6 text-center">
-            <button
-              onClick={() => {
-                setIsSignUp(!isSignUp);
-                setError('');
-              }}
-              className="text-muted-foreground hover:text-foreground text-sm"
-            >
-              {isSignUp ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
-            </button>
-          </div>
+            <div className="mt-6 text-center">
+              <button
+                onClick={() => {
+                  setIsSignUp(!isSignUp);
+                  setError('');
+                }}
+                className="text-muted-foreground hover:text-foreground text-sm underline-offset-4 hover:underline"
+              >
+                {isSignUp ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
+              </button>
+            </div>
           </CardContent>
         </Card>
       </div>

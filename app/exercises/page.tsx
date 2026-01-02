@@ -7,6 +7,9 @@ import Navigation from '@/components/Navigation';
 import { supabase } from '@/lib/supabase';
 import { Exercise, TECHNIQUE_TAGS } from '@/lib/types';
 import { Plus, Search, Edit2, Trash2, TrendingUp } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 
 // Non-breaking: HTML datalist suggestions keep inputs free-form while providing a fast picker on mobile/desktop.
 const MUSCLE_GROUP_OPTIONS = [
@@ -86,7 +89,7 @@ function AutocompleteInput(props: {
         }}
         onFocus={() => setOpen(true)}
         placeholder={placeholder}
-        className="w-full px-4 py-2 rounded-xl border border-input bg-background/70 backdrop-blur text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background"
+        className="w-full h-11 px-3 rounded-xl border border-input bg-background/70 backdrop-blur text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background"
         autoComplete="off"
       />
 
@@ -231,7 +234,7 @@ export default function ExercisesPage() {
         <div className="page max-w-none">
           <div className="flex justify-between items-center mb-6">
             <h1 className="page-title">Exercises</h1>
-            <button
+            <Button
               onClick={() => {
                 setShowForm(true);
                 setEditingExercise(null);
@@ -244,22 +247,22 @@ export default function ExercisesPage() {
                   default_set_scheme: null,
                 });
               }}
-              className="tap-target inline-flex items-center gap-2 rounded-xl bg-primary text-primary-foreground px-4 py-2 shadow-sm transition-all hover:bg-primary/90 hover:shadow-md active:translate-y-px"
+              className="gap-2"
             >
               <Plus className="w-5 h-5" />
               <span>Add Exercise</span>
-            </button>
+            </Button>
           </div>
 
           <div className="mb-6">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-5 h-5" />
-              <input
+              <Input
                 type="text"
                 placeholder="Search exercises..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 rounded-xl border border-input bg-background/70 backdrop-blur text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background"
+                className="pl-10"
               />
             </div>
           </div>
@@ -274,12 +277,11 @@ export default function ExercisesPage() {
                   <label className="block text-sm font-medium text-foreground/80 mb-1">
                     Exercise Name *
                   </label>
-                  <input
+                  <Input
                     type="text"
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     required
-                    className="w-full px-4 py-2 rounded-xl border border-input bg-background/70 backdrop-blur text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background"
                   />
                 </div>
 
@@ -303,11 +305,10 @@ export default function ExercisesPage() {
                   <label className="block text-sm font-medium text-foreground/80 mb-1">
                     Notes
                   </label>
-                  <textarea
+                  <Textarea
                     value={formData.notes}
                     onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                     rows={3}
-                    className="w-full px-4 py-2 rounded-xl border border-input bg-background/70 backdrop-blur text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background"
                   />
                 </div>
 
@@ -321,10 +322,10 @@ export default function ExercisesPage() {
                         key={tag}
                         type="button"
                         onClick={() => toggleTechniqueTag(tag)}
-                        className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                        className={`tap-target min-h-8 px-3 py-1 rounded-full text-xs font-medium transition-colors border ${
                           formData.default_technique_tags.includes(tag)
-                            ? 'bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900'
-                            : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
+                            ? 'bg-primary text-primary-foreground border-primary/30 shadow-sm'
+                            : 'bg-secondary/70 text-secondary-foreground border-border/60 hover:bg-secondary'
                         }`}
                       >
                         {tag}
@@ -339,8 +340,8 @@ export default function ExercisesPage() {
                   </label>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">Sets</label>
-                      <input
+                      <label className="block text-xs text-muted-foreground mb-1">Sets</label>
+                      <Input
                         type="number"
                         min="0"
                         value={formData.default_set_scheme?.sets || 0}
@@ -348,12 +349,11 @@ export default function ExercisesPage() {
                           ...formData,
                           default_set_scheme: { ...formData.default_set_scheme, sets: parseInt(e.target.value) || 0 },
                         })}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-gray-900 dark:focus:ring-gray-100 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
                       />
                     </div>
                     <div>
-                      <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">Reps</label>
-                      <input
+                      <label className="block text-xs text-muted-foreground mb-1">Reps</label>
+                      <Input
                         type="number"
                         min="0"
                         value={formData.default_set_scheme?.reps || 0}
@@ -361,12 +361,11 @@ export default function ExercisesPage() {
                           ...formData,
                           default_set_scheme: { ...formData.default_set_scheme, reps: parseInt(e.target.value) || 0 },
                         })}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-gray-900 dark:focus:ring-gray-100 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
                       />
                     </div>
                     <div>
-                      <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">Rest (seconds)</label>
-                      <input
+                      <label className="block text-xs text-muted-foreground mb-1">Rest (seconds)</label>
+                      <Input
                         type="number"
                         min="0"
                         value={formData.default_set_scheme?.restSeconds || 0}
@@ -374,41 +373,37 @@ export default function ExercisesPage() {
                           ...formData,
                           default_set_scheme: { ...formData.default_set_scheme, restSeconds: parseInt(e.target.value) || 0 },
                         })}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-gray-900 dark:focus:ring-gray-100 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
                       />
                     </div>
                     <div>
-                      <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">Notes</label>
-                      <input
+                      <label className="block text-xs text-muted-foreground mb-1">Notes</label>
+                      <Input
                         type="text"
                         value={formData.default_set_scheme?.notes || ''}
                         onChange={(e) => setFormData({
                           ...formData,
                           default_set_scheme: { ...formData.default_set_scheme, notes: e.target.value },
                         })}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-gray-900 dark:focus:ring-gray-100 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
                       />
                     </div>
                   </div>
                 </div>
 
-                <div className="flex space-x-3">
-                  <button
-                    type="submit"
-                    className="flex-1 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 py-2 rounded-lg hover:bg-gray-800 dark:hover:bg-gray-200"
-                  >
+                <div className="flex gap-3">
+                  <Button type="submit" className="flex-1">
                     {editingExercise ? 'Update' : 'Create'}
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
+                    variant="outline"
                     onClick={() => {
                       setShowForm(false);
                       setEditingExercise(null);
                     }}
-                    className="flex-1 bg-gray-200 dark:bg-gray-800 text-gray-800 dark:text-gray-200 py-2 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-700"
+                    className="flex-1"
                   >
                     Cancel
-                  </button>
+                  </Button>
                 </div>
               </form>
             </div>
@@ -454,25 +449,30 @@ export default function ExercisesPage() {
                       </td>
                       <td className="px-2 sm:px-4 py-3 text-right whitespace-nowrap">
                         <div className="inline-flex items-center justify-end gap-1">
-<button
-                          onClick={() => router.push(`/exercises/${exercise.id}`)}
-                          className="icon-btn mr-1"
-                          title="View Progress"
-                        >
-                          <TrendingUp className="w-4 h-4 inline" />
-                        </button>
-                        <button
-                          onClick={() => handleEdit(exercise)}
-                          className="icon-btn mr-1"
-                        >
-                          <Edit2 className="w-4 h-4 inline" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(exercise.id)}
-                          className="icon-btn text-destructive hover:text-destructive"
-                        >
-                          <Trash2 className="w-4 h-4 inline" />
-                        </button>
+                          <button
+                            onClick={() => router.push(`/exercises/${exercise.id}`)}
+                            className="icon-btn"
+                            title="View Progress"
+                            aria-label="View exercise progress"
+                          >
+                            <TrendingUp className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleEdit(exercise)}
+                            className="icon-btn"
+                            title="Edit"
+                            aria-label="Edit exercise"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(exercise.id)}
+                            className="icon-btn text-destructive hover:text-destructive"
+                            title="Delete"
+                            aria-label="Delete exercise"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
                         </div>
                       </td>
                     </tr>

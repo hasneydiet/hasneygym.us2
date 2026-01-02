@@ -586,7 +586,7 @@ const openTechnique = (key: string) => {
             const prevSets = prevSetsByExercise[exercise.id] || [];
 
             return (
-              <div key={exercise.id} className="bg-gray-900/40 border border-gray-800 rounded-xl p-4">
+              <div key={exercise.id} className="bg-gray-900/40 border border-gray-800 rounded-2xl p-4 sm:p-5 shadow-lg shadow-black/20">
 <div className="mb-2 flex items-start justify-between gap-3">
   <h3 className="text-lg font-bold">{exercise.exercises?.name || 'Exercise'}</h3>
   {exercise.exercises?.default_technique_tags?.[0] ? (
@@ -657,7 +657,7 @@ const openTechnique = (key: string) => {
                                   saveSet(set.id, 'reps', Number.isFinite(num) ? num : 0);
                                   clearDraftField(set.id, 'reps');
                                 }}
-                                className="w-full h-11 px-2 py-2 border border-gray-700 rounded text-center bg-gray-900/40 text-white placeholder:text-gray-500"
+                                className="w-full h-11 px-2 py-2 rounded-xl border border-gray-700 bg-gray-900/40 text-center text-white placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-950"
                               />
                               {formatPrevLine('Prev:', prevReps)}
                             </td>
@@ -690,7 +690,7 @@ const openTechnique = (key: string) => {
                                   saveSet(set.id, 'weight', Number.isFinite(num) ? num : 0);
                                   clearDraftField(set.id, 'weight');
                                 }}
-                                className="w-full h-11 px-2 py-2 border border-gray-700 rounded text-center bg-gray-900/40 text-white placeholder:text-gray-500"
+                                className="w-full h-11 px-2 py-2 rounded-xl border border-gray-700 bg-gray-900/40 text-center text-white placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-950"
                               />
                               {formatPrevLine('Prev:', prevWeight)}
                             </td>
@@ -725,7 +725,7 @@ const openTechnique = (key: string) => {
                   <div className="mt-3">
                     <button
                       onClick={() => addSet(exercise.id)}
-                      className="min-h-[44px] px-4 py-2 rounded bg-white text-gray-900 font-semibold"
+                      className="tap-target min-h-[44px] px-4 py-2 rounded-xl bg-white text-gray-900 font-semibold shadow-sm transition hover:shadow-md active:translate-y-px"
                     >
                       + Add Set
                     </button>
@@ -739,7 +739,7 @@ const openTechnique = (key: string) => {
             <button
               onClick={endWorkout}
               disabled={ending || discarding}
-              className="w-full min-h-[44px] px-4 py-3 rounded-lg bg-white text-gray-900 font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
+              className="tap-target w-full min-h-[48px] px-4 py-3 rounded-2xl bg-white text-gray-900 font-semibold shadow-sm transition hover:shadow-md active:translate-y-px disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {ending ? 'Ending…' : 'End Workout'}
             </button>
@@ -747,7 +747,7 @@ const openTechnique = (key: string) => {
             <button
               onClick={discardWorkout}
               disabled={ending || discarding}
-              className="w-full min-h-[44px] px-4 py-3 rounded-lg border border-red-500/60 text-red-400 font-semibold bg-transparent disabled:opacity-60 disabled:cursor-not-allowed"
+              className="tap-target w-full min-h-[48px] px-4 py-3 rounded-2xl border border-red-500/60 text-red-300 font-semibold bg-transparent transition hover:bg-red-500/10 disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {discarding ? 'Discarding…' : 'Discard Workout'}
             </button>

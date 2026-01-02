@@ -7,6 +7,9 @@ import Navigation from '@/components/Navigation';
 import { supabase } from '@/lib/supabase';
 import { Routine, RoutineDay, RoutineDayExercise, Exercise } from '@/lib/types';
 import { Plus, Trash2, ChevronUp, ChevronDown, X } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
 
 export const dynamic = 'force-dynamic';
 
@@ -186,17 +189,17 @@ export default function RoutineEditorPage() {
 
   return (
     <AuthGuard>
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
+      <div className="app-shell">
         <Navigation />
-        <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
+        <div className="page max-w-7xl">
           <div className="mb-6">
             <button
               onClick={() => router.push('/routines')}
-              className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 mb-2"
+              className="text-sm text-muted-foreground hover:text-foreground underline-offset-4 hover:underline"
             >
               ← Back to Routines
             </button>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">{routine?.name}</h1>
+            <h1 className="page-title">{routine?.name}</h1>
           </div>
 
           <div className="space-y-6">
@@ -205,12 +208,14 @@ export default function RoutineEditorPage() {
               const grouped = groupBySupersets(exs);
 
               return (
-                <div key={day.id} className="bg-white dark:bg-gray-900 rounded-lg shadow-sm p-6">
+                <div key={day.id} className="surface p-6">
                   <div className="flex justify-between items-center mb-4">
-                    <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">{day.name}</h2>
+                    <h2 className="text-lg font-semibold tracking-tight">{day.name}</h2>
                     <button
                       onClick={() => deleteDay(day.id)}
-                      className="text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
+                      className="icon-btn text-destructive hover:text-destructive"
+                      aria-label="Delete day"
+                      title="Delete day"
                     >
                       <Trash2 className="w-5 h-5" />
                     </button>
@@ -220,33 +225,38 @@ export default function RoutineEditorPage() {
                     {grouped.map((group, gIdx) => {
                       if (group.superset_group_id) {
                         return (
-                          <div key={gIdx} className="border-l-4 border-gray-900 dark:border-gray-100 pl-4 bg-gray-50 dark:bg-gray-800 py-2">
-                            <p className="text-xs font-bold text-gray-700 dark:text-gray-300 mb-2">SUPERSET</p>
+                          <div key={gIdx} className="rounded-2xl border border-border/60 bg-muted/20 p-3">
+                            <div className="mb-2">
+                              <Badge variant="secondary" className="border-border/60">SUPERSET</Badge>
+                            </div>
                             {group.items.map((ex) => (
                               <div key={ex.id} className="flex items-center justify-between py-2">
-                                <span className="font-medium text-gray-900 dark:text-gray-100">{ex.exercises?.name}</span>
-                                <div className="flex items-center space-x-2">
+                                <span className="font-medium text-foreground">{ex.exercises?.name}</span>
+                                <div className="flex items-center gap-1">
                                   <button
                                     onClick={() => moveExercise(day.id, ex.id, 'up')}
-                                    className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100"
+                                    className="icon-btn"
+                                    aria-label="Move up"
                                   >
                                     <ChevronUp className="w-4 h-4" />
                                   </button>
                                   <button
                                     onClick={() => moveExercise(day.id, ex.id, 'down')}
-                                    className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100"
+                                    className="icon-btn"
+                                    aria-label="Move down"
                                   >
                                     <ChevronDown className="w-4 h-4" />
                                   </button>
                                   <button
                                     onClick={() => toggleSuperset(day.id, ex.id)}
-                                    className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 text-xs px-2 py-1 border border-gray-300 dark:border-gray-700 rounded"
+                                    className="tap-target rounded-xl border border-border/60 bg-background/60 px-3 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
                                   >
                                     Ungroup
                                   </button>
                                   <button
                                     onClick={() => deleteExerciseFromDay(ex.id)}
-                                    className="text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
+                                    className="icon-btn text-destructive hover:text-destructive"
+                                    aria-label="Delete exercise"
                                   >
                                     <X className="w-4 h-4" />
                                   </button>
@@ -258,30 +268,33 @@ export default function RoutineEditorPage() {
                       } else {
                         const ex = group.items[0];
                         return (
-                          <div key={ex.id} className="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-800">
-                            <span className="font-medium text-gray-900 dark:text-gray-100">{ex.exercises?.name}</span>
-                            <div className="flex items-center space-x-2">
+                          <div key={ex.id} className="flex items-center justify-between py-2 border-b border-border/50">
+                            <span className="font-medium text-foreground">{ex.exercises?.name}</span>
+                            <div className="flex items-center gap-1">
                               <button
                                 onClick={() => moveExercise(day.id, ex.id, 'up')}
-                                className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100"
+                                className="icon-btn"
+                                aria-label="Move up"
                               >
                                 <ChevronUp className="w-4 h-4" />
                               </button>
                               <button
                                 onClick={() => moveExercise(day.id, ex.id, 'down')}
-                                className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100"
+                                className="icon-btn"
+                                aria-label="Move down"
                               >
                                 <ChevronDown className="w-4 h-4" />
                               </button>
                               <button
                                 onClick={() => toggleSuperset(day.id, ex.id)}
-                                className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 text-xs px-2 py-1 border border-gray-300 dark:border-gray-700 rounded"
+                                className="tap-target rounded-xl border border-border/60 bg-background/60 px-3 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
                               >
                                 Superset
                               </button>
                               <button
                                 onClick={() => deleteExerciseFromDay(ex.id)}
-                                className="text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
+                                className="icon-btn text-destructive hover:text-destructive"
+                                aria-label="Delete exercise"
                               >
                                 <X className="w-4 h-4" />
                               </button>
@@ -293,11 +306,11 @@ export default function RoutineEditorPage() {
                   </div>
 
                   {showAddExercise === day.id ? (
-                    <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+                    <div className="border-t border-border/60 pt-4">
                       <select
                         value={selectedExerciseId}
                         onChange={(e) => setSelectedExerciseId(e.target.value)}
-                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg mb-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                        className="w-full h-11 rounded-xl border border-input bg-background/70 backdrop-blur px-3 text-sm text-foreground mb-2"
                       >
                         <option value="">Select Exercise</option>
                         {exercises.map((ex) => (
@@ -306,67 +319,45 @@ export default function RoutineEditorPage() {
                           </option>
                         ))}
                       </select>
-                      <div className="flex space-x-2">
-                        <button
-                          onClick={() => addExerciseToDayHandler(day.id)}
-                          className="flex-1 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 py-2 rounded-lg hover:bg-gray-800 dark:hover:bg-gray-200"
-                        >
-                          Add
-                        </button>
-                        <button
-                          onClick={() => setShowAddExercise(null)}
-                          className="flex-1 bg-gray-200 dark:bg-gray-800 text-gray-800 dark:text-gray-200 py-2 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-700"
-                        >
-                          Cancel
-                        </button>
+                      <div className="flex gap-2">
+                        <Button onClick={() => addExerciseToDayHandler(day.id)} className="flex-1">Add</Button>
+                        <Button onClick={() => setShowAddExercise(null)} variant="outline" className="flex-1">Cancel</Button>
                       </div>
                     </div>
                   ) : (
-                    <button
-                      onClick={() => setShowAddExercise(day.id)}
-                      className="w-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 flex items-center justify-center space-x-2"
-                    >
+                    <Button onClick={() => setShowAddExercise(day.id)} variant="outline" className="w-full gap-2">
                       <Plus className="w-4 h-4" />
                       <span>Add Exercise</span>
-                    </button>
+                    </Button>
                   )}
                 </div>
               );
             })}
 
             {showAddDay ? (
-              <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm p-6">
-                <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-4">Add Day</h2>
-                <input
+              <div className="surface p-6">
+                <h2 className="text-lg font-semibold tracking-tight mb-4">Add Day</h2>
+                <Input
                   type="text"
                   value={newDayName}
                   onChange={(e) => setNewDayName(e.target.value)}
                   placeholder="Day name (e.g., Push Day, Leg Day)"
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg mb-4 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                  className="mb-4"
                 />
-                <div className="flex space-x-2">
-                  <button
-                    onClick={addDay}
-                    className="flex-1 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 py-2 rounded-lg hover:bg-gray-800 dark:hover:bg-gray-200"
-                  >
-                    Add
-                  </button>
-                  <button
-                    onClick={() => setShowAddDay(false)}
-                    className="flex-1 bg-gray-200 dark:bg-gray-800 text-gray-800 dark:text-gray-200 py-2 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-700"
-                  >
-                    Cancel
-                  </button>
+                <div className="flex gap-2">
+                  <Button onClick={addDay} className="flex-1">Add</Button>
+                  <Button onClick={() => setShowAddDay(false)} variant="outline" className="flex-1">Cancel</Button>
                 </div>
               </div>
             ) : (
-              <button
+              <Button
                 onClick={() => setShowAddDay(true)}
-                className="w-full bg-white dark:bg-gray-900 border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-lg py-6 hover:border-gray-900 dark:hover:border-gray-100 flex items-center justify-center space-x-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100"
+                variant="outline"
+                className="w-full h-14 border-dashed gap-2 text-muted-foreground hover:text-foreground"
               >
                 <Plus className="w-5 h-5" />
                 <span>Add Day</span>
-              </button>
+              </Button>
             )}
           </div>
         </div>

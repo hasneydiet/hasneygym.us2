@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabase';
 import { WorkoutSession } from '@/lib/types';
 import { format } from 'date-fns';
 import { Trash2 } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 
 export const dynamic = 'force-dynamic';
 
@@ -68,23 +69,22 @@ export default function HistoryPage() {
 
   return (
     <AuthGuard>
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
+      <div className="app-shell">
         <Navigation />
-        <div className="max-w-4xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-6">History</h1>
+        <div className="page max-w-4xl">
+          <h1 className="page-title mb-2">History</h1>
+          <p className="page-subtitle mb-6">Your completed and in-progress workouts.</p>
 
           {loading ? (
-            <p className="text-gray-500 dark:text-gray-400">Loading...</p>
+            <p className="text-muted-foreground">Loading...</p>
           ) : sessions.length === 0 ? (
-            <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm p-12 text-center">
-              <p className="text-gray-500 dark:text-gray-400">No workout history yet.</p>
-            </div>
+            <div className="surface p-12 text-center text-muted-foreground">No workout history yet.</div>
           ) : (
             <div className="space-y-3">
               {sessions.map((session) => (
                 <div
                   key={session.id}
-                  className="bg-white dark:bg-gray-900 rounded-lg shadow-sm p-4 hover:shadow-md transition-shadow flex items-start justify-between"
+                  className="surface surface-hover p-4 flex items-start justify-between"
                 >
                   <button
                     onClick={() => router.push(`/history/${session.id}`)}
@@ -92,13 +92,13 @@ export default function HistoryPage() {
                   >
                     <div className="flex justify-between items-start">
                       <div className="flex-1">
-                        <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">
+                        <h3 className="text-base sm:text-lg font-semibold tracking-tight">
                           {session.routines?.name || 'Quick Workout'}
                         </h3>
                         {session.routine_days?.name && (
-                          <p className="text-sm text-gray-600 dark:text-gray-400">{session.routine_days.name}</p>
+                          <p className="text-sm text-muted-foreground">{session.routine_days.name}</p>
                         )}
-                        <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
+                        <p className="text-xs text-muted-foreground/80 mt-1">
                           {format(new Date(session.started_at), 'MMM d, yyyy • h:mm a')}
                           {session.ended_at && (
                             <> - {format(new Date(session.ended_at), 'h:mm a')}</>
@@ -106,15 +106,17 @@ export default function HistoryPage() {
                         </p>
                       </div>
                       {!session.ended_at && (
-                        <span className="bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 text-xs px-2 py-1 rounded-full">
+                        <Badge variant="secondary" className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/20">
                           Active
-                        </span>
+                        </Badge>
                       )}
                     </div>
                   </button>
                   <button
                     onClick={(e) => deleteSession(session.id, e)}
-                    className="ml-3 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
+                    className="icon-btn ml-2 text-destructive hover:text-destructive"
+                    aria-label="Delete workout session"
+                    title="Delete"
                   >
                     <Trash2 className="w-5 h-5" />
                   </button>

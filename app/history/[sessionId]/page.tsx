@@ -8,6 +8,8 @@ import { supabase } from '@/lib/supabase';
 import { WorkoutSession, WorkoutExercise, WorkoutSet } from '@/lib/types';
 import { format } from 'date-fns';
 import { Trash2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 
 export const dynamic = 'force-dynamic';
 
@@ -110,27 +112,24 @@ export default function SessionDetailPage() {
 
   return (
     <AuthGuard>
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
+      <div className="app-shell">
         <Navigation />
-        <div className="max-w-4xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
-          <button
-            onClick={() => router.push('/history')}
-            className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 mb-4"
-          >
+        <div className="page max-w-4xl">
+          <Button onClick={() => router.push('/history')} variant="outline" className="w-fit mb-4">
             ← Back to History
-          </button>
+          </Button>
 
           {session && (
-            <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm p-6 mb-6">
+            <div className="surface p-6 mb-6">
               <div className="flex justify-between items-start">
                 <div className="flex-1">
-                  <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+                  <h1 className="text-2xl font-semibold tracking-tight mb-2">
                     {session.routines?.name || 'Quick Workout'}
                   </h1>
                   {session.routine_days?.name && (
-                    <p className="text-gray-600 dark:text-gray-400 mb-1">{session.routine_days.name}</p>
+                    <p className="text-muted-foreground mb-1">{session.routine_days.name}</p>
                   )}
-                  <p className="text-sm text-gray-500 dark:text-gray-500">
+                  <p className="text-sm text-muted-foreground/80">
                     {format(new Date(session.started_at), 'MMM d, yyyy • h:mm a')}
                     {session.ended_at && (
                       <> - {format(new Date(session.ended_at), 'h:mm a')}</>
@@ -139,19 +138,17 @@ export default function SessionDetailPage() {
                 </div>
                 <button
                   onClick={deleteSession}
-                  className="ml-4 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
+                  className="icon-btn ml-2 text-destructive hover:text-destructive"
                   title="Delete session"
+                  aria-label="Delete session"
                 >
                   <Trash2 className="w-5 h-5" />
                 </button>
               </div>
               {!session.ended_at && (
-                <button
-                  onClick={() => router.push(`/workout/${sessionId}`)}
-                  className="mt-4 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 px-4 py-2 rounded-lg hover:bg-gray-800 dark:hover:bg-gray-200"
-                >
+                <Button onClick={() => router.push(`/workout/${sessionId}`)} className="mt-4">
                   Resume Workout
-                </button>
+                </Button>
               )}
             </div>
           )}
@@ -160,9 +157,9 @@ export default function SessionDetailPage() {
             {grouped.map((group, gIdx) => {
               if (group.superset_group_id) {
                 return (
-                  <div key={gIdx} className="bg-white dark:bg-gray-900 rounded-lg shadow-sm overflow-hidden border-l-4 border-gray-900 dark:border-gray-100">
-                    <div className="bg-gray-50 dark:bg-gray-800 px-4 py-2 border-b border-gray-200 dark:border-gray-700">
-                      <p className="text-xs font-bold text-gray-700 dark:text-gray-300">SUPERSET</p>
+                  <div key={gIdx} className="surface overflow-hidden border-l-4 border-primary/60">
+                    <div className="bg-muted/40 px-4 py-2 border-b border-border/60">
+                      <p className="text-xs font-semibold tracking-wide text-muted-foreground">SUPERSET</p>
                     </div>
                     {group.items.map((ex) => (
                       <ExerciseDetail key={ex.id} exercise={ex} sets={sets[ex.id] || []} />
@@ -172,7 +169,7 @@ export default function SessionDetailPage() {
               } else {
                 const ex = group.items[0];
                 return (
-                  <div key={ex.id} className="bg-white dark:bg-gray-900 rounded-lg shadow-sm overflow-hidden">
+                  <div key={ex.id} className="surface overflow-hidden">
                     <ExerciseDetail exercise={ex} sets={sets[ex.id] || []} />
                   </div>
                 );
@@ -194,18 +191,15 @@ function ExerciseDetail({
 }) {
   return (
     <div className="p-4">
-      <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 mb-2">{exercise.exercises?.name}</h3>
+      <h3 className="text-base sm:text-lg font-semibold tracking-tight mb-2">{exercise.exercises?.name}</h3>
 
       {exercise.technique_tags && exercise.technique_tags.length > 0 && (
         <div className="mb-3">
           <div className="flex flex-wrap gap-2">
             {exercise.technique_tags.map((tag) => (
-              <span
-                key={tag}
-                className="px-3 py-1 rounded-full text-xs font-medium bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900"
-              >
+              <Badge key={tag} variant="secondary" className="border-border/60">
                 {tag}
-              </span>
+              </Badge>
             ))}
           </div>
         </div>
@@ -213,7 +207,7 @@ function ExerciseDetail({
 
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="text-xs text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800">
+          <thead className="text-xs text-muted-foreground bg-muted/40">
             <tr>
               <th className="px-3 py-2 text-left">Set</th>
               <th className="px-3 py-2 text-center">Reps</th>
@@ -222,14 +216,14 @@ function ExerciseDetail({
               <th className="px-3 py-2 text-center">Done</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-border/60">
             {sets.map((set, idx) => (
-              <tr key={set.id} className="border-b border-gray-100 dark:border-gray-800">
-                <td className="px-3 py-2 font-medium text-gray-900 dark:text-gray-100">{idx + 1}</td>
-                <td className="px-3 py-2 text-center text-gray-900 dark:text-gray-100">{set.reps}</td>
-                <td className="px-3 py-2 text-center text-gray-900 dark:text-gray-100">{set.weight}</td>
-                <td className="px-3 py-2 text-center text-gray-900 dark:text-gray-100">{set.rpe || '-'}</td>
-                <td className="px-3 py-2 text-center text-gray-900 dark:text-gray-100">
+              <tr key={set.id} className="hover:bg-accent/30">
+                <td className="px-3 py-2 font-medium text-foreground">{idx + 1}</td>
+                <td className="px-3 py-2 text-center text-foreground">{set.reps}</td>
+                <td className="px-3 py-2 text-center text-foreground">{set.weight}</td>
+                <td className="px-3 py-2 text-center text-foreground">{set.rpe || '-'}</td>
+                <td className="px-3 py-2 text-center text-foreground">
                   {set.is_completed ? '✓' : '-'}
                 </td>
               </tr>

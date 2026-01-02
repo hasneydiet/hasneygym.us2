@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Navigation from '@/components/Navigation';
 import { supabase } from '@/lib/supabase';
 import type { RoutineDay } from '@/lib/types';
+import { Button } from '@/components/ui/button';
 
 type RoutineDayCard = RoutineDay & {
   routineName: string;
@@ -298,41 +299,53 @@ export default function WorkoutStartPage() {
   };
 
   return (
-    <div className="min-h-screen bg-black text-white pb-24">
+    <div className="app-shell pb-24">
       <Navigation />
 
-      <div className="max-w-3xl mx-auto px-4 pt-6">
-        <h1 className="text-3xl font-bold mb-4">Workout</h1>
+      <div className="page max-w-3xl">
+        <h1 className="page-title mb-2">Workout</h1>
+        <p className="page-subtitle mb-6">Pick a day to start, or create routines first.</p>
 
-        {error && <div className="mb-4 rounded-lg bg-red-900/30 px-4 py-3 text-red-300">{error}</div>}
+        {error && (
+          <div className="mb-4 rounded-2xl border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-destructive" role="alert">
+            {error}
+          </div>
+        )}
 
-        {loading && <div className="text-gray-400">Loading routines…</div>}
+        {loading && <div className="text-muted-foreground">Loading routines…</div>}
 
         {!loading && days.length === 0 && (
-          <div className="text-gray-400">No routine days found. Create a routine first.</div>
+          <div className="surface p-10 text-center text-muted-foreground">No routine days found. Create a routine first.</div>
         )}
 
         <div className="space-y-4">
           {days.map((day) => (
-            <div key={day.id} className="rounded-2xl bg-gradient-to-br from-slate-800 to-slate-900 p-5 shadow-lg">
-              <div className="flex items-start justify-between gap-4">
+            <div key={day.id} className="tile relative overflow-hidden p-5 sm:p-6">
+              <div className="pointer-events-none absolute inset-0 opacity-60 [mask-image:radial-gradient(50%_60%_at_20%_10%,black,transparent)]">
+                <div className="absolute -left-24 -top-24 h-64 w-64 rounded-full bg-primary/20 blur-2xl" />
+                <div className="absolute -right-24 -bottom-24 h-64 w-64 rounded-full bg-emerald-500/15 blur-2xl" />
+              </div>
+
+              <div className="relative flex items-start justify-between gap-4">
                 <div className="min-w-0">
-                  <h2 className="text-xl font-semibold truncate">{day.routineName}</h2>
-                  <p className="text-sm text-gray-300">{day.name}</p>
+                  <h2 className="text-lg sm:text-xl font-semibold tracking-tight truncate">{day.routineName}</h2>
+                  <p className="text-sm text-muted-foreground">{day.name}</p>
 
-                  <p className="text-sm text-gray-400 mt-2 line-clamp-2">{day.preview}</p>
+                  <p className="text-sm text-muted-foreground mt-2 max-h-[2.75rem] overflow-hidden">
+                    {day.preview}
+                  </p>
 
-                  <p className="text-sm text-gray-400 mt-2">Last performed: {formatDate(day.lastPerformed)}</p>
+                  <p className="text-xs text-muted-foreground/80 mt-3">Last performed: {formatDate(day.lastPerformed)}</p>
                 </div>
               </div>
 
-              <button
+              <Button
                 disabled={startingId === day.id}
                 onClick={() => startRoutineDay(day)}
-                className="mt-4 w-full rounded-xl bg-sky-500 py-4 text-lg font-semibold text-black hover:bg-sky-400 transition disabled:opacity-60 disabled:cursor-not-allowed"
+                className="mt-4 w-full h-12 text-base font-semibold"
               >
                 {startingId === day.id ? 'Starting…' : 'Start Routine'}
-              </button>
+              </Button>
             </div>
           ))}
         </div>
