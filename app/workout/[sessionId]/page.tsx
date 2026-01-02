@@ -305,6 +305,52 @@ const openTechnique = (key: string) => {
       map[s.workout_exercise_id] = map[s.workout_exercise_id] || [];
       map[s.workout_exercise_id].push(s);
     }
+
+    const safeInt = (v: any, fallback = 0) => {
+      const n = Number(v);
+      return Number.isFinite(n) ? Math.trunc(n) : fallback;
+    };
+
+    // Safety net: ensure each workout exercise has the intended number of sets.
+    // Some sessions may have been created with fewer sets (e.g., fallback to exercise scheme),
+    // so we auto-backfill missing sets on load (frontend-only, no backend changes).
+    const missing: any[] = [];
+    for (const ex of exData) {
+      const desired = Math.max(0, safeInt((ex as any).exercises?.default_set_scheme?.sets, 0));
+      if (desired <= 0) continue;
+      const current = map[ex.id]?.length ?? 0;
+      if (current >= desired) continue;
+
+      const defaultReps = Math.max(0, safeInt((ex as any).exercises?.default_set_scheme?.reps, 0));
+      for (let i = current; i < desired; i++) {
+        missing.push({
+          workout_exercise_id: ex.id,
+          set_index: i,
+          reps: defaultReps,
+          weight: 0,
+          rpe: null,
+          is_completed: false,
+        });
+      }
+    }
+
+    if (missing.length > 0) {
+      const { error: insErr } = await supabase.from('workout_sets').insert(missing);
+      if (!insErr) {
+        const { data: refreshed } = await supabase
+          .from('workout_sets')
+          .select('*')
+          .in('workout_exercise_id', exIds)
+          .order('set_index');
+
+        // Rebuild map with refreshed data (includes inserted set ids)
+        for (const ex of exData) map[ex.id] = [];
+        for (const s of refreshed || []) {
+          map[s.workout_exercise_id] = map[s.workout_exercise_id] || [];
+          map[s.workout_exercise_id].push(s as any);
+        }
+      }
+    }
     setSets(map);
 
     await loadPreviousSetsForExercises(exData, sessionData.started_at);
