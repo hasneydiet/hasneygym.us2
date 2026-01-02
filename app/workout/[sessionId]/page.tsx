@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
+import { Badge } from '@/components/ui/badge';
 type WorkoutSession = any;
 type WorkoutExercise = any;
 type WorkoutSet = any;
@@ -22,6 +24,82 @@ function clampInt(n: number, min: number, max: number) {
   return Math.min(max, Math.max(min, Math.floor(n)));
 }
 
+const TECHNIQUE_GUIDES: Record<
+  string,
+  { title: string; summary: string; steps: string[]; tips?: string[] }
+> = {
+  'Normal-Sets': {
+    title: 'Normal Sets',
+    summary: 'Standard straight sets with consistent rest and tempo.',
+    steps: [
+      'Choose a load you can control through the full range of motion.',
+      'Perform your prescribed reps with consistent form.',
+      'Rest the planned duration, then repeat for the next set.',
+    ],
+    tips: ['Stop 0–2 reps shy of failure for most sets unless your program says otherwise.'],
+  },
+  'Drop-Sets': {
+    title: 'Drop Sets',
+    summary: 'Reduce weight after reaching near-failure and continue with minimal rest.',
+    steps: [
+      'Perform a set to near-failure at your working weight.',
+      'Immediately reduce the load by ~10–30% (no long rest).',
+      'Continue for more reps; repeat 1–2 more drops if desired.',
+    ],
+    tips: ['Keep form strict—drop weight, not technique.'],
+  },
+  'Rest-Pause': {
+    title: 'Rest-Pause',
+    summary: 'Brief rests to extend a set beyond initial fatigue.',
+    steps: [
+      'Perform reps to near-failure.',
+      'Rest 10–20 seconds.',
+      'Do additional reps; repeat 1–3 mini-sets with the same weight.',
+    ],
+    tips: ['Great for machines/cables where setup is quick.'],
+  },
+  GVT: {
+    title: 'GVT (German Volume Training)',
+    summary: 'High-volume protocol typically 10x10 at a challenging but repeatable load.',
+    steps: [
+      'Pick a weight you can complete for 10 reps with good form (often ~60% 1RM).',
+      'Perform 10 sets of 10 reps with consistent rest (60–90 seconds).',
+      'Keep tempo controlled and stop if form breaks down.',
+    ],
+    tips: ['Track performance—small load increases go a long way.'],
+  },
+  'Myo-Reps': {
+    title: 'Myo-Reps',
+    summary: 'Activation set to near-failure followed by short-rest clusters.',
+    steps: [
+      'Do an activation set to near-failure (e.g., 12–20 reps).',
+      'Rest 10–20 seconds.',
+      'Perform mini-sets of 3–5 reps, resting 10–20 seconds between.',
+      'Stop when rep quality drops or you miss the target mini-set reps.',
+    ],
+    tips: ['Use stable exercises (machines/cables) to keep clusters consistent.'],
+  },
+  'Super-Sets': {
+    title: 'Super Sets',
+    summary: 'Two exercises performed back-to-back with little to no rest.',
+    steps: [
+      'Perform exercise A for prescribed reps.',
+      'Immediately perform exercise B for prescribed reps.',
+      'Rest 60–120 seconds after the pair, then repeat.',
+    ],
+    tips: ['Pair opposing muscles (e.g., chest/back) or non-competing movements for best performance.'],
+  },
+  Failure: {
+    title: 'Failure',
+    summary: 'Perform reps until you cannot complete another rep with good form.',
+    steps: [
+      'Warm up properly and choose a safe exercise variation.',
+      'Perform reps until you cannot complete the next rep with proper form.',
+      'Stop the set as soon as technique breaks down.',
+    ],
+    tips: ['Use mostly on machines/cables and limit frequency to manage fatigue.'],
+  },
+};
 export default function WorkoutPage() {
   const params = useParams();
   const router = useRouter();
@@ -35,6 +113,15 @@ export default function WorkoutPage() {
 
   // Draft typed values: used only while editing; after blur it gets cleared.
   const [draft, setDraft] = useState<Record<string, Record<string, string>>>({});
+
+// Technique guide sheet
+const [techniqueOpen, setTechniqueOpen] = useState(false);
+const [techniqueKey, setTechniqueKey] = useState<string | null>(null);
+
+const openTechnique = (key: string) => {
+  setTechniqueKey(key);
+  setTechniqueOpen(true);
+};
 
   // Session clock
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -410,9 +497,21 @@ export default function WorkoutPage() {
 
             return (
               <div key={exercise.id} className="bg-gray-900/40 border border-gray-800 rounded-xl p-4">
-                <div className="mb-2">
-                  <h3 className="text-lg font-bold">{exercise.exercises?.name || 'Exercise'}</h3>
-                </div>
+<div className="mb-2 flex items-start justify-between gap-3">
+  <h3 className="text-lg font-bold">{exercise.exercises?.name || 'Exercise'}</h3>
+  {exercise.exercises?.default_technique_tags?.[0] ? (
+    <button
+      type="button"
+      onClick={() => openTechnique(exercise.exercises!.default_technique_tags![0])}
+      className="tap-target -mt-0.5"
+      aria-label={`How to perform ${exercise.exercises!.default_technique_tags![0]}`}
+    >
+      <Badge className="rounded-full border border-sky-400/30 bg-sky-500/15 px-3 py-1 text-xs font-semibold text-sky-200 hover:bg-sky-500/20">
+        {exercise.exercises!.default_technique_tags![0]}
+      </Badge>
+    </button>
+  ) : null}
+</div>
 
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
@@ -541,6 +640,46 @@ export default function WorkoutPage() {
           {exercises.length === 0 && <div className="text-gray-400">No exercises found for this session.</div>}
         </div>
       </div>
+
+<Sheet open={techniqueOpen} onOpenChange={setTechniqueOpen}>
+  <SheetContent
+    side="bottom"
+    className="border-t border-white/10 bg-[hsl(var(--surface))] text-white shadow-2xl"
+  >
+    {techniqueKey && TECHNIQUE_GUIDES[techniqueKey] ? (
+      <div className="space-y-4">
+        <SheetHeader>
+          <SheetTitle className="text-white">{TECHNIQUE_GUIDES[techniqueKey].title}</SheetTitle>
+          <SheetDescription className="text-gray-300">
+            {TECHNIQUE_GUIDES[techniqueKey].summary}
+          </SheetDescription>
+        </SheetHeader>
+
+        <div className="space-y-3">
+          <div>
+            <div className="mb-2 text-sm font-semibold text-gray-200">How To</div>
+            <ol className="list-decimal space-y-2 pl-5 text-sm text-gray-200">
+              {TECHNIQUE_GUIDES[techniqueKey].steps.map((s) => (
+                <li key={s}>{s}</li>
+              ))}
+            </ol>
+          </div>
+
+          {TECHNIQUE_GUIDES[techniqueKey].tips?.length ? (
+            <div>
+              <div className="mb-2 text-sm font-semibold text-gray-200">Tips</div>
+              <ul className="list-disc space-y-2 pl-5 text-sm text-gray-200">
+                {TECHNIQUE_GUIDES[techniqueKey].tips!.map((t) => (
+                  <li key={t}>{t}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    ) : null}
+  </SheetContent>
+</Sheet>
     </div>
   );
 }
