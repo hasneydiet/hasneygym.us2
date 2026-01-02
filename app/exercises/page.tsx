@@ -324,16 +324,16 @@ export default function ExercisesPage() {
             <div className="w-full max-w-full overflow-x-auto">
               <table className="w-full table-fixed">
                 <colgroup>
-                  <col className="w-[44%]" />
-                  <col className="w-[22%]" />
-                  <col className="w-[22%]" />
-                  <col className="w-[12%]" />
+                  <col className="w-[70%] md:w-[44%]" />
+                  <col className="hidden md:table-column w-[0%] md:w-[22%]" />
+                  <col className="hidden md:table-column w-[0%] md:w-[22%]" />
+                  <col className="w-[30%] md:w-[12%]" />
                 </colgroup>
                 <thead className="bg-muted/40 border-b border-border/60">
                   <tr>
                     <th className="px-3 sm:px-4 py-3 text-left text-xs sm:text-sm font-medium text-muted-foreground">Name</th>
-                    <th className="px-3 sm:px-4 py-3 text-left text-xs sm:text-sm font-medium text-muted-foreground">Muscle Group</th>
-                    <th className="px-3 sm:px-4 py-3 text-left text-xs sm:text-sm font-medium text-muted-foreground">Equipment</th>
+                    <th className="px-3 sm:px-4 py-3 text-left text-xs sm:text-sm font-medium text-muted-foreground hidden md:table-cell">Muscle Group</th>
+                    <th className="px-3 sm:px-4 py-3 text-left text-xs sm:text-sm font-medium text-muted-foreground hidden md:table-cell">Equipment</th>
                     <th className="px-3 sm:px-4 py-3 text-right text-xs sm:text-sm font-medium text-muted-foreground">Actions</th>
                   </tr>
                 </thead>
@@ -343,14 +343,15 @@ export default function ExercisesPage() {
                       <td className="px-3 sm:px-4 py-3 text-sm font-medium text-foreground break-words">
                         {exercise.name}
                       </td>
-                      <td className="px-3 sm:px-4 py-3 text-sm text-muted-foreground break-words">
+                      <td className="px-3 sm:px-4 py-3 text-sm text-muted-foreground break-words hidden md:table-cell">
                         {exercise.muscle_group || '-'}
                       </td>
-                      <td className="px-3 sm:px-4 py-3 text-sm text-muted-foreground break-words">
+                      <td className="px-3 sm:px-4 py-3 text-sm text-muted-foreground break-words hidden md:table-cell">
                         {exercise.equipment || '-'}
                       </td>
-                      <td className="px-3 sm:px-4 py-3 text-right whitespace-nowrap">
-                        <button
+                      <td className="px-2 sm:px-4 py-3 text-right whitespace-nowrap">
+                        <div className="inline-flex items-center justify-end gap-1">
+<button
                           onClick={() => router.push(`/exercises/${exercise.id}`)}
                           className="icon-btn mr-1"
                           title="View Progress"
@@ -369,6 +370,7 @@ export default function ExercisesPage() {
                         >
                           <Trash2 className="w-4 h-4 inline" />
                         </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
