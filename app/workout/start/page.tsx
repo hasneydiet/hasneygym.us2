@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
 import Navigation from '@/components/Navigation';
+import { supabase } from '@/lib/supabase';
 
 type WorkoutDay = {
   id: string;
@@ -14,91 +14,87 @@ type WorkoutDay = {
 
 export default function WorkoutStartPage() {
   const router = useRouter();
-  const [days, setDays] = useState<WorkoutDay[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [days, setDays] = useState<WorkoutDay[]>([]);
 
   useEffect(() => {
     loadWorkoutDays();
   }, []);
 
-  /**
-   * ✅ CORRECT SOURCE OF TRUTH
-   * We load workout_days directly.
-   * No programs table.
-   * No joins.
-   * No RLS traps.
-   */
   const loadWorkoutDays = async () => {
     setLoading(true);
     setError(null);
 
-    const { data, error } = await supabase
-      .from('workout_days')
-      .select('id, day_letter, day_name, order_index')
-      .order('order_index', { ascending: true });
+    /** 1️⃣ Load ACTIVE PROGRAM */
+    const { data: program, error: programErr } = await supabase
+      .from('programs')
+      .select('id')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
 
-    if (error) {
-      console.error(error);
-      setError('Failed to load workout days.');
+    if (programErr || !program) {
+      setError('Failed to load program');
       setLoading(false);
       return;
     }
 
-    setDays(data ?? []);
+    /** 2️⃣ Load workout days by program_id (THIS WAS THE BUG) */
+    const { data: daysData, error: daysErr } = await supabase
+      .from('workout_days')
+      .select('*')
+      .eq('program_id', program.id)
+      .order('order_index', { ascending: true });
+
+    if (daysErr) {
+      setError('Failed to load workout days');
+    } else {
+      setDays(daysData || []);
+    }
+
     setLoading(false);
   };
 
-  const startWorkout = async (day: WorkoutDay) => {
-    const { data, error } = await supabase
-      .from('workout_sessions')
-      .insert({
-        workout_day_id: day.id,
-        started_at: new Date().toISOString(),
-      })
-      .select()
-      .single();
-
-    if (error || !data) {
-      console.error(error);
-      alert('Failed to start workout');
-      return;
-    }
-
-    router.push(`/workout/${data.id}`);
-  };
-
   return (
-    <div className="min-h-screen bg-black text-white pb-24">
+    <div className="min-h-screen bg-black text-white pb-28">
       <Navigation />
 
-      <div className="max-w-5xl mx-auto px-4 pt-6">
-        <h1 className="text-3xl font-bold mb-6">Workout</h1>
+      <div className="max-w-3xl mx-auto px-4 pt-6">
+        <h1 className="text-3xl font-bold mb-4">Workout</h1>
 
-        {loading && <p className="text-gray-400">Loading…</p>}
-
-        {error && <p className="text-red-500">{error}</p>}
-
-        {!loading && days.length === 0 && (
-          <p className="text-gray-400">No workout days found.</p>
+        {error && (
+          <div className="mb-4 rounded-lg bg-red-900/30 px-4 py-3 text-red-300">
+            {error}
+          </div>
         )}
 
-        <div className="space-y-5">
+        {loading && (
+          <div className="text-gray-400">Loading workout days…</div>
+        )}
+
+        {!loading && days.length === 0 && (
+          <div className="text-gray-400">No workout days found.</div>
+        )}
+
+        <div className="space-y-4">
           {days.map((day) => (
             <div
               key={day.id}
-              className="rounded-2xl bg-gradient-to-br from-slate-800 to-slate-900 p-6 shadow-lg"
+              className="rounded-2xl bg-gradient-to-br from-slate-800 to-slate-900 p-5 shadow-lg"
             >
-              <h2 className="text-xl font-bold">{day.day_name}</h2>
+              <h2 className="text-xl font-semibold">
+                {day.day_name}
+              </h2>
               <p className="text-sm text-gray-400 mb-4">
                 Day {day.day_letter}
               </p>
 
               <button
-                onClick={() => startWorkout(day)}
-                className="w-full rounded-xl bg-sky-500 py-3 text-lg font-semibold text-white hover:bg-sky-400 active:bg-sky-600"
+                onClick={() => router.push(`/workout/${day.id}`)}
+                className="w-full rounded-xl bg-sky-500 py-4 text-lg font-semibold text-black hover:bg-sky-400 transition"
               >
-                Start Routine
+                Start Workout
               </button>
             </div>
           ))}
