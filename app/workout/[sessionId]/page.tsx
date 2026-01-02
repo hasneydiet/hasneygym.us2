@@ -74,25 +74,38 @@ export default function WorkoutPage() {
 
     setExercises(exData);
 
-    const setsMap: { [exerciseId: string]: WorkoutSet[] } = {};
-    for (const ex of exData) {
-      const { data: setsData } = await supabase
+        const setsMap: { [exerciseId: string]: WorkoutSet[] } = {};
+
+    const exIds = (exData || []).map((ex: any) => ex.id);
+    if (exIds.length > 0) {
+      const { data: allSetsData, error: allSetsErr } = await supabase
         .from('workout_sets')
         .select('*')
-        .eq('workout_exercise_id', ex.id)
-        .order('set_index');
+        .in('workout_exercise_id', exIds)
+        .order('workout_exercise_id', { ascending: true })
+        .order('set_index', { ascending: true });
 
-      setsMap[ex.id] = setsData || [];
+      if (allSetsErr) console.error('Failed to load sets:', allSetsErr);
+
+      for (const exId of exIds) setsMap[exId] = [];
+      for (const s of (allSetsData || []) as any[]) {
+        if (!setsMap[s.workout_exercise_id]) setsMap[s.workout_exercise_id] = [];
+        setsMap[s.workout_exercise_id].push(s);
+      }
     }
+
     setSets(setsMap);
 
     // load previous sets (HEVY-style)
-    await loadPreviousSetsForExercises(exData, sessionData.started_at);
+    loadPreviousSetsForExercises(exData, sessionData.started_at); // defer (faster initial render)
 
     // keep any existing last-time summary function (if your project has it)
     if (typeof (globalThis as any).loadLastTimeData === 'function') {
-      const res = await (globalThis as any).loadLastTimeData(exData, sessionData.started_at);
-      if (res) setLastTimeData(res);
+      // defer to keep first paint fast
+      setTimeout(async () => {
+        const res = await (globalThis as any).loadLastTimeData(exData, sessionData.started_at);
+        if (res) setLastTimeData(res);
+      }, 0);
     }
   };
 

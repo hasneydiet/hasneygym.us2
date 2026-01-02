@@ -23,12 +23,20 @@ export default function WorkoutStartPage() {
   const [routineDays, setRoutineDays] = useState<RoutineDayCard[]>([]);
   const [collapsed, setCollapsed] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [startingDayId, setStartingDayId] = useState<string | null>(null);
 
   // ✅ "..." menu (keyed by the *card* id so only one opens)
   const [openMenuCardId, setOpenMenuCardId] = useState<string | null>(null);
 
   // ✅ Last performed date per routine_id
   const [lastPerformedByRoutineId, setLastPerformedByRoutineId] = useState<Record<string, string | null>>({});
+
+  
+  const chunkArray = <T,>(arr: T[], size: number) => {
+    const chunks: T[][] = [];
+    for (let i = 0; i < arr.length; i += size) chunks.push(arr.slice(i, i + size));
+    return chunks;
+  };
 
   useEffect(() => {
     loadRoutinesAndDays();
@@ -141,82 +149,114 @@ export default function WorkoutStartPage() {
     }
   };
 
-  const startRoutineDay = async (routineId: string, routineDayId: string) => {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return;
+    const startRoutineDay = async (routineId: string, routineDayId: string) => {
+    try {
+      setStartingDayId(routineDayId);
 
-    const { data: session, error: sessionError } = await supabase
-      .from('workout_sessions')
-      .insert({
-        user_id: user.id,
-        routine_id: routineId,
-        routine_day_id: routineDayId,
-      })
-      .select()
-      .single();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) return;
 
-    if (sessionError) {
-      console.error('Failed to create session:', sessionError);
-      return;
-    }
+      // 1) Create workout session (fast)
+      const { data: session, error: sessionError } = await supabase
+        .from('workout_sessions')
+        .insert({
+          user_id: user.id,
+          routine_id: routineId,
+          routine_day_id: routineDayId,
+        })
+        .select()
+        .single();
 
-    // Load exercises configured for this routine day
-    const { data: routineExercises, error: exErr } = await supabase
-      .from('routine_day_exercises')
-      .select('*, exercises(*)')
-      .eq('routine_day_id', routineDayId)
-      .order('order_index', { ascending: true });
+      if (sessionError || !session) {
+        console.error('Failed to create session:', sessionError);
+        return;
+      }
 
-    if (exErr) {
-      console.error('Failed to load routine exercises:', exErr);
-      router.push(`/workout/${session.id}`);
-      return;
-    }
+      // 2) Load routine exercises (one query)
+      const { data: routineExercises, error: exErr } = await supabase
+        .from('routine_exercises')
+        .select('*, exercises(*)')
+        .eq('routine_day_id', routineDayId)
+        .order('order_index', { ascending: true });
 
-    if (routineExercises && routineExercises.length > 0) {
-      for (const ex of routineExercises as any[]) {
-        const techniqueTags = ex.exercises?.default_technique_tags || [];
+      if (exErr) {
+        console.error('Failed to load routine exercises:', exErr);
+        router.push(`/workout/${session.id}`);
+        return;
+      }
 
-        const { data: workoutExercise, error: weError } = await supabase
-          .from('workout_exercises')
-          .insert({
-            workout_session_id: session.id,
-            exercise_id: ex.exercise_id,
-            order_index: ex.order_index,
-            superset_group_id: ex.superset_group_id,
-            technique_tags: techniqueTags,
-          })
-          .select()
-          .single();
+      const reList = (routineExercises || []) as any[];
+      if (reList.length === 0) {
+        router.push(`/workout/${session.id}`);
+        return;
+      }
 
-        if (weError) {
-          console.error('Failed to create workout exercise:', weError);
-          continue;
-        }
+      // 3) Bulk insert workout_exercises (single request)
+      const workoutExercisePayloads = reList.map((ex) => ({
+        workout_session_id: session.id,
+        exercise_id: ex.exercise_id,
+        order_index: ex.order_index,
+        superset_group_id: ex.superset_group_id,
+        technique_tags: ex.exercises?.default_technique_tags || [],
+      }));
 
-        if (workoutExercise) {
-          const defaultSets: any[] = ex.default_sets || [];
-          const schemeSets = Number(ex.exercises?.default_set_scheme?.sets ?? 0);
-          const setsToCreate = schemeSets > 0 ? schemeSets : defaultSets.length > 0 ? defaultSets.length : 3;
+      const { data: insertedWorkoutExercises, error: weBulkErr } = await supabase
+        .from('workout_exercises')
+        .insert(workoutExercisePayloads)
+        .select('id, exercise_id, order_index, superset_group_id');
 
-          for (let i = 0; i < setsToCreate; i++) {
-            const ds = defaultSets[i] || {};
-            await supabase.from('workout_sets').insert({
-              workout_exercise_id: workoutExercise.id,
-              set_index: i,
-              reps: ds.reps ?? ex.exercises?.default_reps ?? 0,
-              weight: ds.weight ?? 0,
-              rpe: null,
-              is_completed: false,
-            });
-          }
+      if (weBulkErr || !insertedWorkoutExercises) {
+        console.error('Failed to create workout exercises (bulk):', weBulkErr);
+        router.push(`/workout/${session.id}`);
+        return;
+      }
+
+      // Map inserted workout_exercise rows back to routine_exercises by (exercise_id + order_index + superset_group_id)
+      const key = (exercise_id: any, order_index: any, superset_group_id: any) =>
+        `${exercise_id ?? ''}::${order_index ?? ''}::${superset_group_id ?? ''}`;
+
+      const insertedMap = new Map<string, any>();
+      for (const row of insertedWorkoutExercises as any[]) {
+        insertedMap.set(key(row.exercise_id, row.order_index, row.superset_group_id), row);
+      }
+
+      // 4) Bulk insert workout_sets (batched)
+      const setsPayloads: any[] = [];
+      for (const ex of reList) {
+        const row = insertedMap.get(key(ex.exercise_id, ex.order_index, ex.superset_group_id));
+        if (!row?.id) continue;
+
+        const defaultSets: any[] = ex.default_sets || [];
+        const schemeSets = Number(ex.exercises?.default_set_scheme?.sets ?? 0);
+        const setsToCreate = schemeSets > 0 ? schemeSets : defaultSets.length > 0 ? defaultSets.length : 3;
+
+        for (let i = 0; i < setsToCreate; i++) {
+          const ds = defaultSets[i] || {};
+          setsPayloads.push({
+            workout_exercise_id: row.id,
+            set_index: i,
+            reps: ds.reps ?? ex.exercises?.default_reps ?? 0,
+            weight: ds.weight ?? 0,
+            rpe: null,
+            is_completed: false,
+          });
         }
       }
-    }
 
-    router.push(`/workout/${session.id}`);
+      // Supabase has payload limits; batch to stay safe
+      const chunks = chunkArray(setsPayloads, 200);
+      for (const c of chunks) {
+        const { error: setErr } = await supabase.from('workout_sets').insert(c);
+        if (setErr) console.error('Failed inserting workout sets (batch):', setErr);
+      }
+
+      // 5) Navigate to workout screen
+      router.push(`/workout/${session.id}`);
+    } finally {
+      setStartingDayId(null);
+    }
   };
 
   const renameRoutine = async (routineId: string, currentName: string) => {
