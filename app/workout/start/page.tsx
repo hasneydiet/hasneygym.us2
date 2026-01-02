@@ -140,6 +140,8 @@ export default function WorkoutStartPage() {
   }, [router]);
 
   const startRoutineDay = async (day: RoutineDayCard) => {
+    let createdSessionId: string | null = null;
+
     try {
       setStartingId(day.id);
       setError(null);
@@ -172,6 +174,8 @@ export default function WorkoutStartPage() {
       if (sessErr) throw sessErr;
       if (!session?.id) throw new Error('Failed to create workout session.');
 
+      createdSessionId = session.id;
+
       // 2) Pull routine_day_exercises
       const { data: rdeRows, error: rdeErr } = await supabase
         .from('routine_day_exercises')
@@ -181,6 +185,28 @@ export default function WorkoutStartPage() {
 
       if (rdeErr) throw rdeErr;
 
+      const exerciseIds = Array.from(
+        new Set((rdeRows || []).map((r: any) => r.exercise_id).filter(Boolean))
+      ) as string[];
+
+      // HARD GUARANTEE: never create a broken workout session with no exercises
+      if (exerciseIds.length === 0) {
+        throw new Error('This routine day has no exercises. Add exercises to the day before starting.');
+      }
+
+      // Fetch default technique tags from exercises WITHOUT joins (stable / avoids silent join failures)
+      const { data: exDefaults, error: exDefaultsErr } = await supabase
+        .from('exercises')
+        .select('id, default_technique_tags')
+        .in('id', exerciseIds);
+
+      if (exDefaultsErr) throw exDefaultsErr;
+
+      const defaultsByExerciseId: Record<string, string[]> = {};
+      for (const row of exDefaults || []) {
+        defaultsByExerciseId[(row as any).id] = (row as any).default_technique_tags || [];
+      }
+
       const exercisesToInsert =
         (rdeRows || [])
           .filter((r: any) => r.exercise_id)
@@ -188,38 +214,48 @@ export default function WorkoutStartPage() {
             workout_session_id: session.id,
             exercise_id: r.exercise_id,
             order_index: r.order_index ?? 0,
-            technique_tags: [],
+            // Copy the defaults chosen during exercise creation.
+            technique_tags: defaultsByExerciseId[r.exercise_id] || [],
           })) || [];
 
-      if (exercisesToInsert.length > 0) {
-        // 3) Insert workout_exercises
-        const { data: weRows, error: weErr } = await supabase
-          .from('workout_exercises')
-          .insert(exercisesToInsert)
-          .select('id');
+      // 3) Insert workout_exercises
+      const { data: weRows, error: weErr } = await supabase
+        .from('workout_exercises')
+        .insert(exercisesToInsert)
+        .select('id');
 
-        if (weErr) throw weErr;
+      if (weErr) throw weErr;
+      if (!weRows || weRows.length === 0) {
+        throw new Error('Failed to create workout exercises. Please try again.');
+      }
 
-        // 4) Insert one starter set per workout_exercise
-        const setsToInsert =
-          (weRows || []).map((we: any, idx: number) => ({
-            workout_exercise_id: we.id,
-            set_index: 0,
-            reps: 0,
-            weight: 0,
-            rpe: null,
-            is_completed: false,
-          })) || [];
+      // 4) Insert one starter set per workout_exercise
+      const setsToInsert =
+        weRows.map((we: any) => ({
+          workout_exercise_id: we.id,
+          set_index: 0,
+          reps: 0,
+          weight: 0,
+          rpe: null,
+          is_completed: false,
+        })) || [];
 
-        if (setsToInsert.length > 0) {
-          const { error: wsErr } = await supabase.from('workout_sets').insert(setsToInsert);
-          if (wsErr) throw wsErr;
-        }
+      if (setsToInsert.length > 0) {
+        const { error: wsErr } = await supabase.from('workout_sets').insert(setsToInsert);
+        if (wsErr) throw wsErr;
       }
 
       router.push(`/workout/${session.id}`);
     } catch (e: any) {
       console.error(e);
+      // Best-effort cleanup to avoid landing on a broken session screen.
+      if (createdSessionId) {
+        try {
+          await supabase.from('workout_sessions').delete().eq('id', createdSessionId);
+        } catch (cleanupErr) {
+          console.error('Failed to cleanup workout session after start error:', cleanupErr);
+        }
+      }
       setError(e?.message || 'Failed to start routine.');
     } finally {
       setStartingId(null);
@@ -251,8 +287,8 @@ export default function WorkoutStartPage() {
             >
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
-                  {/* Show the DAY name as the card title (instead of repeating routine name) */}
-                  <h2 className="text-xl font-semibold truncate">{day.name}</h2>
+                  <h2 className="text-xl font-semibold truncate">{day.routineName}</h2>
+                  <p className="text-sm text-gray-300">{day.name}</p>
 
                   <p className="text-sm text-gray-400 mt-2 line-clamp-2">{day.preview}</p>
 

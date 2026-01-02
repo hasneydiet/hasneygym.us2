@@ -36,11 +36,10 @@ export default function WorkoutPage() {
     }));
   };
 
-  // Minimal & safe: if stored value is 0 and user hasn't typed yet, show blank value and use placeholder="0"
   const getDraftValue = (setId: string, field: string, fallback: number | null | undefined) => {
     const v = draft[setId]?.[field];
     if (v !== undefined) return v;
-
+    // Mobile typing fix: avoid leading "0" being part of the input value.
     if (fallback === 0) return '';
     return (fallback ?? '').toString();
   };
@@ -111,75 +110,54 @@ export default function WorkoutPage() {
   const loadPreviousSetsForExercises = async (exData: WorkoutExercise[], startedAt: string) => {
     setPrevSetsByExercise({});
 
-    const exerciseIds = Array.from(
-      new Set(
-        exData
-          .map((e: any) => e.exercise_id)
-          .filter(Boolean)
-      )
+    const entries = await Promise.all(
+      exData.map(async (ex) => {
+        const currentWorkoutExerciseId = ex.id;
+        const exerciseId = ex.exercise_id;
+
+        if (!exerciseId) return [currentWorkoutExerciseId, []] as [string, WorkoutSet[]];
+
+        const { data: prevSessions } = await supabase
+          .from('workout_sessions')
+          .select('id, started_at')
+          .lt('started_at', startedAt)
+          .order('started_at', { ascending: false })
+          .limit(25);
+
+        if (!prevSessions || prevSessions.length === 0)
+          return [currentWorkoutExerciseId, []] as [string, WorkoutSet[]];
+
+        let prevWorkoutExerciseId: string | null = null;
+
+        for (const s of prevSessions) {
+          const { data: prevExerciseRow } = await supabase
+            .from('workout_exercises')
+            .select('id')
+            .eq('workout_session_id', s.id)
+            .eq('exercise_id', exerciseId)
+            .limit(1)
+            .maybeSingle();
+
+          if (prevExerciseRow?.id) {
+            prevWorkoutExerciseId = prevExerciseRow.id;
+            break;
+          }
+        }
+
+        if (!prevWorkoutExerciseId) return [currentWorkoutExerciseId, []] as [string, WorkoutSet[]];
+
+        const { data: prevSets } = await supabase
+          .from('workout_sets')
+          .select('*')
+          .eq('workout_exercise_id', prevWorkoutExerciseId)
+          .order('set_index');
+
+        return [currentWorkoutExerciseId, (prevSets || []) as WorkoutSet[]] as [string, WorkoutSet[]];
+      })
     );
 
-    if (exerciseIds.length === 0) {
-      const empty: Record<string, WorkoutSet[]> = {};
-      for (const ex of exData) empty[ex.id] = [];
-      setPrevSetsByExercise(empty);
-      return;
-    }
-
-    // Fetch a pool of recent historical workout_exercises for all exercise_ids in one query,
-    // then select the most recent per exercise_id.
-    const { data: prevWorkoutExercises, error: prevWeErr } = await supabase
-      .from('workout_exercises')
-      .select('id, exercise_id, workout_session_id, workout_sessions!inner(started_at)')
-      .in('exercise_id', exerciseIds)
-      .lt('workout_sessions.started_at', startedAt)
-      .order('workout_sessions(started_at)', { ascending: false })
-      .limit(250);
-
-    if (prevWeErr) {
-      console.error('Failed loading previous workout exercises:', prevWeErr);
-      const empty: Record<string, WorkoutSet[]> = {};
-      for (const ex of exData) empty[ex.id] = [];
-      setPrevSetsByExercise(empty);
-      return;
-    }
-
-    const mostRecentByExerciseId = new Map<string, string>();
-    for (const row of prevWorkoutExercises || []) {
-      const exId = (row as any).exercise_id as string;
-      if (!exId) continue;
-      if (!mostRecentByExerciseId.has(exId)) {
-        mostRecentByExerciseId.set(exId, (row as any).id as string);
-      }
-    }
-
-    const prevWorkoutExerciseIds = Array.from(mostRecentByExerciseId.values());
-    let prevSetsRows: any[] = [];
-    if (prevWorkoutExerciseIds.length > 0) {
-      const { data: prevSets, error: prevSetsErr } = await supabase
-        .from('workout_sets')
-        .select('*')
-        .in('workout_exercise_id', prevWorkoutExerciseIds)
-        .order('set_index');
-      if (prevSetsErr) {
-        console.error('Failed loading previous workout sets:', prevSetsErr);
-      }
-      prevSetsRows = prevSets || [];
-    }
-
-    const prevSetsByPrevWeId: Record<string, WorkoutSet[]> = {};
-    for (const s of prevSetsRows) {
-      const weId = s.workout_exercise_id;
-      prevSetsByPrevWeId[weId] = prevSetsByPrevWeId[weId] || [];
-      prevSetsByPrevWeId[weId].push(s);
-    }
-
     const map: Record<string, WorkoutSet[]> = {};
-    for (const ex of exData) {
-      const exId = (ex as any).exercise_id as string;
-      const prevWeId = exId ? mostRecentByExerciseId.get(exId) : undefined;
-      map[(ex as any).id] = prevWeId ? (prevSetsByPrevWeId[prevWeId] || []) : [];
-    }
+    for (const [k, v] of entries) map[k] = v;
     setPrevSetsByExercise(map);
   };
 
@@ -288,26 +266,9 @@ export default function WorkoutPage() {
     await supabase.from('workout_sets').delete().eq('id', setId);
 
     const remaining = (sets[exerciseId] || []).filter((s: any) => s.id !== setId);
-
-    if (remaining.length > 0) {
-      const payload = remaining.map((s: any, i: number) => ({ id: s.id, set_index: i }));
-      const { error: reindexErr } = await supabase.from('workout_sets').upsert(payload, { onConflict: 'id' });
-      if (reindexErr) {
-        console.error('Failed reindexing sets:', reindexErr);
-      }
+    for (let i = 0; i < remaining.length; i++) {
+      await supabase.from('workout_sets').update({ set_index: i }).eq('id', remaining[i].id);
     }
-
-    loadWorkout();
-  };
-
-  const toggleTechniqueTag = async (exerciseId: string, tag: string) => {
-    const exercise = exercises.find((e: any) => e.id === exerciseId);
-    if (!exercise) return;
-
-    const current: string[] = exercise.technique_tags || [];
-    const updated = current.includes(tag) ? current.filter((t) => t !== tag) : [...current, tag];
-
-    await supabase.from('workout_exercises').update({ technique_tags: updated }).eq('id', exerciseId);
 
     loadWorkout();
   };
@@ -358,6 +319,11 @@ export default function WorkoutPage() {
           {exercises.map((exercise: any) => {
             const prevSets = prevSetsByExercise[exercise.id] || [];
 
+            const effectiveTags: string[] =
+              (exercise.technique_tags && exercise.technique_tags.length > 0
+                ? exercise.technique_tags
+                : exercise.exercises?.default_technique_tags) || [];
+
             return (
               <div key={exercise.id} className="bg-white dark:bg-gray-800 rounded-lg overflow-hidden p-4">
                 <div className="mb-2">
@@ -374,26 +340,20 @@ export default function WorkoutPage() {
                   )}
                 </div>
 
-                <div className="mb-3">
-                  <div className="flex flex-wrap gap-2">
-                    {['drop set', 'rest pause', 'tempo', 'partial', 'pause reps'].map((tag) => {
-                      const active = (exercise.technique_tags || []).includes(tag);
-                      return (
-                        <button
+                {effectiveTags.length > 0 && (
+                  <div className="mb-3">
+                    <div className="flex flex-wrap gap-2">
+                      {effectiveTags.map((tag: string) => (
+                        <span
                           key={tag}
-                          onClick={() => toggleTechniqueTag(exercise.id, tag)}
-                          className={`px-3 py-2 min-h-[44px] rounded-full text-xs font-semibold border ${
-                            active
-                              ? 'bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 border-gray-900 dark:border-gray-100'
-                              : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-700'
-                          }`}
+                          className="px-3 py-2 min-h-[44px] rounded-full text-xs font-semibold bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 border border-gray-900 dark:border-gray-100 inline-flex items-center"
                         >
                           {tag}
-                        </button>
-                      );
-                    })}
+                        </span>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                )}
 
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
@@ -490,9 +450,8 @@ export default function WorkoutPage() {
                             <td className="px-2 py-2 text-center">
                               <button
                                 onClick={() => deleteSet(exercise.id, set.id)}
-                                className="w-11 h-11 inline-flex items-center justify-center rounded-md text-gray-500 hover:text-red-600 hover:bg-red-50 dark:text-gray-400 dark:hover:text-red-400 dark:hover:bg-red-900/20"
+                                className="text-gray-500 hover:text-red-600 dark:text-gray-400 dark:hover:text-red-400 mt-1"
                                 title="Delete set"
-                                aria-label="Delete set"
                               >
                                 ✕
                               </button>
@@ -506,7 +465,7 @@ export default function WorkoutPage() {
                   <div className="mt-3">
                     <button
                       onClick={() => addSet(exercise.id)}
-                      className="px-4 py-3 min-h-[44px] rounded bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 font-semibold"
+                      className="px-4 py-2 rounded bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 font-semibold"
                     >
                       + Add Set
                     </button>
