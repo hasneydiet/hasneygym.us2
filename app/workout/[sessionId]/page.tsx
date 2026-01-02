@@ -28,7 +28,7 @@ export default function WorkoutPage() {
   const sessionId = params.sessionId as string;
 
   const [session, setSession] = useState<WorkoutSession | null>(null);
-  const [exercises, setExercises] = useStatez= useState<WorkoutExercise[]>([]);
+  const [exercises, setExercises] = useState<WorkoutExercise[]>([]);
   const [sets, setSets] = useState<{ [exerciseId: string]: WorkoutSet[] }>({});
 
   // Previous sets per exercise (indexed by set number)
@@ -111,7 +111,6 @@ export default function WorkoutPage() {
   };
 
   useEffect(() => {
-    // Session elapsed timer
     const tick = () => {
       const now = Date.now();
       setElapsedSeconds(Math.max(0, Math.floor((now - startAtMs) / 1000)));
@@ -122,7 +121,6 @@ export default function WorkoutPage() {
   }, [startAtMs]);
 
   useEffect(() => {
-    // cleanup rest timer interval on unmount
     return () => {
       if (restIntervalRef.current) {
         window.clearInterval(restIntervalRef.current);
@@ -157,7 +155,6 @@ export default function WorkoutPage() {
 
     setExercises(exData);
 
-    // Load ALL sets in one go
     const exIds = exData.map((e: any) => e.id);
     const { data: allSets } = await supabase
       .from('workout_sets')
@@ -437,22 +434,16 @@ export default function WorkoutPage() {
                         const prevReps = prev?.reps ?? null;
                         const prevWeight = prev?.weight ?? null;
 
-                        // Placeholders show last session values
                         const repsPlaceholder =
-                          prevReps !== null && prevReps !== undefined && prevReps !== ''
-                            ? String(prevReps)
-                            : String(set.reps ?? 0);
+                          prevReps !== null && prevReps !== undefined && prevReps !== '' ? String(prevReps) : '';
 
                         const weightPlaceholder =
-                          prevWeight !== null && prevWeight !== undefined && prevWeight !== ''
-                            ? String(prevWeight)
-                            : '0';
+                          prevWeight !== null && prevWeight !== undefined && prevWeight !== '' ? String(prevWeight) : '';
 
                         return (
                           <tr key={set.id} className="border-b border-gray-800 align-top">
                             <td className="px-2 py-2 font-medium">{idx + 1}</td>
 
-                            {/* Reps: SAME behavior as Weight (blank input, onBlur commit) */}
                             <td className="px-2 py-2">
                               <input
                                 type="number"
@@ -463,8 +454,10 @@ export default function WorkoutPage() {
                                 onFocus={(e) => e.currentTarget.select()}
                                 onBlur={() => {
                                   const raw = getDraftOrEmpty(set.id, 'reps').trim();
-                                  const num = raw === '' ? (set.reps ?? 0) : Number(raw);
-                                  saveSet(set.id, 'reps', Number.isFinite(num) ? num : (set.reps ?? 0));
+                                  if (raw !== '') {
+                                    const num = Number(raw);
+                                    saveSet(set.id, 'reps', Number.isFinite(num) ? num : (set.reps ?? 0));
+                                  }
                                   clearDraftField(set.id, 'reps');
                                 }}
                                 className="w-full h-11 px-2 py-2 border border-gray-700 rounded text-center bg-gray-900/40 text-white placeholder:text-gray-500"
@@ -472,7 +465,6 @@ export default function WorkoutPage() {
                               {formatPrevLine('Prev:', prevReps)}
                             </td>
 
-                            {/* Weight: blank input, onBlur commit */}
                             <td className="px-2 py-2">
                               <input
                                 type="number"
@@ -484,8 +476,10 @@ export default function WorkoutPage() {
                                 onFocus={(e) => e.currentTarget.select()}
                                 onBlur={() => {
                                   const raw = getDraftOrEmpty(set.id, 'weight').trim();
-                                  const num = raw === '' ? (set.weight ?? 0) : Number(raw);
-                                  saveSet(set.id, 'weight', Number.isFinite(num) ? num : (set.weight ?? 0));
+                                  if (raw !== '') {
+                                    const num = Number(raw);
+                                    saveSet(set.id, 'weight', Number.isFinite(num) ? num : (set.weight ?? 0));
+                                  }
                                   clearDraftField(set.id, 'weight');
                                 }}
                                 className="w-full h-11 px-2 py-2 border border-gray-700 rounded text-center bg-gray-900/40 text-white placeholder:text-gray-500"
