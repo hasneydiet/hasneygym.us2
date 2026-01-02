@@ -27,6 +27,30 @@ function safeInt(v: any, fallback: number) {
   return i < 0 ? fallback : i;
 }
 
+async function getAuthedUser() {
+  // Prefer session (fast + avoids AuthSessionMissingError edge cases)
+  const { data: sessData } = await supabase.auth.getSession();
+  const session = sessData?.session ?? null;
+  if (session?.user) return session.user;
+
+  // Fallback to getUser (can throw "Auth session missing" in some environments)
+  try {
+    const res = await supabase.auth.getUser();
+    if (res.error) {
+      const msg = (res.error as any)?.message;
+      const name = (res.error as any)?.name;
+      if (name === 'AuthSessionMissingError' || (msg && /auth session missing/i.test(String(msg)))) return null;
+      throw res.error;
+    }
+    return res.data?.user ?? null;
+  } catch (e: any) {
+    const msg = e?.message;
+    const name = e?.name;
+    if (name === 'AuthSessionMissingError' || (msg && /auth session missing/i.test(String(msg)))) return null;
+    throw e;
+  }
+}
+
 export default function WorkoutStartPage() {
   const router = useRouter();
 
@@ -46,12 +70,7 @@ export default function WorkoutStartPage() {
       setError(null);
 
       try {
-        const {
-          data: { user },
-          error: userErr,
-        } = await supabase.auth.getUser();
-
-        if (userErr) throw userErr;
+        const user = await getAuthedUser();
         if (!user) {
           router.push('/login');
           return;
@@ -151,12 +170,7 @@ export default function WorkoutStartPage() {
       setStartingId(day.id);
       setError(null);
 
-      const {
-        data: { user },
-        error: userErr,
-      } = await supabase.auth.getUser();
-
-      if (userErr) throw userErr;
+      const user = await getAuthedUser();
       if (!user) {
         router.push('/login');
         return;
@@ -188,26 +202,6 @@ export default function WorkoutStartPage() {
 
       if (rdeErr) throw rdeErr;
 
-      // Build lookup by exercise_id so we know how many sets to create
-      const rdeByExerciseId: Record<
-        string,
-        {
-          order_index: number;
-          default_sets: any[];
-          default_set_scheme: any | null;
-        }
-      > = {};
-
-      for (const row of rdeRows || []) {
-        const exerciseId = (row as any).exercise_id as string | undefined;
-        if (!exerciseId) continue;
-        rdeByExerciseId[exerciseId] = {
-          order_index: (row as any).order_index ?? 0,
-          default_sets: Array.isArray((row as any).default_sets) ? (row as any).default_sets : [],
-          default_set_scheme: (row as any).exercises?.default_set_scheme ?? null,
-        };
-      }
-
       const exercisesToInsert =
         (rdeRows || [])
           .filter((r: any) => r.exercise_id)
@@ -227,6 +221,24 @@ export default function WorkoutStartPage() {
 
         if (weErr) throw weErr;
 
+        // Build lookup by exercise_id so we know how many sets to create
+        const rdeByExerciseId: Record<
+          string,
+          {
+            default_sets: any[];
+            default_set_scheme: any | null;
+          }
+        > = {};
+
+        for (const row of rdeRows || []) {
+          const exerciseId = (row as any).exercise_id as string | undefined;
+          if (!exerciseId) continue;
+          rdeByExerciseId[exerciseId] = {
+            default_sets: Array.isArray((row as any).default_sets) ? (row as any).default_sets : [],
+            default_set_scheme: (row as any).exercises?.default_set_scheme ?? null,
+          };
+        }
+
         // 4) Insert starter sets (N sets per exercise based on default scheme)
         const setsToInsert: any[] = [];
 
@@ -245,17 +257,19 @@ export default function WorkoutStartPage() {
           if (Array.isArray(defaultSetsArray) && defaultSetsArray.length > 0) {
             setsCount = Math.max(1, defaultSetsArray.length);
           } else if (scheme && typeof scheme === 'object') {
-            setsCount = Math.max(1, safeInt(scheme.sets, 1));
+            setsCount = Math.max(1, safeInt((scheme as any).sets, 1));
           }
 
           if (scheme && typeof scheme === 'object') {
-            defaultReps = Math.max(0, safeInt(scheme.reps, 0));
+            defaultReps = Math.max(0, safeInt((scheme as any).reps, 0));
           }
 
           for (let i = 0; i < setsCount; i++) {
             const fromDefaultArray = Array.isArray(defaultSetsArray) ? defaultSetsArray[i] : null;
-            const repsFromArray = fromDefaultArray && typeof fromDefaultArray === 'object' ? fromDefaultArray.reps : undefined;
-            const weightFromArray = fromDefaultArray && typeof fromDefaultArray === 'object' ? fromDefaultArray.weight : undefined;
+            const repsFromArray =
+              fromDefaultArray && typeof fromDefaultArray === 'object' ? (fromDefaultArray as any).reps : undefined;
+            const weightFromArray =
+              fromDefaultArray && typeof fromDefaultArray === 'object' ? (fromDefaultArray as any).weight : undefined;
 
             setsToInsert.push({
               workout_exercise_id: workoutExerciseId,
