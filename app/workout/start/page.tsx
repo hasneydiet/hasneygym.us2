@@ -21,9 +21,10 @@ export default function WorkoutStartPage() {
 
   const [routineDays, setRoutineDays] = useState<RoutineDayCard[]>([]);
   const [loading, setLoading] = useState(true);
-
-  // per-card menu open state
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+
+  // Helpful debug (shows if RLS/auth is the issue)
+  const [debugMsg, setDebugMsg] = useState<string>('');
 
   useEffect(() => {
     loadRoutineDays();
@@ -32,29 +33,71 @@ export default function WorkoutStartPage() {
 
   const loadRoutineDays = async () => {
     setLoading(true);
+    setDebugMsg('');
 
-    // Load routine days + routine names
+    // 1) Ensure we have an authenticated user (RLS-safe)
+    const { data: userRes, error: userErr } = await supabase.auth.getUser();
+    const user = userRes?.user;
+
+    if (userErr) {
+      console.error('auth.getUser error:', userErr);
+    }
+    if (!user) {
+      // If not logged in, redirect to login (or show message)
+      setDebugMsg('Not logged in. Please log in again.');
+      setLoading(false);
+      router.push('/login');
+      return;
+    }
+
+    // 2) Load user routines (RLS typically expects user_id = auth.uid())
+    const { data: routinesData, error: routinesErr } = await supabase
+      .from('routines')
+      .select('id, name')
+      // IMPORTANT: if your routines table uses a different owner field,
+      // change user_id to that column name.
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+
+    if (routinesErr) {
+      console.error('Failed to load routines:', routinesErr);
+      setDebugMsg('Failed to load routines (check RLS / user_id column).');
+    }
+
+    const routinesList = (routinesData || []) as Routine[];
+    const routineNameById: Record<string, string> = {};
+    const routineIds = routinesList.map((r: any) => r.id);
+
+    for (const r of routinesList) routineNameById[r.id] = r.name;
+
+    if (routineIds.length === 0) {
+      setRoutineDays([]);
+      setDebugMsg('No routines found for this user.');
+      setLoading(false);
+      return;
+    }
+
+    // 3) Load routine days for those routines
     const { data: daysData, error: daysErr } = await supabase
       .from('routine_days')
       .select('id, routine_id, name, order_index')
+      .in('routine_id', routineIds)
       .order('order_index', { ascending: true });
 
-    if (daysErr) console.error('Failed to load routine days:', daysErr);
-
-    const { data: routinesData } = await supabase.from('routines').select('id, name');
-
-    const routineNameById: Record<string, string> = {};
-    for (const r of routinesData || []) {
-      routineNameById[r.id] = r.name;
+    if (daysErr) {
+      console.error('Failed to load routine days:', daysErr);
+      setDebugMsg('Failed to load routine days (check RLS / routine_id).');
     }
 
     const daysList = (daysData || []) as RoutineDay[];
+
+    // Attach routine name
     const daysWithNames: RoutineDayCard[] = daysList.map((d: any) => ({
       ...d,
       routineName: routineNameById[d.routine_id] || 'Routine',
     }));
 
-    // Build exercise preview from routine_day_exercises (correct source)
+    // 4) Build preview from routine_day_exercises (correct table)
     const withPreview = await Promise.all(
       daysWithNames.map(async (d: any) => {
         const { data: exRows, error: exErr } = await supabase
@@ -71,10 +114,9 @@ export default function WorkoutStartPage() {
             .map((x: any) => x.exercises?.name)
             .filter(Boolean) as string[];
 
-        const preview =
-          names.length > 0 ? names.join(' • ') : 'No exercises added yet';
+        const preview = names.length > 0 ? names.join(' • ') : 'No exercises added yet';
 
-        // last performed
+        // Last performed
         const { data: lastSession } = await supabase
           .from('workout_sessions')
           .select('started_at')
@@ -106,23 +148,35 @@ export default function WorkoutStartPage() {
   };
 
   const startRoutineDay = async (routineDay: RoutineDayCard) => {
-    // 1) Create workout session
+    setDebugMsg('');
+
+    const { data: userRes } = await supabase.auth.getUser();
+    const user = userRes?.user;
+    if (!user) {
+      router.push('/login');
+      return;
+    }
+
+    // Create session
     const { data: session, error: sessionErr } = await supabase
       .from('workout_sessions')
       .insert({
         routine_id: routineDay.routine_id,
         routine_day_id: routineDay.id,
         started_at: new Date().toISOString(),
+        // If your workout_sessions has user_id, keep it consistent with RLS
+        user_id: user.id,
       })
       .select()
       .single();
 
     if (sessionErr || !session?.id) {
       console.error('Failed to create workout session:', sessionErr);
+      setDebugMsg('Failed to start workout session.');
       return;
     }
 
-    // 2) Load exercises for this routine day from routine_day_exercises
+    // Load day exercises (source of truth)
     const { data: dayExercises, error: dayExErr } = await supabase
       .from('routine_day_exercises')
       .select('exercise_id, order_index')
@@ -131,11 +185,12 @@ export default function WorkoutStartPage() {
 
     if (dayExErr) {
       console.error('Failed to load day exercises:', dayExErr);
+      setDebugMsg('Session created but failed to load day exercises.');
     }
 
     const rows = (dayExercises || []) as any[];
 
-    // 3) Insert workout_exercises for this session (bulk)
+    // Insert workout_exercises for session
     if (rows.length > 0) {
       const payload = rows.map((r, idx) => ({
         workout_session_id: session.id,
@@ -147,10 +202,10 @@ export default function WorkoutStartPage() {
 
       if (insertErr) {
         console.error('Failed to insert workout exercises:', insertErr);
+        setDebugMsg('Session created but failed to insert workout exercises.');
       }
     }
 
-    // 4) Navigate immediately
     router.push(`/workout/${session.id}`);
   };
 
@@ -161,8 +216,14 @@ export default function WorkoutStartPage() {
       <div className="max-w-3xl mx-auto px-4 pt-6">
         <h1 className="text-4xl font-extrabold tracking-tight mb-4">Workout</h1>
 
+        {!!debugMsg && (
+          <div className="mb-4 rounded-xl border border-white/10 bg-white/5 p-3 text-white/80 text-sm">
+            {debugMsg}
+          </div>
+        )}
+
         {loading ? (
-          <div className="text-white/70">Loading routines…</div>
+          <div className="text-white/70">Loading…</div>
         ) : (
           <div className="space-y-4">
             {sortedDays.map((d: any) => (
@@ -174,9 +235,11 @@ export default function WorkoutStartPage() {
                   <div className="min-w-0">
                     <div className="text-2xl font-bold truncate">{d.routineName || 'Routine'}</div>
                     <div className="text-sm text-white/70 mt-1">{d.name || ''}</div>
+
                     <div className="text-sm text-white/60 mt-3 line-clamp-2">
                       {d.exercisePreview}
                     </div>
+
                     <div className="text-sm text-white/55 mt-3">
                       Last performed: {d.lastPerformed || '—'}
                     </div>
@@ -191,7 +254,7 @@ export default function WorkoutStartPage() {
                   </button>
                 </div>
 
-                {/* Menu (placeholder actions) */}
+                {/* Menu placeholder (kept minimal to avoid breaking your actions) */}
                 {openMenuId === d.id && (
                   <div className="absolute right-4 top-14 z-20 w-44 rounded-xl border border-white/10 bg-black/90 backdrop-blur p-2">
                     <button className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10">
