@@ -8,6 +8,12 @@ type BrandLogoProps = {
   showTagline?: boolean;
   taglineOnMobile?: boolean;
   centered?: boolean;
+
+  /**
+   * Kept for backward compatibility.
+   * (Previously used when helmet icon existed)
+   */
+  iconSize?: number;
 };
 
 export default function BrandLogo({
