@@ -140,8 +140,6 @@ export default function WorkoutStartPage() {
   }, [router]);
 
   const startRoutineDay = async (day: RoutineDayCard) => {
-    let createdSessionId: string | null = null;
-
     try {
       setStartingId(day.id);
       setError(null);
@@ -174,8 +172,6 @@ export default function WorkoutStartPage() {
       if (sessErr) throw sessErr;
       if (!session?.id) throw new Error('Failed to create workout session.');
 
-      createdSessionId = session.id;
-
       // 2) Pull routine_day_exercises
       const { data: rdeRows, error: rdeErr } = await supabase
         .from('routine_day_exercises')
@@ -195,53 +191,35 @@ export default function WorkoutStartPage() {
             technique_tags: [],
           })) || [];
 
-      // HARD GUARANTEE: never allow a session to continue without exercises
-      if (exercisesToInsert.length === 0) {
-        throw new Error('This routine day has no exercises. Add exercises to the day before starting.');
-      }
+      if (exercisesToInsert.length > 0) {
+        // 3) Insert workout_exercises
+        const { data: weRows, error: weErr } = await supabase
+          .from('workout_exercises')
+          .insert(exercisesToInsert)
+          .select('id');
 
-      // 3) Insert workout_exercises
-      const { data: weRows, error: weErr } = await supabase
-        .from('workout_exercises')
-        .insert(exercisesToInsert)
-        .select('id');
+        if (weErr) throw weErr;
 
-      if (weErr) throw weErr;
+        // 4) Insert one starter set per workout_exercise
+        const setsToInsert =
+          (weRows || []).map((we: any, idx: number) => ({
+            workout_exercise_id: we.id,
+            set_index: 0,
+            reps: 0,
+            weight: 0,
+            rpe: null,
+            is_completed: false,
+          })) || [];
 
-      if (!weRows || weRows.length === 0) {
-        throw new Error('Failed to create workout exercises. Please try again.');
-      }
-
-      // 4) Insert one starter set per workout_exercise
-      const setsToInsert =
-        weRows.map((we: any) => ({
-          workout_exercise_id: we.id,
-          set_index: 0,
-          reps: 0,
-          weight: 0,
-          rpe: null,
-          is_completed: false,
-        })) || [];
-
-      if (setsToInsert.length > 0) {
-        const { error: wsErr } = await supabase.from('workout_sets').insert(setsToInsert);
-        if (wsErr) throw wsErr;
+        if (setsToInsert.length > 0) {
+          const { error: wsErr } = await supabase.from('workout_sets').insert(setsToInsert);
+          if (wsErr) throw wsErr;
+        }
       }
 
       router.push(`/workout/${session.id}`);
     } catch (e: any) {
       console.error(e);
-
-      // If we created a session but failed later, delete it so you never land on a broken workout page.
-      if (createdSessionId) {
-        try {
-          // Best-effort cleanup; ignore errors here.
-          await supabase.from('workout_sessions').delete().eq('id', createdSessionId);
-        } catch (cleanupErr) {
-          console.error('Failed to cleanup broken workout session:', cleanupErr);
-        }
-      }
-
       setError(e?.message || 'Failed to start routine.');
     } finally {
       setStartingId(null);
