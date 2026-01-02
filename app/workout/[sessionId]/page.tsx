@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 
@@ -8,6 +8,20 @@ type WorkoutSession = any;
 type WorkoutExercise = any;
 type WorkoutSet = any;
 type ExerciseLastTime = any;
+
+function formatClock(totalSeconds: number) {
+  const s = Math.max(0, Math.floor(totalSeconds));
+  const hh = Math.floor(s / 3600);
+  const mm = Math.floor((s % 3600) / 60);
+  const ss = s % 60;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return hh > 0 ? `${hh}:${pad(mm)}:${pad(ss)}` : `${mm}:${pad(ss)}`;
+}
+
+function clampInt(n: number, min: number, max: number) {
+  if (!Number.isFinite(n)) return min;
+  return Math.min(max, Math.max(min, Math.floor(n)));
+}
 
 export default function WorkoutPage() {
   const params = useParams();
@@ -25,9 +39,22 @@ export default function WorkoutPage() {
   // Draft input state (smooth typing)
   const [draft, setDraft] = useState<Record<string, Record<string, string>>>({});
 
+  // Session timer
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  // Rest timer (starts when you complete a set)
+  const [restSecondsRemaining, setRestSecondsRemaining] = useState<number | null>(null);
+  const [restDurationSeconds, setRestDurationSeconds] = useState<number>(90);
+  const restIntervalRef = useRef<number | null>(null);
+
   // End/Discard states
   const [ending, setEnding] = useState(false);
   const [discarding, setDiscarding] = useState(false);
+
+  const startAtMs = useMemo(() => {
+    const started = session?.started_at ? new Date(session.started_at).getTime() : NaN;
+    return Number.isFinite(started) ? started : Date.now();
+  }, [session?.started_at]);
 
   const setDraftValue = (setId: string, field: string, value: string) => {
     setDraft((prev) => ({
@@ -40,13 +67,6 @@ export default function WorkoutPage() {
     return draft[setId]?.[field];
   };
 
-  const getDraftValue = (setId: string, field: string, fallback: number | null | undefined) => {
-    const v = draft[setId]?.[field];
-    if (v !== undefined) return v;
-    if (fallback === 0) return '';
-    return (fallback ?? '').toString();
-  };
-
   const clearDraftField = (setId: string, field: string) => {
     setDraft((prev) => {
       const next = { ...prev };
@@ -57,6 +77,60 @@ export default function WorkoutPage() {
       return next;
     });
   };
+
+  const stopRestTimer = () => {
+    setRestSecondsRemaining(null);
+    if (restIntervalRef.current) {
+      window.clearInterval(restIntervalRef.current);
+      restIntervalRef.current = null;
+    }
+  };
+
+  const startRestTimer = (seconds: number) => {
+    const dur = clampInt(seconds, 5, 600);
+    setRestSecondsRemaining(dur);
+
+    if (restIntervalRef.current) {
+      window.clearInterval(restIntervalRef.current);
+      restIntervalRef.current = null;
+    }
+
+    restIntervalRef.current = window.setInterval(() => {
+      setRestSecondsRemaining((prev) => {
+        if (prev === null) return null;
+        const next = prev - 1;
+        if (next <= 0) {
+          if (restIntervalRef.current) {
+            window.clearInterval(restIntervalRef.current);
+            restIntervalRef.current = null;
+          }
+          return null;
+        }
+        return next;
+      });
+    }, 1000);
+  };
+
+  useEffect(() => {
+    // Session elapsed timer
+    const tick = () => {
+      const now = Date.now();
+      setElapsedSeconds(Math.max(0, Math.floor((now - startAtMs) / 1000)));
+    };
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, [startAtMs]);
+
+  useEffect(() => {
+    // cleanup rest timer interval on unmount
+    return () => {
+      if (restIntervalRef.current) {
+        window.clearInterval(restIntervalRef.current);
+        restIntervalRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     loadWorkout();
@@ -164,6 +238,9 @@ export default function WorkoutPage() {
     setPrevSetsByExercise(map);
   };
 
+  /**
+   * Save onBlur (no lag) + optimistic UI update
+   */
   const saveSet = async (setId: string, field: string, value: any) => {
     setSets((prev) => {
       const next: { [exerciseId: string]: WorkoutSet[] } = {};
@@ -178,6 +255,14 @@ export default function WorkoutPage() {
     if (error) {
       console.error('Save failed:', error);
       loadWorkout();
+    }
+  };
+
+  const handleToggleCompleted = async (setRow: any) => {
+    const willComplete = !setRow.is_completed;
+    await saveSet(setRow.id, 'is_completed', willComplete);
+    if (willComplete) {
+      startRestTimer(restDurationSeconds);
     }
   };
 
@@ -273,6 +358,17 @@ export default function WorkoutPage() {
     loadWorkout();
   };
 
+  const toggleTechniqueTag = async (exerciseId: string, tag: string) => {
+    const exercise = exercises.find((e: any) => e.id === exerciseId);
+    if (!exercise) return;
+
+    const current: string[] = exercise.technique_tags || [];
+    const updated = current.includes(tag) ? current.filter((t) => t !== tag) : [...current, tag];
+
+    await supabase.from('workout_exercises').update({ technique_tags: updated }).eq('id', exerciseId);
+    loadWorkout();
+  };
+
   const formatPrevLine = (label: string, value: string | number | null | undefined) => {
     if (value === null || value === undefined || value === '') return null;
     return (
@@ -302,25 +398,85 @@ export default function WorkoutPage() {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <div className="max-w-5xl mx-auto px-4 py-6">
-        <div className="flex items-start justify-between mb-6">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+        <div className="flex items-start justify-between gap-4 mb-6">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 truncate">
               {session?.routines?.name || 'Workout'}
             </h1>
             {session?.routine_days?.name && (
-              <p className="text-gray-600 dark:text-gray-400">{session.routine_days.name}</p>
+              <p className="text-gray-600 dark:text-gray-400 truncate">{session.routine_days.name}</p>
+            )}
+          </div>
+
+          <div className="flex flex-col items-end gap-2 shrink-0">
+            <div className="inline-flex items-center gap-2 rounded-full border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-1.5">
+              <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400">TIME</span>
+              <span className="font-mono text-sm font-semibold text-gray-900 dark:text-gray-100 tabular-nums">
+                {formatClock(elapsedSeconds)}
+              </span>
+            </div>
+
+            {restSecondsRemaining !== null && (
+              <div className="inline-flex items-center gap-2 rounded-full border border-green-300/70 dark:border-green-600/60 bg-green-50 dark:bg-green-900/20 px-3 py-1.5">
+                <span className="text-[11px] font-semibold text-green-700 dark:text-green-300">REST</span>
+                <span className="font-mono text-sm font-semibold text-green-900 dark:text-green-100 tabular-nums">
+                  {formatClock(restSecondsRemaining)}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setRestSecondsRemaining((v) => (v === null ? null : v + 15))}
+                  className="min-h-[36px] min-w-[36px] rounded-full bg-white/70 dark:bg-white/10 text-green-900 dark:text-green-100 border border-green-200/70 dark:border-green-700/50 text-xs font-semibold"
+                  title="+15s"
+                >
+                  +15
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRestSecondsRemaining((v) => (v === null ? null : v + 30))}
+                  className="min-h-[36px] min-w-[36px] rounded-full bg-white/70 dark:bg-white/10 text-green-900 dark:text-green-100 border border-green-200/70 dark:border-green-700/50 text-xs font-semibold"
+                  title="+30s"
+                >
+                  +30
+                </button>
+                <button
+                  type="button"
+                  onClick={stopRestTimer}
+                  className="min-h-[36px] min-w-[36px] rounded-full bg-white/70 dark:bg-white/10 text-green-900 dark:text-green-100 border border-green-200/70 dark:border-green-700/50 text-xs font-semibold"
+                  title="Stop rest timer"
+                >
+                  ✕
+                </button>
+              </div>
             )}
           </div>
         </div>
 
+        {restSecondsRemaining === null && (
+          <div className="mb-6 flex flex-wrap items-center gap-2">
+            <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 mr-1">Rest:</span>
+            {[60, 90, 120].map((sec) => {
+              const active = restDurationSeconds === sec;
+              return (
+                <button
+                  key={sec}
+                  type="button"
+                  onClick={() => setRestDurationSeconds(sec)}
+                  className={`min-h-[44px] px-4 rounded-full text-sm font-semibold border transition ${
+                    active
+                      ? 'bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 border-gray-900 dark:border-gray-100'
+                      : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-700'
+                  }`}
+                >
+                  {sec}s
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         <div className="space-y-6">
           {exercises.map((exercise: any) => {
             const prevSets = prevSetsByExercise[exercise.id] || [];
-
-            const effectiveTags: string[] =
-              (exercise.technique_tags && exercise.technique_tags.length > 0
-                ? exercise.technique_tags
-                : exercise.exercises?.default_technique_tags) || [];
 
             return (
               <div key={exercise.id} className="bg-white dark:bg-gray-800 rounded-lg overflow-hidden p-4">
@@ -329,21 +485,6 @@ export default function WorkoutPage() {
                     {exercise.exercises?.name || 'Exercise'}
                   </h3>
                 </div>
-
-                {effectiveTags.length > 0 && (
-                  <div className="mb-3">
-                    <div className="flex flex-wrap gap-2">
-                      {effectiveTags.map((tag: string) => (
-                        <span
-                          key={tag}
-                          className="px-3 py-2 min-h-[44px] rounded-full text-xs font-semibold bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 border border-gray-900 dark:border-gray-100 inline-flex items-center"
-                        >
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
 
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
@@ -366,10 +507,14 @@ export default function WorkoutPage() {
                         const pr = isPR(set, prev);
 
                         const repsPlaceholder =
-                          prevReps !== null && prevReps !== undefined && prevReps !== '' ? String(prevReps) : String(set.reps ?? 0);
+                          prevReps !== null && prevReps !== undefined && prevReps !== ''
+                            ? String(prevReps)
+                            : String(set.reps ?? 0);
 
                         const weightPlaceholder =
-                          prevWeight !== null && prevWeight !== undefined && prevWeight !== '' ? String(prevWeight) : '0';
+                          prevWeight !== null && prevWeight !== undefined && prevWeight !== ''
+                            ? String(prevWeight)
+                            : '0';
 
                         return (
                           <tr
@@ -378,16 +523,7 @@ export default function WorkoutPage() {
                               pr ? 'bg-green-50/60 dark:bg-green-900/20' : 'border-gray-100'
                             }`}
                           >
-                            <td className="px-2 py-2 font-medium text-gray-900 dark:text-gray-100">
-                              <div className="flex items-center gap-2">
-                                <span>{idx + 1}</span>
-                                {pr && (
-                                  <span className="inline-flex items-center rounded-full bg-green-600 text-white text-[10px] px-2 py-0.5">
-                                    PR
-                                  </span>
-                                )}
-                              </div>
-                            </td>
+                            <td className="px-2 py-2 font-medium text-gray-900 dark:text-gray-100">{idx + 1}</td>
 
                             <td className="px-2 py-2">
                               <input
@@ -398,7 +534,6 @@ export default function WorkoutPage() {
                                 onChange={(e) => setDraftValue(set.id, 'reps', e.target.value)}
                                 onBlur={() => {
                                   const raw = getDraftRaw(set.id, 'reps');
-                                  // If user didn't type anything, keep existing reps.
                                   if (raw === undefined || raw.trim() === '') {
                                     clearDraftField(set.id, 'reps');
                                     return;
@@ -424,7 +559,6 @@ export default function WorkoutPage() {
                                 onChange={(e) => setDraftValue(set.id, 'weight', e.target.value)}
                                 onBlur={() => {
                                   const raw = getDraftRaw(set.id, 'weight');
-                                  // If user didn't type anything, keep existing weight.
                                   if (raw === undefined || raw.trim() === '') {
                                     clearDraftField(set.id, 'weight');
                                     return;
@@ -442,12 +576,13 @@ export default function WorkoutPage() {
 
                             <td className="px-2 py-2 text-center">
                               <button
-                                onClick={() => saveSet(set.id, 'is_completed', !set.is_completed)}
+                                onClick={() => handleToggleCompleted(set)}
                                 className={`w-11 h-11 rounded border-2 flex items-center justify-center ${
                                   set.is_completed
                                     ? 'bg-gray-900 dark:bg-gray-100 border-gray-900 dark:border-gray-100'
                                     : 'border-gray-300 dark:border-gray-700'
                                 }`}
+                                title="Mark set complete"
                               >
                                 {set.is_completed && <span className="text-white dark:text-gray-900 text-xs">✓</span>}
                               </button>
@@ -456,7 +591,7 @@ export default function WorkoutPage() {
                             <td className="px-2 py-2 text-center">
                               <button
                                 onClick={() => deleteSet(exercise.id, set.id)}
-                                className="text-gray-500 hover:text-red-600 dark:text-gray-400 dark:hover:text-red-400 mt-1"
+                                className="w-11 h-11 rounded text-gray-500 hover:text-red-600 dark:text-gray-400 dark:hover:text-red-400"
                                 title="Delete set"
                               >
                                 ✕
@@ -471,7 +606,7 @@ export default function WorkoutPage() {
                   <div className="mt-3">
                     <button
                       onClick={() => addSet(exercise.id)}
-                      className="px-4 py-2 rounded bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 font-semibold"
+                      className="min-h-[44px] px-4 py-2 rounded bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 font-semibold"
                     >
                       + Add Set
                     </button>
@@ -485,7 +620,7 @@ export default function WorkoutPage() {
             <button
               onClick={endWorkout}
               disabled={ending || discarding}
-              className="w-full px-4 py-3 rounded-lg bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
+              className="w-full min-h-[44px] px-4 py-3 rounded-lg bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {ending ? 'Ending…' : 'End Workout'}
             </button>
@@ -493,7 +628,7 @@ export default function WorkoutPage() {
             <button
               onClick={discardWorkout}
               disabled={ending || discarding}
-              className="w-full px-4 py-3 rounded-lg border border-red-500/60 text-red-600 dark:text-red-400 font-semibold bg-transparent disabled:opacity-60 disabled:cursor-not-allowed"
+              className="w-full min-h-[44px] px-4 py-3 rounded-lg border border-red-500/60 text-red-600 dark:text-red-400 font-semibold bg-transparent disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {discarding ? 'Discarding…' : 'Discard Workout'}
             </button>
