@@ -27,6 +27,27 @@ function safeInt(v: any, fallback: number) {
   return i < 0 ? fallback : i;
 }
 
+// Normalize JSON-ish columns that may arrive as arrays, objects, or strings.
+// Keeps existing behavior but prevents "off-by-one" set creation when default_sets
+// is stored as JSON text.
+function normalizeDefaultSets(raw: any): any[] {
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  // Some environments may coerce JSON to an object with numeric keys.
+  if (raw && typeof raw === 'object') {
+    const vals = Object.values(raw);
+    return Array.isArray(vals) ? vals : [];
+  }
+  return [];
+}
+
 async function getAuthedUser() {
   // Prefer session (fast + avoids AuthSessionMissingError edge cases)
   const { data: sessData } = await supabase.auth.getSession();
@@ -234,7 +255,7 @@ export default function WorkoutStartPage() {
           const exerciseId = (row as any).exercise_id as string | undefined;
           if (!exerciseId) continue;
           rdeByExerciseId[exerciseId] = {
-            default_sets: Array.isArray((row as any).default_sets) ? (row as any).default_sets : [],
+	            default_sets: normalizeDefaultSets((row as any).default_sets),
             default_set_scheme: (row as any).exercises?.default_set_scheme ?? null,
           };
         }
