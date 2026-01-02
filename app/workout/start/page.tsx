@@ -1,7 +1,19 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navint?: number;
+import { useRouter } from 'next/navigation';
+
+import Navigation from '@/components/Navigation';
+import { supabase } from '@/lib/supabase';
+import { Routine, RoutineDay } from '@/lib/types';
+import { ChevronDown, MoreHorizontal } from 'lucide-react';
+
+export const dynamic = 'force-dynamic';
+
+type RoutineDayCard = RoutineDay & {
+  routineName?: string;
+  preview?: string;
+  exerciseCount?: number;
 };
 
 export default function WorkoutStartPage() {
