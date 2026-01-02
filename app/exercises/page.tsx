@@ -8,6 +8,41 @@ import { supabase } from '@/lib/supabase';
 import { Exercise, TECHNIQUE_TAGS } from '@/lib/types';
 import { Plus, Search, Edit2, Trash2, TrendingUp } from 'lucide-react';
 
+// Non-breaking: HTML datalist suggestions keep inputs free-form while providing a fast picker on mobile/desktop.
+const MUSCLE_GROUP_OPTIONS = [
+  'Chest',
+  'Back',
+  'Shoulders',
+  'Biceps',
+  'Triceps',
+  'Forearms',
+  'Abs',
+  'Obliques',
+  'Traps',
+  'Lats',
+  'Lower Back',
+  'Glutes',
+  'Quads',
+  'Hamstrings',
+  'Calves',
+  'Adductors',
+  'Abductors',
+  'Hip Flexors',
+  'Full Body',
+  'Cardio',
+];
+
+const EQUIPMENT_OPTIONS = [
+  'Dumbbell',
+  'Barbell',
+  'Machine',
+  'Smith Machine',
+  'Cables',
+  'Kettlebell',
+  'Body Weight',
+  'Resistance Bands',
+];
+
 export const dynamic = 'force-dynamic';
 
 export default function ExercisesPage() {
@@ -182,9 +217,15 @@ export default function ExercisesPage() {
                     type="text"
                     value={formData.muscle_group}
                     onChange={(e) => setFormData({ ...formData, muscle_group: e.target.value })}
+                    list="muscle-group-options"
                     className="w-full px-4 py-2 rounded-xl border border-input bg-background/70 backdrop-blur text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background"
-                    placeholder="e.g., Chest, Back, Legs"
+                    placeholder="E.g., Chest, Back, Legs"
                   />
+                  <datalist id="muscle-group-options">
+                    {MUSCLE_GROUP_OPTIONS.map((opt) => (
+                      <option key={opt} value={opt} />
+                    ))}
+                  </datalist>
                 </div>
 
                 <div>
@@ -195,9 +236,15 @@ export default function ExercisesPage() {
                     type="text"
                     value={formData.equipment}
                     onChange={(e) => setFormData({ ...formData, equipment: e.target.value })}
+                    list="equipment-options"
                     className="w-full px-4 py-2 rounded-xl border border-input bg-background/70 backdrop-blur text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background"
-                    placeholder="e.g., Barbell, Dumbbell, Machine"
+                    placeholder="E.g., Dumbbell, Barbell, Machine"
                   />
+                  <datalist id="equipment-options">
+                    {EQUIPMENT_OPTIONS.map((opt) => (
+                      <option key={opt} value={opt} />
+                    ))}
+                  </datalist>
                 </div>
 
                 <div>
