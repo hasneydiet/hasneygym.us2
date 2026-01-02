@@ -315,40 +315,57 @@ export default function ExercisesPage() {
             </div>
           )}
 
-          <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+          {/*
+            Table container
+            - Keep the card within the viewport on mobile (no clipped edges)
+            - Allow horizontal scroll *inside* the card if the table can't fit
+          */}
+          <div className="surface overflow-hidden w-full max-w-full">
+            <div className="w-full max-w-full overflow-x-auto">
+              <table className="w-full table-fixed">
+                <colgroup>
+                  <col className="w-[44%]" />
+                  <col className="w-[22%]" />
+                  <col className="w-[22%]" />
+                  <col className="w-[12%]" />
+                </colgroup>
+                <thead className="bg-muted/40 border-b border-border/60">
                   <tr>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Name</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Muscle Group</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Equipment</th>
-                    <th className="px-4 py-3 text-right text-sm font-medium text-gray-700 dark:text-gray-300">Actions</th>
+                    <th className="px-3 sm:px-4 py-3 text-left text-xs sm:text-sm font-medium text-muted-foreground">Name</th>
+                    <th className="px-3 sm:px-4 py-3 text-left text-xs sm:text-sm font-medium text-muted-foreground">Muscle Group</th>
+                    <th className="px-3 sm:px-4 py-3 text-left text-xs sm:text-sm font-medium text-muted-foreground">Equipment</th>
+                    <th className="px-3 sm:px-4 py-3 text-right text-xs sm:text-sm font-medium text-muted-foreground">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                <tbody className="divide-y divide-border/60">
                   {filteredExercises.map((exercise) => (
-                    <tr key={exercise.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
-                      <td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-gray-100">{exercise.name}</td>
-                      <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">{exercise.muscle_group || '-'}</td>
-                      <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">{exercise.equipment || '-'}</td>
-                      <td className="px-4 py-3 text-right">
+                    <tr key={exercise.id} className="hover:bg-accent/30">
+                      <td className="px-3 sm:px-4 py-3 text-sm font-medium text-foreground break-words">
+                        {exercise.name}
+                      </td>
+                      <td className="px-3 sm:px-4 py-3 text-sm text-muted-foreground break-words">
+                        {exercise.muscle_group || '-'}
+                      </td>
+                      <td className="px-3 sm:px-4 py-3 text-sm text-muted-foreground break-words">
+                        {exercise.equipment || '-'}
+                      </td>
+                      <td className="px-3 sm:px-4 py-3 text-right whitespace-nowrap">
                         <button
                           onClick={() => router.push(`/exercises/${exercise.id}`)}
-                          className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 mr-3"
+                          className="icon-btn mr-1"
                           title="View Progress"
                         >
                           <TrendingUp className="w-4 h-4 inline" />
                         </button>
                         <button
                           onClick={() => handleEdit(exercise)}
-                          className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 mr-3"
+                          className="icon-btn mr-1"
                         >
                           <Edit2 className="w-4 h-4 inline" />
                         </button>
                         <button
                           onClick={() => handleDelete(exercise.id)}
-                          className="text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
+                          className="icon-btn text-destructive hover:text-destructive"
                         >
                           <Trash2 className="w-4 h-4 inline" />
                         </button>
@@ -358,7 +375,7 @@ export default function ExercisesPage() {
                 </tbody>
               </table>
               {filteredExercises.length === 0 && (
-                <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+                <div className="text-center py-12 text-muted-foreground">
                   {searchTerm ? 'No exercises found' : 'No exercises yet. Create your first exercise!'}
                 </div>
               )}

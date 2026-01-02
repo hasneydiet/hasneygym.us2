@@ -7,9 +7,6 @@ import Navigation from '@/components/Navigation';
 import { supabase } from '@/lib/supabase';
 import { Routine } from '@/lib/types';
 import { Plus, Edit2, Trash2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card, CardContent } from '@/components/ui/card';
 
 export const dynamic = 'force-dynamic';
 
@@ -63,19 +60,22 @@ export default function RoutinesPage() {
 
   return (
     <AuthGuard>
-      <div className="app-shell">
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
         <Navigation />
-        <div className="page">
+        <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center mb-6">
-            <h1 className="page-title">Routines</h1>
-            <Button onClick={() => setShowForm(true)} className="h-11 rounded-xl">
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Routines</h1>
+            <button
+              onClick={() => setShowForm(true)}
+              className="bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 px-4 py-2 rounded-lg hover:bg-gray-800 dark:hover:bg-gray-200 flex items-center space-x-2"
+            >
               <Plus className="w-5 h-5" />
               <span>New Routine</span>
-            </Button>
+            </button>
           </div>
 
           {showForm && (
-            <div className="surface p-6 mb-6">
+            <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm p-6 mb-6">
               <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-4">Create Routine</h2>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
@@ -104,12 +104,19 @@ export default function RoutinesPage() {
                 </div>
 
                 <div className="flex space-x-3">
-                  <Button type="submit" className="flex-1 h-11 rounded-xl">
+                  <button
+                    type="submit"
+                    className="flex-1 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 py-2 rounded-lg hover:bg-gray-800 dark:hover:bg-gray-200"
+                  >
                     Create & Edit
-                  </Button>
-                  <Button type="button" onClick={() => setShowForm(false)} variant="secondary" className="flex-1 h-11 rounded-xl">
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowForm(false)}
+                    className="flex-1 bg-gray-200 dark:bg-gray-800 text-gray-800 dark:text-gray-200 py-2 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-700"
+                  >
                     Cancel
-                  </Button>
+                  </button>
                 </div>
               </form>
             </div>

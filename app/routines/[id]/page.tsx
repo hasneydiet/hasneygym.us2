@@ -7,9 +7,6 @@ import Navigation from '@/components/Navigation';
 import { supabase } from '@/lib/supabase';
 import { Routine, RoutineDay, RoutineDayExercise, Exercise } from '@/lib/types';
 import { Plus, Trash2, ChevronUp, ChevronDown, X } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card, CardContent } from '@/components/ui/card';
 
 export const dynamic = 'force-dynamic';
 
@@ -189,14 +186,17 @@ export default function RoutineEditorPage() {
 
   return (
     <AuthGuard>
-      <div className="app-shell">
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
         <Navigation />
-        <div className="page">
+        <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
           <div className="mb-6">
-            <Button onClick={() => router.push('/routines')} variant="ghost" className="h-10 px-0 text-[hsl(var(--muted))] hover:text-[hsl(var(--fg))]">
+            <button
+              onClick={() => router.push('/routines')}
+              className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 mb-2"
+            >
               ← Back to Routines
-            </Button>
-            <h1 className="page-title">{routine?.name}</h1>
+            </button>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">{routine?.name}</h1>
           </div>
 
           <div className="space-y-6">
@@ -205,7 +205,7 @@ export default function RoutineEditorPage() {
               const grouped = groupBySupersets(exs);
 
               return (
-                <div key={day.id} className="surface p-6">
+                <div key={day.id} className="bg-white dark:bg-gray-900 rounded-lg shadow-sm p-6">
                   <div className="flex justify-between items-center mb-4">
                     <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">{day.name}</h2>
                     <button
@@ -335,12 +335,15 @@ export default function RoutineEditorPage() {
             })}
 
             {showAddDay ? (
-              <div className="surface p-6">
+              <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm p-6">
                 <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-4">Add Day</h2>
-                <Input type="text" value={newDayName}
+                <input
+                  type="text"
+                  value={newDayName}
                   onChange={(e) => setNewDayName(e.target.value)}
                   placeholder="Day name (e.g., Push Day, Leg Day)"
-                  className="h-11" />
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg mb-4 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                />
                 <div className="flex space-x-2">
                   <button
                     onClick={addDay}

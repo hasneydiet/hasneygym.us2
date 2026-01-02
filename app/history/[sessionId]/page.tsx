@@ -8,7 +8,6 @@ import { supabase } from '@/lib/supabase';
 import { WorkoutSession, WorkoutExercise, WorkoutSet } from '@/lib/types';
 import { format } from 'date-fns';
 import { Trash2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 
 export const dynamic = 'force-dynamic';
 
@@ -111,15 +110,18 @@ export default function SessionDetailPage() {
 
   return (
     <AuthGuard>
-      <div className="app-shell">
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
         <Navigation />
-        <div className="page">
-          <Button onClick={() => router.push('/history')} variant="ghost" className="h-10 px-0 text-[hsl(var(--muted))] hover:text-[hsl(var(--fg))] mb-4">
+        <div className="max-w-4xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
+          <button
+            onClick={() => router.push('/history')}
+            className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 mb-4"
+          >
             ← Back to History
-          </Button>
+          </button>
 
           {session && (
-            <div className="surface p-6 mb-6">
+            <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm p-6 mb-6">
               <div className="flex justify-between items-start">
                 <div className="flex-1">
                   <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
@@ -209,7 +211,7 @@ function ExerciseDetail({
         </div>
       )}
 
-      <div className="surface p-4 overflow-x-auto">
+      <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="text-xs text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800">
             <tr>
@@ -223,11 +225,11 @@ function ExerciseDetail({
           <tbody>
             {sets.map((set, idx) => (
               <tr key={set.id} className="border-b border-gray-100 dark:border-gray-800">
-                <td className="px-3 py-2 font-medium text-[hsl(var(--fg))]">{idx + 1}</td>
-                <td className="px-3 py-2 text-center text-[hsl(var(--fg))]">{set.reps}</td>
-                <td className="px-3 py-2 text-center text-[hsl(var(--fg))]">{set.weight}</td>
-                <td className="px-3 py-2 text-center text-[hsl(var(--fg))]">{set.rpe || '-'}</td>
-                <td className="px-3 py-2 text-center text-[hsl(var(--fg))]">
+                <td className="px-3 py-2 font-medium text-gray-900 dark:text-gray-100">{idx + 1}</td>
+                <td className="px-3 py-2 text-center text-gray-900 dark:text-gray-100">{set.reps}</td>
+                <td className="px-3 py-2 text-center text-gray-900 dark:text-gray-100">{set.weight}</td>
+                <td className="px-3 py-2 text-center text-gray-900 dark:text-gray-100">{set.rpe || '-'}</td>
+                <td className="px-3 py-2 text-center text-gray-900 dark:text-gray-100">
                   {set.is_completed ? '✓' : '-'}
                 </td>
               </tr>

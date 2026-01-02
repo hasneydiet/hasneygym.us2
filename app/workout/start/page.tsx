@@ -4,8 +4,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Navigation from '@/components/Navigation';
 import { supabase } from '@/lib/supabase';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import type { RoutineDay } from '@/lib/types';
 
 type RoutineDayCard = RoutineDay & {
@@ -300,13 +298,13 @@ export default function WorkoutStartPage() {
   };
 
   return (
-    <div className="app-shell pb-24">
+    <div className="min-h-screen bg-black text-white pb-24">
       <Navigation />
 
-      <div className="page pt-6">
-        <h1 className="page-title mb-4">Workout</h1>
+      <div className="max-w-3xl mx-auto px-4 pt-6">
+        <h1 className="text-3xl font-bold mb-4">Workout</h1>
 
-        {error && <div className="mb-4 rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-red-300">{error}</div>}
+        {error && <div className="mb-4 rounded-lg bg-red-900/30 px-4 py-3 text-red-300">{error}</div>}
 
         {loading && <div className="text-gray-400">Loading routines…</div>}
 
@@ -316,7 +314,7 @@ export default function WorkoutStartPage() {
 
         <div className="space-y-4">
           {days.map((day) => (
-            <div key={day.id} className="tile tap-target bg-gradient-to-br from-slate-800/80 to-slate-900/80 shadow-lg border border-white/10">
+            <div key={day.id} className="rounded-2xl bg-gradient-to-br from-slate-800 to-slate-900 p-5 shadow-lg">
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
                   <h2 className="text-xl font-semibold truncate">{day.routineName}</h2>
@@ -328,9 +326,13 @@ export default function WorkoutStartPage() {
                 </div>
               </div>
 
-              <Button disabled={startingId === day.id} onClick={() => startRoutineDay(day)} className="mt-4 w-full h-11 rounded-xl">
+              <button
+                disabled={startingId === day.id}
+                onClick={() => startRoutineDay(day)}
+                className="mt-4 w-full rounded-xl bg-sky-500 py-4 text-lg font-semibold text-black hover:bg-sky-400 transition disabled:opacity-60 disabled:cursor-not-allowed"
+              >
                 {startingId === day.id ? 'Starting…' : 'Start Routine'}
-              </Button>
+              </button>
             </div>
           ))}
         </div>
