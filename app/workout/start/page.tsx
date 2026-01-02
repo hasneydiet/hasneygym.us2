@@ -38,6 +38,24 @@ export default function WorkoutStartPage() {
     return chunks;
   };
 
+
+  const getDayTitle = (d: any) => {
+    // Prefer explicit day name from DB
+    const n = d?.name || d?.day_name || d?.title || d?.label;
+    if (n && String(n).trim().length > 0) return String(n);
+
+    // Fallback: derive "Workout A/B/C..." from day_index (0-based or 1-based)
+    const idxRaw = d?.day_index ?? d?.dayIndex ?? d?.index;
+    const idx = Number(idxRaw);
+    if (Number.isFinite(idx)) {
+      const zeroBased = idx >= 0 ? idx : 0;
+      const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+      return `Workout ${letters[Math.min(zeroBased, letters.length - 1)]}`;
+    }
+    return 'Workout';
+  };
+
+
   useEffect(() => {
     loadRoutinesAndDays();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -413,7 +431,8 @@ export default function WorkoutStartPage() {
                 >
                   <div className="flex items-start justify-between">
                     <div className="pr-4">
-                      <div className="text-2xl font-extrabold">{d.routineName || 'Routine'}</div>
+                      <div className="text-2xl font-extrabold">{getDayTitle(d)}</div>
+                      <div className="mt-1 text-white/70 text-base">{d.routineName || 'Routine'}</div>
                       <div className="mt-1 text-white/60 text-base line-clamp-2">{d.preview || 'No exercises added yet'}</div>
                       <div className="mt-2 text-white/50 text-sm">
                         Last performed: {formatLastPerformed(lastPerformedByRoutineId[d.routine_id] ?? null)}
