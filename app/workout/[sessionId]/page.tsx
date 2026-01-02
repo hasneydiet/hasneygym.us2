@@ -36,9 +36,13 @@ export default function WorkoutPage() {
     }));
   };
 
+  // Minimal & safe: if stored value is 0 and user hasn't typed yet, show blank value and use placeholder="0"
   const getDraftValue = (setId: string, field: string, fallback: number | null | undefined) => {
     const v = draft[setId]?.[field];
-    return v !== undefined ? v : (fallback ?? '').toString();
+    if (v !== undefined) return v;
+
+    if (fallback === 0) return '';
+    return (fallback ?? '').toString();
   };
 
   const clearDraftField = (setId: string, field: string) => {
@@ -433,6 +437,7 @@ export default function WorkoutPage() {
                               <input
                                 type="number"
                                 inputMode="numeric"
+                                placeholder="0"
                                 value={getDraftValue(set.id, 'reps', set.reps)}
                                 onChange={(e) => setDraftValue(set.id, 'reps', e.target.value)}
                                 onBlur={() => {
@@ -453,6 +458,7 @@ export default function WorkoutPage() {
                                 type="number"
                                 inputMode="decimal"
                                 step="0.5"
+                                placeholder="0"
                                 value={getDraftValue(set.id, 'weight', set.weight)}
                                 onChange={(e) => setDraftValue(set.id, 'weight', e.target.value)}
                                 onBlur={() => {
