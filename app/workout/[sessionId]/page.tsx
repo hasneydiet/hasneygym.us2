@@ -31,10 +31,9 @@ export default function WorkoutPage() {
   const [exercises, setExercises] = useState<WorkoutExercise[]>([]);
   const [sets, setSets] = useState<{ [exerciseId: string]: WorkoutSet[] }>({});
 
-  // Previous sets per exercise (indexed by set number)
   const [prevSetsByExercise, setPrevSetsByExercise] = useState<Record<string, WorkoutSet[]>>({});
 
-  // Draft input state: always blank until user types; onBlur commits + clears draft.
+  // Draft typed values: used only while editing; after blur it gets cleared.
   const [draft, setDraft] = useState<Record<string, Record<string, string>>>({});
 
   // Session clock
@@ -61,11 +60,6 @@ export default function WorkoutPage() {
     }));
   };
 
-  const getDraftOrEmpty = (setId: string, field: string) => {
-    const v = draft[setId]?.[field];
-    return v !== undefined ? v : '';
-  };
-
   const clearDraftField = (setId: string, field: string) => {
     setDraft((prev) => {
       const next = { ...prev };
@@ -75,6 +69,22 @@ export default function WorkoutPage() {
       next[setId] = inner;
       return next;
     });
+  };
+
+  // ✅ This is the key fix:
+  // - If user is typing (draft exists), show draft.
+  // - Otherwise show the saved value from state (sets) — but keep it blank if 0.
+  const getDisplayValue = (setId: string, field: 'reps' | 'weight', savedValue: any) => {
+    const v = draft[setId]?.[field];
+    if (v !== undefined) return v;
+    const n = Number(savedValue ?? 0);
+    if (!Number.isFinite(n) || n === 0) return '';
+    return String(n);
+  };
+
+  const getDraftRaw = (setId: string, field: 'reps' | 'weight') => {
+    const v = draft[setId]?.[field];
+    return v !== undefined ? v : '';
   };
 
   const stopRestTimer = () => {
@@ -227,6 +237,7 @@ export default function WorkoutPage() {
   };
 
   const saveSet = async (setId: string, field: string, value: any) => {
+    // optimistic update so the value stays visible immediately
     setSets((prev) => {
       const next: { [exerciseId: string]: WorkoutSet[] } = {};
       for (const exId of Object.keys(prev)) {
@@ -246,9 +257,7 @@ export default function WorkoutPage() {
   const handleToggleCompleted = async (setRow: any) => {
     const willComplete = !setRow.is_completed;
     await saveSet(setRow.id, 'is_completed', willComplete);
-    if (willComplete) {
-      startRestTimer(restDurationSeconds);
-    }
+    if (willComplete) startRestTimer(restDurationSeconds);
   };
 
   const endWorkout = async () => {
@@ -258,7 +267,6 @@ export default function WorkoutPage() {
     try {
       setEnding(true);
       await supabase.from('workout_sessions').update({ ended_at: new Date().toISOString() }).eq('id', sessionId);
-
       router.push('/history');
     } finally {
       setEnding(false);
@@ -272,25 +280,15 @@ export default function WorkoutPage() {
     try {
       setDiscarding(true);
 
-      const { data: exRows, error: exErr } = await supabase
-        .from('workout_exercises')
-        .select('id')
-        .eq('workout_session_id', sessionId);
-
-      if (exErr) console.error('Failed loading workout exercises for discard:', exErr);
-
+      const { data: exRows } = await supabase.from('workout_exercises').select('id').eq('workout_session_id', sessionId);
       const exIds = (exRows || []).map((r: any) => r.id);
 
       if (exIds.length > 0) {
-        const { error: delSetsErr } = await supabase.from('workout_sets').delete().in('workout_exercise_id', exIds);
-        if (delSetsErr) console.error('Failed deleting workout sets:', delSetsErr);
+        await supabase.from('workout_sets').delete().in('workout_exercise_id', exIds);
       }
 
-      const { error: delExErr } = await supabase.from('workout_exercises').delete().eq('workout_session_id', sessionId);
-      if (delExErr) console.error('Failed deleting workout exercises:', delExErr);
-
-      const { error: delSessionErr } = await supabase.from('workout_sessions').delete().eq('id', sessionId);
-      if (delSessionErr) console.error('Failed deleting workout session:', delSessionErr);
+      await supabase.from('workout_exercises').delete().eq('workout_session_id', sessionId);
+      await supabase.from('workout_sessions').delete().eq('id', sessionId);
 
       router.push('/workout/start');
     } finally {
@@ -436,7 +434,6 @@ export default function WorkoutPage() {
 
                         const repsPlaceholder =
                           prevReps !== null && prevReps !== undefined && prevReps !== '' ? String(prevReps) : '';
-
                         const weightPlaceholder =
                           prevWeight !== null && prevWeight !== undefined && prevWeight !== '' ? String(prevWeight) : '';
 
@@ -449,15 +446,13 @@ export default function WorkoutPage() {
                                 type="number"
                                 inputMode="numeric"
                                 placeholder={repsPlaceholder}
-                                value={getDraftOrEmpty(set.id, 'reps')}
+                                value={getDisplayValue(set.id, 'reps', set.reps)}
                                 onChange={(e) => setDraftValue(set.id, 'reps', e.target.value)}
                                 onFocus={(e) => e.currentTarget.select()}
                                 onBlur={() => {
-                                  const raw = getDraftOrEmpty(set.id, 'reps').trim();
-                                  if (raw !== '') {
-                                    const num = Number(raw);
-                                    saveSet(set.id, 'reps', Number.isFinite(num) ? num : (set.reps ?? 0));
-                                  }
+                                  const raw = getDraftRaw(set.id, 'reps').trim();
+                                  const num = raw === '' ? 0 : Number(raw);
+                                  saveSet(set.id, 'reps', Number.isFinite(num) ? num : 0);
                                   clearDraftField(set.id, 'reps');
                                 }}
                                 className="w-full h-11 px-2 py-2 border border-gray-700 rounded text-center bg-gray-900/40 text-white placeholder:text-gray-500"
@@ -471,15 +466,13 @@ export default function WorkoutPage() {
                                 inputMode="decimal"
                                 step="0.5"
                                 placeholder={weightPlaceholder}
-                                value={getDraftOrEmpty(set.id, 'weight')}
+                                value={getDisplayValue(set.id, 'weight', set.weight)}
                                 onChange={(e) => setDraftValue(set.id, 'weight', e.target.value)}
                                 onFocus={(e) => e.currentTarget.select()}
                                 onBlur={() => {
-                                  const raw = getDraftOrEmpty(set.id, 'weight').trim();
-                                  if (raw !== '') {
-                                    const num = Number(raw);
-                                    saveSet(set.id, 'weight', Number.isFinite(num) ? num : (set.weight ?? 0));
-                                  }
+                                  const raw = getDraftRaw(set.id, 'weight').trim();
+                                  const num = raw === '' ? 0 : Number(raw);
+                                  saveSet(set.id, 'weight', Number.isFinite(num) ? num : 0);
                                   clearDraftField(set.id, 'weight');
                                 }}
                                 className="w-full h-11 px-2 py-2 border border-gray-700 rounded text-center bg-gray-900/40 text-white placeholder:text-gray-500"
