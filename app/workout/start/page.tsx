@@ -194,7 +194,7 @@ export default function WorkoutStartPage() {
 
       // 2) Load routine exercises (one query)
       const { data: routineExercises, error: exErr } = await supabase
-        .from('routine_exercises')
+        .from('routine_day_exercises')
         .select('*, exercises(*)')
         .eq('routine_day_id', routineDayId)
         .order('order_index', { ascending: true });
@@ -283,17 +283,15 @@ export default function WorkoutStartPage() {
         const row = insertedMap.get(key(ex.exercise_id, ex.order_index, ex.superset_group_id));
         if (!row?.id) continue;
 
-        const defaultSets: any[] = ex.default_sets || [];
         const schemeSets = Number(ex.exercises?.default_set_scheme?.sets ?? 0);
-        const setsToCreate = schemeSets > 0 ? schemeSets : defaultSets.length > 0 ? defaultSets.length : 3;
+        const setsToCreate = schemeSets > 0 ? schemeSets : 3;
 
         for (let i = 0; i < setsToCreate; i++) {
-          const ds = defaultSets[i] || {};
           setsPayloads.push({
             workout_exercise_id: row.id,
             set_index: i,
-            reps: ds.reps ?? ex.exercises?.default_reps ?? 0,
-            weight: ds.weight ?? 0,
+            reps: ex.exercises?.default_reps ?? 0,
+            weight: 0,
             rpe: null,
             is_completed: false,
           });
