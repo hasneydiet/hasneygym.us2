@@ -637,7 +637,11 @@ const openTechnique = (key: string) => {
   ) : null}
 </div>
 
-                <div className="overflow-x-auto">
+                {/*
+                  Mobile-only padding so the sticky "+ Add Set" bar doesn't visually
+                  cover the last set row when it sticks to the bottom of the screen.
+                */}
+                <div className="overflow-x-auto pb-24 md:pb-0">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="text-left text-gray-300 border-b border-gray-800">
