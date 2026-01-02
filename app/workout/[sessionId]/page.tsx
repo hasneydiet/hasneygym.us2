@@ -723,12 +723,21 @@ const openTechnique = (key: string) => {
                   </table>
 
                   <div className="mt-3">
-                    <button
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      aria-label="Add set"
                       onClick={() => addSet(exercise.id)}
-                      className="tap-target min-h-[44px] px-4 py-2 rounded-xl bg-white text-gray-900 font-semibold shadow-sm transition hover:shadow-md active:translate-y-px"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          addSet(exercise.id);
+                        }
+                      }}
+                      className="inline-action"
                     >
-                      + Add Set
-                    </button>
+                      + Add set
+                    </span>
                   </div>
                 </div>
               </div>

@@ -205,4 +205,12 @@ button {
   .tap-target {
     @apply min-h-[44px] min-w-[44px];
   }
+
+  /* Inline actions (text-like buttons) */
+  .inline-action {
+    @apply tap-target inline-flex items-center rounded-xl px-2 text-sm font-semibold text-sky-300 transition-colors hover:text-sky-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background;
+  }
+  .inline-action:active {
+    transform: scale(0.98);
+  }
 }
