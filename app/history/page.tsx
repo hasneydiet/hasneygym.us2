@@ -68,15 +68,15 @@ export default function HistoryPage() {
 
   return (
     <AuthGuard>
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
+      <div className="app-shell">
         <Navigation />
-        <div className="max-w-4xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-6">History</h1>
+        <div className="page">
+          <h1 className="page-title mb-6">History</h1>
 
           {loading ? (
             <p className="text-gray-500 dark:text-gray-400">Loading...</p>
           ) : sessions.length === 0 ? (
-            <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm p-12 text-center">
+            <div className="surface p-12 text-center">
               <p className="text-gray-500 dark:text-gray-400">No workout history yet.</p>
             </div>
           ) : (
@@ -114,7 +114,7 @@ export default function HistoryPage() {
                   </button>
                   <button
                     onClick={(e) => deleteSession(session.id, e)}
-                    className="ml-3 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
+                    className="icon-btn text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
                   >
                     <Trash2 className="w-5 h-5" />
                   </button>

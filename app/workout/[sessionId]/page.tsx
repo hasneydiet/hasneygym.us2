@@ -337,10 +337,10 @@ export default function WorkoutPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-950 via-gray-900 to-gray-950 text-white">
-      <div className="max-w-5xl mx-auto px-4 py-6">
+      <div className="page">
         <div className="flex items-start justify-between gap-4 mb-6">
           <div className="min-w-0">
-            <h1 className="text-2xl font-bold truncate">{session?.routines?.name || 'Workout'}</h1>
+            <h1 className="text-2xl font-bold tracking-tight truncate">{session?.routines?.name || 'Workout'}</h1>
             {session?.routine_days?.name && <p className="text-gray-400 truncate">{session.routine_days.name}</p>}
           </div>
 
