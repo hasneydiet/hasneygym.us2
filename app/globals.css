@@ -2,6 +2,71 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+  Mobile-first ergonomics & rendering polish (Galaxy S25 Ultra target)
+  - Prevent accidental horizontal scroll
+  - Improve text rendering and tap behavior
+  - Keep layouts stable while scrolling
+  - Avoid input zoom quirks (also helps other mobile browsers)
+*/
+
+html {
+  height: 100%;
+  width: 100%;
+  overflow-x: hidden;
+  text-size-adjust: 100%;
+  -webkit-text-size-adjust: 100%;
+  scroll-behavior: smooth;
+}
+
+body {
+  min-height: 100%;
+  width: 100%;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  overscroll-behavior-y: contain;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Ensure form controls are readable on mobile and avoid browser zooming */
+input,
+textarea,
+select,
+button {
+  font: inherit;
+}
+
+@media (max-width: 768px) {
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
+
+/* Safer focus ring for keyboard users without causing layout shift */
+:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+/* Reduce motion when user requests it */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 :root {
   --foreground-rgb: 0, 0, 0;
   --background-start-rgb: 214, 219, 220;
@@ -78,5 +143,12 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+@layer components {
+  /* Consistent, mobile-friendly tap target helper */
+  .tap-target {
+    @apply min-h-[44px] min-w-[44px];
   }
 }
