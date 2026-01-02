@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { TECHNIQUE_TAGS } from '@/lib/types';
 
 type WorkoutSession = any;
 type WorkoutExercise = any;
@@ -30,10 +29,6 @@ export default function WorkoutPage() {
   const [ending, setEnding] = useState(false);
   const [discarding, setDiscarding] = useState(false);
 
-  // Keep workout cards compact on mobile: show only selected tags by default.
-  // Users can expand per exercise to edit tags if needed.
-  const [showTagPicker, setShowTagPicker] = useState<Record<string, boolean>>({});
-
   const setDraftValue = (setId: string, field: string, value: string) => {
     setDraft((prev) => ({
       ...prev,
@@ -41,11 +36,11 @@ export default function WorkoutPage() {
     }));
   };
 
-  // Mobile typing fix: avoid leading "0" being part of the input value.
-  // If stored value is 0 and user hasn't typed yet, show blank and keep "0" as placeholder.
+  // Minimal & safe: if stored value is 0 and user hasn't typed yet, show blank value and use placeholder="0"
   const getDraftValue = (setId: string, field: string, fallback: number | null | undefined) => {
     const v = draft[setId]?.[field];
     if (v !== undefined) return v;
+
     if (fallback === 0) return '';
     return (fallback ?? '').toString();
   };
@@ -186,10 +181,6 @@ export default function WorkoutPage() {
       map[(ex as any).id] = prevWeId ? (prevSetsByPrevWeId[prevWeId] || []) : [];
     }
     setPrevSetsByExercise(map);
-  };
-
-  const toggleTagPicker = (exerciseId: string) => {
-    setShowTagPicker((prev) => ({ ...prev, [exerciseId]: !prev[exerciseId] }));
   };
 
   /**
@@ -384,56 +375,24 @@ export default function WorkoutPage() {
                 </div>
 
                 <div className="mb-3">
-                  {exercise.technique_tags && exercise.technique_tags.length > 0 && (
-                    <div className="flex flex-wrap items-center gap-2">
-                      {exercise.technique_tags.map((tag: string) => (
-                        <span
+                  <div className="flex flex-wrap gap-2">
+                    {['drop set', 'rest pause', 'tempo', 'partial', 'pause reps'].map((tag) => {
+                      const active = (exercise.technique_tags || []).includes(tag);
+                      return (
+                        <button
                           key={tag}
-                          className="px-3 py-2 min-h-[44px] rounded-full text-xs font-semibold bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 border border-gray-900 dark:border-gray-100 inline-flex items-center"
+                          onClick={() => toggleTechniqueTag(exercise.id, tag)}
+                          className={`px-3 py-2 min-h-[44px] rounded-full text-xs font-semibold border ${
+                            active
+                              ? 'bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 border-gray-900 dark:border-gray-100'
+                              : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-700'
+                          }`}
                         >
                           {tag}
-                        </span>
-                      ))}
-                      <button
-                        type="button"
-                        onClick={() => toggleTagPicker(exercise.id)}
-                        className="px-3 py-2 min-h-[44px] rounded-full text-xs font-semibold border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800"
-                      >
-                        {showTagPicker[exercise.id] ? 'Done' : 'Edit'}
-                      </button>
-                    </div>
-                  )}
-
-                  {(!exercise.technique_tags || exercise.technique_tags.length === 0) && (
-                    <button
-                      type="button"
-                      onClick={() => toggleTagPicker(exercise.id)}
-                      className="px-3 py-2 min-h-[44px] rounded-full text-xs font-semibold border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800"
-                    >
-                      {showTagPicker[exercise.id] ? 'Done' : 'Add Tag'}
-                    </button>
-                  )}
-
-                  {showTagPicker[exercise.id] && (
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {TECHNIQUE_TAGS.map((tag) => {
-                        const active = (exercise.technique_tags || []).includes(tag);
-                        return (
-                          <button
-                            key={tag}
-                            onClick={() => toggleTechniqueTag(exercise.id, tag)}
-                            className={`px-3 py-2 min-h-[44px] rounded-full text-xs font-semibold border ${
-                              active
-                                ? 'bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 border-gray-900 dark:border-gray-100'
-                                : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-700'
-                            }`}
-                          >
-                            {tag}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 <div className="overflow-x-auto">
