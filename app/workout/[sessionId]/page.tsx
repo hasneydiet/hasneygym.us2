@@ -131,6 +131,32 @@ const openTechnique = (key: string) => {
   const [restDurationSeconds, setRestDurationSeconds] = useState<number>(90);
   const restIntervalRef = useRef<number | null>(null);
 
+  // Input focus map for fast logging (mobile + keyboard)
+  const inputRefs = useRef<Map<string, HTMLInputElement>>(new Map());
+  const [pendingFocusKey, setPendingFocusKey] = useState<string | null>(null);
+
+  // Exercise container refs for auto-advance scrolling
+  const exerciseRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+
+  const focusByKey = (key: string) => {
+    const el = inputRefs.current.get(key);
+    if (el) {
+      el.focus();
+      // select after focus for quick overwrite
+      requestAnimationFrame(() => el.select?.());
+      return true;
+    }
+    return false;
+  };
+
+  const vibrate = (pattern: number | number[] = 10) => {
+    try {
+      // haptics on supported mobile devices (non-blocking)
+      if (typeof navigator !== 'undefined' && 'vibrate' in navigator) (navigator as any).vibrate(pattern);
+    } catch {}
+  };
+
+
   // End/Discard states
   const [ending, setEnding] = useState(false);
   const [discarding, setDiscarding] = useState(false);
@@ -230,6 +256,20 @@ const openTechnique = (key: string) => {
     loadWorkout();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
+
+  // Apply pending focus after async updates (e.g., adding a set triggers reload)
+  useEffect(() => {
+    if (!pendingFocusKey) return;
+    // try twice: immediately and next frame (DOM may still be updating)
+    if (focusByKey(pendingFocusKey)) {
+      setPendingFocusKey(null);
+      return;
+    }
+    const id = requestAnimationFrame(() => {
+      if (focusByKey(pendingFocusKey)) setPendingFocusKey(null);
+    });
+    return () => cancelAnimationFrame(id);
+  }, [pendingFocusKey, sets]);
 
   const loadWorkout = async () => {
     const { data: sessionData } = await supabase
@@ -341,10 +381,34 @@ const openTechnique = (key: string) => {
     }
   };
 
-  const handleToggleCompleted = async (setRow: any) => {
+  const handleToggleCompleted = async (exerciseId: string, setRow: any) => {
     const willComplete = !setRow.is_completed;
+
+    // compute completion state optimistically for auto-advance
+    const exSetsAfter = (sets[exerciseId] || []).map((s: any) =>
+      s.id === setRow.id ? { ...s, is_completed: willComplete } : s
+    );
+
     await saveSet(setRow.id, 'is_completed', willComplete);
     if (willComplete) startRestTimer(restDurationSeconds);
+
+    // Auto-advance only when the exercise becomes fully completed
+    const allCompleted = exSetsAfter.length > 0 && exSetsAfter.every((s: any) => !!s.is_completed);
+    if (willComplete && allCompleted) {
+      // Find next exercise in order and scroll into view
+      const idx = exercises.findIndex((e: any) => e.id === exerciseId);
+      const next = idx >= 0 ? exercises[idx + 1] : null;
+      if (next?.id) {
+        // subtle haptic confirmation
+        vibrate([8, 10, 8]);
+        const el = exerciseRefs.current.get(next.id);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+        // Focus first reps input on the next exercise (set 0) after scroll/layout
+        setPendingFocusKey(`${next.id}:0:reps`);
+      }
+    }
   };
 
   const endWorkout = async () => {
@@ -399,10 +463,63 @@ const openTechnique = (key: string) => {
       .select()
       .single();
 
-    if (data) loadWorkout();
+    if (data) {
+      vibrate(15);
+      loadWorkout();
+    }
   };
 
+
+  const handleRepsKeyDown = (exerciseId: string, setIdx: number, e: any) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      focusByKey(`${exerciseId}:${setIdx}:weight`);
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      focusByKey(`${exerciseId}:${setIdx + 1}:reps`);
+      return;
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      focusByKey(`${exerciseId}:${Math.max(0, setIdx - 1)}:reps`);
+    }
+  };
+
+  const handleWeightKeyDown = async (
+    exerciseId: string,
+    setIdx: number,
+    totalSets: number,
+    e: any
+  ) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      // Move to next set reps; if last set, create a new set and focus its reps
+      if (setIdx + 1 < totalSets) {
+        focusByKey(`${exerciseId}:${setIdx + 1}:reps`);
+        return;
+      }
+      // create new set (keeps existing behavior; just adds a focus target)
+      setPendingFocusKey(`${exerciseId}:${setIdx + 1}:reps`);
+      vibrate(15);
+      await addSet(exerciseId);
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      focusByKey(`${exerciseId}:${setIdx + 1}:weight`);
+      return;
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      focusByKey(`${exerciseId}:${Math.max(0, setIdx - 1)}:weight`);
+    }
+  };
+
+
   const deleteSet = async (exerciseId: string, setId: string) => {
+    vibrate([12, 8]);
     await supabase.from('workout_sets').delete().eq('id', setId);
 
     const remaining = (sets[exerciseId] || []).filter((s: any) => s.id !== setId);
@@ -496,7 +613,14 @@ const openTechnique = (key: string) => {
             const prevSets = prevSetsByExercise[exercise.id] || [];
 
             return (
-              <div key={exercise.id} className="bg-gray-900/40 border border-gray-800 rounded-xl p-4">
+              <div
+                key={exercise.id}
+                ref={(el) => {
+                  if (el) exerciseRefs.current.set(exercise.id, el);
+                  else exerciseRefs.current.delete(exercise.id);
+                }}
+                className="bg-gray-900/40 border border-gray-800 rounded-xl p-4 scroll-mt-24"
+              >
 <div className="mb-2 flex items-start justify-between gap-3">
   <h3 className="text-lg font-bold">{exercise.exercises?.name || 'Exercise'}</h3>
   {exercise.exercises?.default_technique_tags?.[0] ? (
@@ -544,10 +668,23 @@ const openTechnique = (key: string) => {
                               <input
                                 type="number"
                                 inputMode="numeric"
+                                 aria-label={`Reps for set ${idx + 1}`}
                                 placeholder={repsPlaceholder}
                                 value={getDisplayValue(set.id, 'reps', set.reps)}
                                 onChange={(e) => setDraftValue(set.id, 'reps', e.target.value)}
                                 onFocus={(e) => e.currentTarget.select()}
+                                ref={(el) => {
+                                  const keyA = `${exercise.id}:${set.id}:reps`;
+                                  const keyB = `${exercise.id}:${idx}:reps`;
+                                  if (el) {
+                                    inputRefs.current.set(keyA, el);
+                                    inputRefs.current.set(keyB, el);
+                                  } else {
+                                    inputRefs.current.delete(keyA);
+                                    inputRefs.current.delete(keyB);
+                                  }
+                                }}
+                                onKeyDown={(e) => handleRepsKeyDown(exercise.id, idx, e)}
                                 onBlur={() => {
                                   const raw = getDraftRaw(set.id, 'reps').trim();
                                   const num = raw === '' ? 0 : Number(raw);
@@ -563,11 +700,24 @@ const openTechnique = (key: string) => {
                               <input
                                 type="number"
                                 inputMode="decimal"
+                                 aria-label={`Weight for set ${idx + 1}`}
                                 step="0.5"
                                 placeholder={weightPlaceholder}
                                 value={getDisplayValue(set.id, 'weight', set.weight)}
                                 onChange={(e) => setDraftValue(set.id, 'weight', e.target.value)}
                                 onFocus={(e) => e.currentTarget.select()}
+                                ref={(el) => {
+                                  const keyA = `${exercise.id}:${set.id}:weight`;
+                                  const keyB = `${exercise.id}:${idx}:weight`;
+                                  if (el) {
+                                    inputRefs.current.set(keyA, el);
+                                    inputRefs.current.set(keyB, el);
+                                  } else {
+                                    inputRefs.current.delete(keyA);
+                                    inputRefs.current.delete(keyB);
+                                  }
+                                }}
+                                onKeyDown={(e) => handleWeightKeyDown(exercise.id, idx, (sets[exercise.id] || []).length, e)}
                                 onBlur={() => {
                                   const raw = getDraftRaw(set.id, 'weight').trim();
                                   const num = raw === '' ? 0 : Number(raw);
@@ -581,7 +731,7 @@ const openTechnique = (key: string) => {
 
                             <td className="px-2 py-2 text-center">
                               <button
-                                onClick={() => handleToggleCompleted(set)}
+                                onClick={() => handleToggleCompleted(exercise.id, set)}
                                 className={`w-11 h-11 rounded border-2 flex items-center justify-center ${
                                   set.is_completed ? 'bg-white border-white text-gray-900' : 'border-gray-700'
                                 }`}
@@ -606,13 +756,18 @@ const openTechnique = (key: string) => {
                     </tbody>
                   </table>
 
-                  <div className="mt-3">
-                    <button
-                      onClick={() => addSet(exercise.id)}
-                      className="min-h-[44px] px-4 py-2 rounded bg-white text-gray-900 font-semibold"
-                    >
-                      + Add Set
-                    </button>
+                  {/* Sticky add-set bar on mobile for one-hand logging */}
+                  <div
+                    className="mt-3 md:mt-3 md:static sticky bottom-[calc(84px+env(safe-area-inset-bottom))] z-10"
+                  >
+                    <div className="-mx-4 px-4 py-3 md:mx-0 md:px-0 md:py-0 border-t border-white/10 md:border-t-0 bg-gray-950/80 md:bg-transparent backdrop-blur md:backdrop-blur-0">
+                      <button
+                        onClick={() => addSet(exercise.id)}
+                        className="w-full md:w-auto min-h-[48px] px-4 py-3 rounded bg-white text-gray-900 font-semibold"
+                      >
+                        + Add Set
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
