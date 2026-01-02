@@ -251,8 +251,8 @@ export default function WorkoutStartPage() {
             >
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
-                  <h2 className="text-xl font-semibold truncate">{day.routineName}</h2>
-                  <p className="text-sm text-gray-300">{day.name}</p>
+                  {/* Show the DAY name as the card title (instead of repeating routine name) */}
+                  <h2 className="text-xl font-semibold truncate">{day.name}</h2>
 
                   <p className="text-sm text-gray-400 mt-2 line-clamp-2">{day.preview}</p>
 
