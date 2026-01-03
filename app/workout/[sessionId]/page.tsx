@@ -607,7 +607,7 @@ const openTechnique = (key: string) => {
             const prevSets = prevSetsByExercise[exercise.id] || [];
 
             return (
-              <div key={exercise.id} className="bg-gray-900/40 border border-gray-800 rounded-2xl p-4 sm:p-5 shadow-lg shadow-black/20">
+              <div key={exercise.id} className="workout-card">
 <div className="mb-2 flex items-start justify-between gap-3">
   <h3 className="section-title text-white">{exercise.exercises?.name || 'Exercise'}</h3>
   {exercise.exercises?.default_technique_tags?.[0] ? (
@@ -627,7 +627,7 @@ const openTechnique = (key: string) => {
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="text-left text-[11px] uppercase tracking-wide text-gray-300/80 border-b border-gray-800">
+                      <tr className="workout-table-head">
                         <th className="px-2 py-2 w-12">Set</th>
                         <th className="px-2 py-2">Reps</th>
                         <th className="px-2 py-2">Weight</th>
@@ -685,7 +685,7 @@ const openTechnique = (key: string) => {
                                   saveSet(set.id, 'reps', Number.isFinite(num) ? num : 0);
                                   clearDraftField(set.id, 'reps');
                                 }}
-                                className="w-full h-11 px-2 py-2 rounded-xl border border-gray-700 bg-gray-900/40 text-center text-white placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-950"
+                                className="workout-input"
                               />
                               {formatPrevLine('Prev:', prevReps)}
                             </td>
@@ -718,7 +718,7 @@ const openTechnique = (key: string) => {
                                   saveSet(set.id, 'weight', Number.isFinite(num) ? num : 0);
                                   clearDraftField(set.id, 'weight');
                                 }}
-                                className="w-full h-11 px-2 py-2 rounded-xl border border-gray-700 bg-gray-900/40 text-center text-white placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-950"
+                                className="workout-input"
                               />
                               {formatPrevLine('Prev:', prevWeight)}
                             </td>
@@ -726,9 +726,10 @@ const openTechnique = (key: string) => {
                             <td className="px-2 py-2 text-center">
                               <button
                                 onClick={() => handleToggleCompleted(set)}
-                                className={`w-11 h-11 rounded border-2 flex items-center justify-center ${
+                                className={`workout-icon-btn border-2 flex items-center justify-center ${
                                   set.is_completed ? 'bg-white border-white text-gray-900' : 'border-gray-700'
                                 }`}
+                                aria-label={`Mark set ${idx + 1} complete`}
                                 title="Mark set complete"
                               >
                                 {set.is_completed && <span className="text-xs">✓</span>}
@@ -738,7 +739,8 @@ const openTechnique = (key: string) => {
                             <td className="px-2 py-2 text-center">
                               <button
                                 onClick={() => deleteSet(exercise.id, set.id)}
-                                className="w-11 h-11 rounded text-gray-300 hover:text-red-400"
+                                className="workout-icon-btn hover:text-red-400"
+                                aria-label={`Delete set ${idx + 1}`}
                                 title="Delete set"
                               >
                                 ✕

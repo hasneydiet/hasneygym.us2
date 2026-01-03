@@ -280,7 +280,8 @@ export default function RoutineEditorPage() {
           <div className="routine-sticky">
             <button
               onClick={() => router.push('/routines')}
-              className="text-sm text-muted-foreground hover:text-foreground underline-offset-4 hover:underline"
+              className="tap-target inline-flex items-center text-sm font-medium text-muted-foreground hover:text-foreground underline-offset-4 hover:underline"
+              aria-label="Back to routines"
             >
               ← Back to Routines
             </button>

@@ -195,7 +195,7 @@ button {
 
   /* Icon buttons & tap targets */
   .icon-btn {
-    @apply tap-target inline-flex items-center justify-center rounded-xl border border-transparent bg-transparent text-foreground/80 transition-colors hover:bg-accent hover:text-foreground;
+    @apply tap-target inline-flex items-center justify-center rounded-xl border border-transparent bg-transparent text-foreground/80 transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background;
   }
   .icon-btn:active {
     transform: translateY(1px);
@@ -243,6 +243,20 @@ button {
   /* Scan-friendly section headers */
   .section-title {
     @apply text-base sm:text-lg font-semibold tracking-tight;
+  }
+
+  /* Workout primitives (dark surfaces + fast scanning) */
+  .workout-card {
+    @apply rounded-2xl border border-gray-800 bg-gray-900/40 p-4 sm:p-5 shadow-lg shadow-black/20;
+  }
+  .workout-table-head {
+    @apply text-left text-[11px] uppercase tracking-wide text-gray-300/80 border-b border-gray-800;
+  }
+  .workout-input {
+    @apply w-full h-11 px-2 py-2 rounded-xl border border-gray-700 bg-gray-900/40 text-center text-white placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-950;
+  }
+  .workout-icon-btn {
+    @apply tap-target w-11 h-11 rounded-xl border border-transparent text-gray-300 transition-colors hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-950;
   }
 
 }
