@@ -606,7 +606,7 @@ const openTechnique = (key: string) => {
       e.preventDefault();
       focusByKey(`${exerciseId}:${Math.max(0, setIdx - 1)}:reps`);
     }
-  };
+  }, [focusByKey]);
 
   const handleWeightKeyDown = async (
     exerciseId: string,
