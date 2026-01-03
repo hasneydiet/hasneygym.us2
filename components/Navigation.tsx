@@ -54,7 +54,6 @@ export default function Navigation() {
                 <Link
                   key={item.href}
                   href={item.href}
-                  aria-current={isActive(item.href) ? 'page' : undefined}
                   className={`px-3 py-2 rounded-xl text-sm font-medium transition-all duration-150 ${
                     isActive(item.href)
                       ? 'bg-primary text-primary-foreground shadow-sm'
@@ -81,7 +80,6 @@ export default function Navigation() {
                 onClick={handleLogout}
                 className="icon-btn"
                 title="Logout"
-                aria-label="Logout"
               >
                 <LogOut className="w-5 h-5" />
               </button>
@@ -101,7 +99,6 @@ export default function Navigation() {
                 <Link
                   key={item.href}
                   href={item.href}
-                  aria-current={active ? 'page' : undefined}
                   className={`tap-target flex flex-col items-center justify-center py-3 px-2 text-xs font-medium flex-1 transition-colors ${
                     active
                       ? 'text-primary border-t-2 border-primary'

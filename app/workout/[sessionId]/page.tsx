@@ -1,7 +1,6 @@
 'use client';
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type React from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 
@@ -10,128 +9,6 @@ import { Badge } from '@/components/ui/badge';
 type WorkoutSession = any;
 type WorkoutExercise = any;
 type WorkoutSet = any;
-
-type DraftMap = Record<string, Partial<Record<'reps' | 'weight', string>>>;
-
-type SetRowProps = {
-  exerciseId: string;
-  set: WorkoutSet;
-  index: number;
-  highlight: boolean;
-  removing: boolean;
-  repsValue: string;
-  weightValue: string;
-  repsPlaceholder: string;
-  weightPlaceholder: string;
-  prevReps: any;
-  prevWeight: any;
-  inputRefs: React.MutableRefObject<Map<string, HTMLInputElement>>;
-  onChangeDraft: (setId: string, field: 'reps' | 'weight', value: string) => void;
-  onBlurCommit: (setId: string, field: 'reps' | 'weight') => void;
-  onDeleteSet: (exerciseId: string, setId: string) => void;
-  onRepsKeyDown: (exerciseId: string, index: number, e: React.KeyboardEvent<HTMLInputElement>) => void;
-  onWeightKeyDown: (exerciseId: string, index: number, e: React.KeyboardEvent<HTMLInputElement>) => void;
-};
-
-const WorkoutSetRow = memo(function WorkoutSetRow(props: SetRowProps) {
-  const {
-    exerciseId,
-    set,
-    index,
-    highlight,
-    removing,
-    repsValue,
-    weightValue,
-    repsPlaceholder,
-    weightPlaceholder,
-    prevReps,
-    prevWeight,
-    inputRefs,
-    onChangeDraft,
-    onBlurCommit,
-    onDeleteSet,
-    onRepsKeyDown,
-    onWeightKeyDown,
-  } = props;
-
-  return (
-    <tr
-      className={
-        'set-row ' +
-        (highlight ? 'set-row--new ' : '') +
-        (removing ? 'set-row--removing ' : '')
-      }
-    >
-      <td className="px-2 py-2 font-semibold text-gray-200 tabular-nums">{index + 1}</td>
-
-      <td className="px-2 py-2">
-        <input
-          type="number"
-          inputMode="numeric"
-          aria-label={`Reps for set ${index + 1}`}
-          placeholder={repsPlaceholder}
-          value={repsValue}
-          onChange={(e) => onChangeDraft(set.id, 'reps', e.target.value)}
-          onFocus={(e) => e.currentTarget.select()}
-          onBlur={() => onBlurCommit(set.id, 'reps')}
-          className="workout-input"
-          ref={(el) => {
-            const keyA = `${exerciseId}:${set.id}:reps`;
-            const keyB = `${exerciseId}:${index}:reps`;
-            if (el) {
-              inputRefs.current.set(keyA, el);
-              inputRefs.current.set(keyB, el);
-            } else {
-              inputRefs.current.delete(keyA);
-              inputRefs.current.delete(keyB);
-            }
-          }}
-          onKeyDown={(e) => onRepsKeyDown(exerciseId, index, e)}
-        />
-        {formatPrevLine('Prev:', prevReps)}
-      </td>
-
-      <td className="px-2 py-2">
-        <input
-          type="number"
-          inputMode="decimal"
-          aria-label={`Weight for set ${index + 1}`}
-          placeholder={weightPlaceholder}
-          value={weightValue}
-          onChange={(e) => onChangeDraft(set.id, 'weight', e.target.value)}
-          onFocus={(e) => e.currentTarget.select()}
-          onBlur={() => onBlurCommit(set.id, 'weight')}
-          className="workout-input"
-          ref={(el) => {
-            const keyA = `${exerciseId}:${set.id}:weight`;
-            const keyB = `${exerciseId}:${index}:weight`;
-            if (el) {
-              inputRefs.current.set(keyA, el);
-              inputRefs.current.set(keyB, el);
-            } else {
-              inputRefs.current.delete(keyA);
-              inputRefs.current.delete(keyB);
-            }
-          }}
-          onKeyDown={(e) => onWeightKeyDown(exerciseId, index, e)}
-        />
-        {formatPrevLine('Prev:', prevWeight)}
-      </td>
-
-      <td className="px-2 py-2 text-right">
-        <button
-          type="button"
-          className="icon-btn icon-btn--danger"
-          aria-label={`Delete set ${index + 1}`}
-          onClick={() => onDeleteSet(exerciseId, set.id)}
-        >
-          <span aria-hidden>✕</span>
-        </button>
-      </td>
-    </tr>
-  );
-});
-
 
 function formatClock(totalSeconds: number) {
   const s = Math.max(0, Math.floor(totalSeconds));
@@ -263,7 +140,7 @@ const openTechnique = (key: string) => {
   const inputRefs = useRef<Map<string, HTMLInputElement>>(new Map());
   const [pendingFocusKey, setPendingFocusKey] = useState<string | null>(null);
 
-  const focusByKey = useCallback((key: string) => {
+  const focusByKey = (key: string) => {
     const el = inputRefs.current.get(key);
     if (el) {
       el.focus();
@@ -272,7 +149,7 @@ const openTechnique = (key: string) => {
       return true;
     }
     return false;
-  }, []);
+  };
 
   const vibrate = (pattern: number | number[] = 10) => {
     try {
@@ -291,12 +168,12 @@ const openTechnique = (key: string) => {
     return Number.isFinite(started) ? started : Date.now();
   }, [session?.started_at]);
 
-  const setDraftValue = useCallback((setId: string, field: 'reps' | 'weight', value: string) => {
+  const setDraftValue = (setId: string, field: string, value: string) => {
     setDraft((prev) => ({
       ...prev,
       [setId]: { ...(prev[setId] || {}), [field]: value },
     }));
-  }, []);
+  };
 
   const clearDraftField = (setId: string, field: string) => {
     setDraft((prev) => {
@@ -312,36 +189,18 @@ const openTechnique = (key: string) => {
   // ✅ This is the key fix:
   // - If user is typing (draft exists), show draft.
   // - Otherwise show the saved value from state (sets) — but keep it blank if 0.
-  const getDisplayValue = useCallback(
-    (setId: string, field: 'reps' | 'weight', savedValue: any) => {
-      const v = draft[setId]?.[field];
-      if (v !== undefined) return v;
-      const n = Number(savedValue ?? 0);
-      if (!Number.isFinite(n) || n === 0) return '';
-      return String(n);
-    },
-    [draft]
-  );
+  const getDisplayValue = (setId: string, field: 'reps' | 'weight', savedValue: any) => {
+    const v = draft[setId]?.[field];
+    if (v !== undefined) return v;
+    const n = Number(savedValue ?? 0);
+    if (!Number.isFinite(n) || n === 0) return '';
+    return String(n);
+  };
 
-  const getDraftRaw = useCallback(
-    (setId: string, field: 'reps' | 'weight') => {
-      const v = draft[setId]?.[field];
-      return v !== undefined ? v : '';
-    },
-    [draft]
-  );
-
-  const commitDraft = useCallback(
-    (setId: string, field: 'reps' | 'weight') => {
-      const raw = getDraftRaw(setId, field).trim();
-      const num = raw === '' ? 0 : Number(raw);
-      // Preserve existing behavior: non-finite -> 0
-      saveSet(setId, field, Number.isFinite(num) ? num : 0);
-      clearDraftField(setId, field);
-    },
-    [clearDraftField, getDraftRaw, saveSet]
-  );
-
+  const getDraftRaw = (setId: string, field: 'reps' | 'weight') => {
+    const v = draft[setId]?.[field];
+    return v !== undefined ? v : '';
+  };
 
   const stopRestTimer = () => {
     setRestSecondsRemaining(null);
@@ -414,7 +273,7 @@ const openTechnique = (key: string) => {
     return () => cancelAnimationFrame(id);
   }, [pendingFocusKey, sets]);
 
-  const loadWorkout = useCallback(async () => {
+  const loadWorkout = async () => {
     const { data: sessionData } = await supabase
       .from('workout_sessions')
       .select('*, routines(name), routine_days(name)')
@@ -451,7 +310,7 @@ const openTechnique = (key: string) => {
     setSets(map);
 
     await loadPreviousSetsForExercises(exData, sessionData.started_at);
-  }, [sessionId]);
+  };
 
   const loadPreviousSetsForExercises = async (exData: WorkoutExercise[], startedAt: string) => {
     setPrevSetsByExercise({});
@@ -591,7 +450,7 @@ const openTechnique = (key: string) => {
   };
 
 
-  const handleRepsKeyDown = useCallback((exerciseId: string, setIdx: number, e: any) => {
+  const handleRepsKeyDown = (exerciseId: string, setIdx: number, e: any) => {
     if (e.key === 'Enter') {
       e.preventDefault();
       focusByKey(`${exerciseId}:${setIdx}:weight`);
@@ -606,7 +465,7 @@ const openTechnique = (key: string) => {
       e.preventDefault();
       focusByKey(`${exerciseId}:${Math.max(0, setIdx - 1)}:reps`);
     }
-  }, [focusByKey]);
+  };
 
   const handleWeightKeyDown = async (
     exerciseId: string,
@@ -639,7 +498,7 @@ const openTechnique = (key: string) => {
   };
 
 
-  const deleteSet = useCallback(async (exerciseId: string, setId: string) => {
+  const deleteSet = async (exerciseId: string, setId: string) => {
     // mark as removing for a subtle exit animation
     setRemovingSetIds((prev) => {
       const next = new Set(prev);
@@ -663,7 +522,7 @@ const openTechnique = (key: string) => {
     }
 
     loadWorkout();
-  }, [sets, loadWorkout, supabase, vibrate]);
+  };
 
   const formatPrevLine = (label: string, value: string | number | null | undefined) => {
     if (value === null || value === undefined || value === '') return null;
@@ -748,7 +607,7 @@ const openTechnique = (key: string) => {
             const prevSets = prevSetsByExercise[exercise.id] || [];
 
             return (
-              <div key={exercise.id} className="workout-card">
+              <div key={exercise.id} className="bg-gray-900/40 border border-gray-800 rounded-2xl p-4 sm:p-5 shadow-lg shadow-black/20">
 <div className="mb-2 flex items-start justify-between gap-3">
   <h3 className="section-title text-white">{exercise.exercises?.name || 'Exercise'}</h3>
   {exercise.exercises?.default_technique_tags?.[0] ? (
@@ -768,7 +627,7 @@ const openTechnique = (key: string) => {
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="workout-table-head">
+                      <tr className="text-left text-[11px] uppercase tracking-wide text-gray-300/80 border-b border-gray-800">
                         <th className="px-2 py-2 w-12">Set</th>
                         <th className="px-2 py-2">Reps</th>
                         <th className="px-2 py-2">Weight</th>
@@ -789,26 +648,105 @@ const openTechnique = (key: string) => {
                           prevWeight !== null && prevWeight !== undefined && prevWeight !== '' ? String(prevWeight) : '';
 
                         return (
-                          <WorkoutSetRow
-                            exerciseId={exercise.id}
-                            inputRefs={inputRefs}
-                            set={set}
-                            index={idx}
-                            highlight={set.id === highlightSetId}
-                            removing={removingSetIds.has(set.id)}
-                            repsValue={getDisplayValue(set.id, 'reps', set.reps)}
-                            weightValue={getDisplayValue(set.id, 'weight', set.weight)}
-                            repsPlaceholder={repsPlaceholder}
-                            weightPlaceholder={weightPlaceholder}
-                            prevReps={prevReps}
-                            prevWeight={prevWeight}
-                            onChangeDraft={setDraftValue}
-                            onBlurCommit={commitDraft}
-                            onDeleteSet={deleteSet}
-                            onRepsKeyDown={handleRepsKeyDown}
-                            onWeightKeyDown={handleWeightKeyDown}
-                          />
-                        );                      })}
+                          <tr
+                            key={set.id}
+                            className={
+                              "set-row " +
+                              (set.id === highlightSetId ? "set-row--new " : "") +
+                              (removingSetIds.has(set.id) ? "set-row--removing " : "")
+                            }
+                          >
+                            <td className="px-2 py-2 font-semibold text-gray-200 tabular-nums">{idx + 1}</td>
+
+                            <td className="px-2 py-2">
+                              <input
+                                type="number"
+                                inputMode="numeric"
+                                 aria-label={`Reps for set ${idx + 1}`}
+                                placeholder={repsPlaceholder}
+                                value={getDisplayValue(set.id, 'reps', set.reps)}
+                                onChange={(e) => setDraftValue(set.id, 'reps', e.target.value)}
+                                onFocus={(e) => e.currentTarget.select()}
+                                ref={(el) => {
+                                  const keyA = `${exercise.id}:${set.id}:reps`;
+                                  const keyB = `${exercise.id}:${idx}:reps`;
+                                  if (el) {
+                                    inputRefs.current.set(keyA, el);
+                                    inputRefs.current.set(keyB, el);
+                                  } else {
+                                    inputRefs.current.delete(keyA);
+                                    inputRefs.current.delete(keyB);
+                                  }
+                                }}
+                                onKeyDown={(e) => handleRepsKeyDown(exercise.id, idx, e)}
+                                onBlur={() => {
+                                  const raw = getDraftRaw(set.id, 'reps').trim();
+                                  const num = raw === '' ? 0 : Number(raw);
+                                  saveSet(set.id, 'reps', Number.isFinite(num) ? num : 0);
+                                  clearDraftField(set.id, 'reps');
+                                }}
+                                className="w-full h-11 px-2 py-2 rounded-xl border border-gray-700 bg-gray-900/40 text-center text-white placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-950"
+                              />
+                              {formatPrevLine('Prev:', prevReps)}
+                            </td>
+
+                            <td className="px-2 py-2">
+                              <input
+                                type="number"
+                                inputMode="decimal"
+                                 aria-label={`Weight for set ${idx + 1}`}
+                                step="0.5"
+                                placeholder={weightPlaceholder}
+                                value={getDisplayValue(set.id, 'weight', set.weight)}
+                                onChange={(e) => setDraftValue(set.id, 'weight', e.target.value)}
+                                onFocus={(e) => e.currentTarget.select()}
+                                ref={(el) => {
+                                  const keyA = `${exercise.id}:${set.id}:weight`;
+                                  const keyB = `${exercise.id}:${idx}:weight`;
+                                  if (el) {
+                                    inputRefs.current.set(keyA, el);
+                                    inputRefs.current.set(keyB, el);
+                                  } else {
+                                    inputRefs.current.delete(keyA);
+                                    inputRefs.current.delete(keyB);
+                                  }
+                                }}
+                                onKeyDown={(e) => handleWeightKeyDown(exercise.id, idx, (sets[exercise.id] || []).length, e)}
+                                onBlur={() => {
+                                  const raw = getDraftRaw(set.id, 'weight').trim();
+                                  const num = raw === '' ? 0 : Number(raw);
+                                  saveSet(set.id, 'weight', Number.isFinite(num) ? num : 0);
+                                  clearDraftField(set.id, 'weight');
+                                }}
+                                className="w-full h-11 px-2 py-2 rounded-xl border border-gray-700 bg-gray-900/40 text-center text-white placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-950"
+                              />
+                              {formatPrevLine('Prev:', prevWeight)}
+                            </td>
+
+                            <td className="px-2 py-2 text-center">
+                              <button
+                                onClick={() => handleToggleCompleted(set)}
+                                className={`w-11 h-11 rounded border-2 flex items-center justify-center ${
+                                  set.is_completed ? 'bg-white border-white text-gray-900' : 'border-gray-700'
+                                }`}
+                                title="Mark set complete"
+                              >
+                                {set.is_completed && <span className="text-xs">✓</span>}
+                              </button>
+                            </td>
+
+                            <td className="px-2 py-2 text-center">
+                              <button
+                                onClick={() => deleteSet(exercise.id, set.id)}
+                                className="w-11 h-11 rounded text-gray-300 hover:text-red-400"
+                                title="Delete set"
+                              >
+                                ✕
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
 
