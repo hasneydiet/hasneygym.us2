@@ -111,6 +111,11 @@ export default function WorkoutPage() {
 
   const [prevSetsByExercise, setPrevSetsByExercise] = useState<Record<string, WorkoutSet[]>>({});
 
+  // Micro-interactions: track which set was just added/removed for subtle animations
+  const [highlightSetId, setHighlightSetId] = useState<string | null>(null);
+  const [removingSetIds, setRemovingSetIds] = useState<Set<string>>(() => new Set());
+
+
   // Draft typed values: used only while editing; after blur it gets cleared.
   const [draft, setDraft] = useState<Record<string, Record<string, string>>>({});
 
@@ -438,6 +443,8 @@ const openTechnique = (key: string) => {
 
     if (data) {
       vibrate(15);
+      setHighlightSetId(data.id);
+      window.setTimeout(() => setHighlightSetId((prev) => (prev === data.id ? null : prev)), 700);
       loadWorkout();
     }
   };
@@ -492,6 +499,20 @@ const openTechnique = (key: string) => {
 
 
   const deleteSet = async (exerciseId: string, setId: string) => {
+    // mark as removing for a subtle exit animation
+    setRemovingSetIds((prev) => {
+      const next = new Set(prev);
+      next.add(setId);
+      return next;
+    });
+    window.setTimeout(() => {
+      setRemovingSetIds((prev) => {
+        const next = new Set(prev);
+        next.delete(setId);
+        return next;
+      });
+    }, 800);
+    await new Promise((r) => window.setTimeout(r, 140));
     vibrate([12, 8]);
     await supabase.from('workout_sets').delete().eq('id', setId);
 
@@ -588,7 +609,7 @@ const openTechnique = (key: string) => {
             return (
               <div key={exercise.id} className="bg-gray-900/40 border border-gray-800 rounded-2xl p-4 sm:p-5 shadow-lg shadow-black/20">
 <div className="mb-2 flex items-start justify-between gap-3">
-  <h3 className="text-lg font-bold">{exercise.exercises?.name || 'Exercise'}</h3>
+  <h3 className="section-title text-white">{exercise.exercises?.name || 'Exercise'}</h3>
   {exercise.exercises?.default_technique_tags?.[0] ? (
     <button
       type="button"
@@ -606,7 +627,7 @@ const openTechnique = (key: string) => {
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="text-left text-gray-300 border-b border-gray-800">
+                      <tr className="text-left text-[11px] uppercase tracking-wide text-gray-300/80 border-b border-gray-800">
                         <th className="px-2 py-2 w-12">Set</th>
                         <th className="px-2 py-2">Reps</th>
                         <th className="px-2 py-2">Weight</th>
@@ -627,8 +648,15 @@ const openTechnique = (key: string) => {
                           prevWeight !== null && prevWeight !== undefined && prevWeight !== '' ? String(prevWeight) : '';
 
                         return (
-                          <tr key={set.id} className="border-b border-gray-800 align-top">
-                            <td className="px-2 py-2 font-medium">{idx + 1}</td>
+                          <tr
+                            key={set.id}
+                            className={
+                              "set-row " +
+                              (set.id === highlightSetId ? "set-row--new " : "") +
+                              (removingSetIds.has(set.id) ? "set-row--removing " : "")
+                            }
+                          >
+                            <td className="px-2 py-2 font-semibold text-gray-200 tabular-nums">{idx + 1}</td>
 
                             <td className="px-2 py-2">
                               <input

@@ -277,7 +277,7 @@ export default function RoutineEditorPage() {
       <div className="app-shell">
         <Navigation />
         <div className="page max-w-7xl">
-          <div className="mb-6">
+          <div className="routine-sticky">
             <button
               onClick={() => router.push('/routines')}
               className="text-sm text-muted-foreground hover:text-foreground underline-offset-4 hover:underline"
@@ -349,7 +349,7 @@ export default function RoutineEditorPage() {
 
               return (
                 <div key={day.id} className="surface p-6">
-                  <div className="flex justify-between items-center mb-4">
+                  <div className="day-sticky-header flex justify-between items-center gap-3">
                     {editingDayId === day.id ? (
                       <div className="flex-1 pr-2">
                         <Input
@@ -391,7 +391,7 @@ export default function RoutineEditorPage() {
                     </button>
                   </div>
 
-                  <div className="space-y-2 mb-4">
+                  <div className="mt-4 space-y-2 mb-4">
                     {grouped.map((group, gIdx) => {
                       if (group.superset_group_id) {
                         return (

@@ -213,4 +213,33 @@ button {
   .inline-action:active {
     transform: scale(0.98);
   }
+  /* Sticky headers (mobile-first) */
+  .routine-sticky {
+    @apply sticky top-0 z-30 -mx-4 px-4 pt-4 pb-3 bg-background/85 backdrop-blur border-b border-border;
+    @apply sm:-mx-6 sm:px-6;
+    @apply md:static md:z-auto md:mx-0 md:px-0 md:pt-0 md:pb-0 md:bg-transparent md:backdrop-blur-0 md:border-b-0;
+  }
+
+  .day-sticky-header {
+    @apply sticky top-[72px] z-20 -mx-6 px-6 py-3 bg-background/85 backdrop-blur border-b border-border;
+    @apply md:static md:top-auto md:z-auto md:mx-0 md:px-0 md:py-0 md:bg-transparent md:backdrop-blur-0 md:border-b-0;
+  }
+
+  /* Micro-interactions for set rows (workout) */
+  .set-row {
+    @apply border-b border-gray-800 align-top transition-[opacity,transform] duration-200 ease-out;
+  }
+  .set-row--new {
+    @apply animate-in fade-in slide-in-from-bottom-1 duration-200;
+  }
+  .set-row--removing {
+    @apply opacity-0 -translate-x-2;
+  }
+
+  /* Scan-friendly section headers */
+  .section-title {
+    @apply text-base sm:text-lg font-semibold tracking-tight;
+  }
+
 }
+
