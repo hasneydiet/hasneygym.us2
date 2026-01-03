@@ -663,7 +663,7 @@ const openTechnique = (key: string) => {
     }
 
     loadWorkout();
-  };
+  }, [sets, loadWorkout, supabase, vibrate]);
 
   const formatPrevLine = (label: string, value: string | number | null | undefined) => {
     if (value === null || value === undefined || value === '') return null;
