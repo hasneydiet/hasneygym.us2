@@ -636,7 +636,7 @@ const openTechnique = (key: string) => {
       e.preventDefault();
       focusByKey(`${exerciseId}:${Math.max(0, setIdx - 1)}:weight`);
     }
-  }, [focusByKey]);
+  };
 
 
   const deleteSet = useCallback(async (exerciseId: string, setId: string) => {
