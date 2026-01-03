@@ -419,7 +419,7 @@ export default function RoutineEditorPage() {
                                   </button>
                                   <button
                                     onClick={() => toggleSuperset(day.id, ex.id)}
-                                    className="tap-target rounded-xl border border-border/60 bg-background/60 px-3 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+                                    className="tap-target rounded-xl border border-border/60 bg-background bg-opacity-60 px-3 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
                                   >
                                     Ungroup
                                   </button>
@@ -457,7 +457,7 @@ export default function RoutineEditorPage() {
                               </button>
                               <button
                                 onClick={() => toggleSuperset(day.id, ex.id)}
-                                className="tap-target rounded-xl border border-border/60 bg-background/60 px-3 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+                                className="tap-target rounded-xl border border-border/60 bg-background bg-opacity-60 px-3 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
                               >
                                 Superset
                               </button>
@@ -480,7 +480,7 @@ export default function RoutineEditorPage() {
                       <select
                         value={selectedExerciseId}
                         onChange={(e) => setSelectedExerciseId(e.target.value)}
-                        className="w-full h-11 rounded-xl border border-input bg-background/70 backdrop-blur px-3 text-sm text-foreground mb-2"
+                        className="w-full h-11 rounded-xl border border-input bg-background bg-opacity-70 backdrop-blur px-3 text-sm text-foreground mb-2"
                       >
                         <option value="">Select Exercise</option>
                         {exercises.map((ex) => (

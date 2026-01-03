@@ -89,7 +89,7 @@ function AutocompleteInput(props: {
         }}
         onFocus={() => setOpen(true)}
         placeholder={placeholder}
-        className="w-full h-11 px-3 rounded-xl border border-input bg-background/70 backdrop-blur text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background"
+        className="w-full h-11 px-3 rounded-xl border border-input bg-background bg-opacity-70 backdrop-blur text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background"
         autoComplete="off"
       />
 

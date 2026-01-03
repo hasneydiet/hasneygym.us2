@@ -215,13 +215,17 @@ button {
   }
   /* Sticky headers (mobile-first) */
   .routine-sticky {
-    @apply sticky top-0 z-30 -mx-4 px-4 pt-4 pb-3 bg-background/85 backdrop-blur border-b border-border;
+		@apply sticky top-0 z-30 -mx-4 px-4 pt-4 pb-3 backdrop-blur border-b border-border;
+		/* Raw CSS for alpha background: avoids Tailwind @apply slash-opacity class resolution issues */
+		background-color: hsl(var(--background) / 0.85);
     @apply sm:-mx-6 sm:px-6;
     @apply md:static md:z-auto md:mx-0 md:px-0 md:pt-0 md:pb-0 md:bg-transparent md:backdrop-blur-0 md:border-b-0;
   }
 
   .day-sticky-header {
-    @apply sticky top-[72px] z-20 -mx-6 px-6 py-3 bg-background/85 backdrop-blur border-b border-border;
+		@apply sticky top-[72px] z-20 -mx-6 px-6 py-3 backdrop-blur border-b border-border;
+		/* Raw CSS for alpha background: avoids Tailwind @apply slash-opacity class resolution issues */
+		background-color: hsl(var(--background) / 0.85);
     @apply md:static md:top-auto md:z-auto md:mx-0 md:px-0 md:py-0 md:bg-transparent md:backdrop-blur-0 md:border-b-0;
   }
 

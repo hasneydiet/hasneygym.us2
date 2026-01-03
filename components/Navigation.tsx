@@ -42,7 +42,7 @@ export default function Navigation() {
   return (
     <>
       {/* HEADER (mobile + desktop) */}
-      <nav className="sticky top-0 z-50 border-b border-border/60 bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70">
+      <nav className="sticky top-0 z-50 border-b border-border/60 bg-background bg-opacity-85 backdrop-blur supports-[backdrop-filter]:bg-background supports-[backdrop-filter]:bg-opacity-70">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-14 md:h-16">
             {/* Logo (no square background) */}
@@ -89,7 +89,7 @@ export default function Navigation() {
       </nav>
 
       {/* MOBILE BOTTOM TAB BAR */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-border/60 bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-border/60 bg-background bg-opacity-85 backdrop-blur supports-[backdrop-filter]:bg-background supports-[backdrop-filter]:bg-opacity-70">
         <div className="pb-[env(safe-area-inset-bottom)]">
           <div className="flex justify-around">
             {navItems.map((item) => {
