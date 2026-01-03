@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Navigation from '@/components/Navigation';
 import { supabase } from '@/lib/supabase';
 import type { RoutineDay } from '@/lib/types';
+import { sortRoutineDays } from '@/lib/routineDaySort';
 import { Button } from '@/components/ui/button';
 
 type RoutineDayCard = RoutineDay & {
@@ -81,12 +82,14 @@ export default function WorkoutStartPage() {
         const { data: dayRows, error: daysErr } = await supabase
           .from('routine_days')
           .select('id, routine_id, day_index, name, created_at, routines(name)')
-          .order('created_at', { ascending: true })
-          .order('day_index', { ascending: true });
+          // Primary ordering must follow Day 1, Day 2, ...
+          .order('day_index', { ascending: true })
+          // Secondary tie-breaker for deterministic results
+          .order('created_at', { ascending: true });
 
         if (daysErr) throw daysErr;
 
-        const baseDays: RoutineDayCard[] = (dayRows || []).map((r: any) => ({
+        const baseDaysUnsorted: RoutineDayCard[] = (dayRows || []).map((r: any) => ({
           id: r.id,
           routine_id: r.routine_id,
           day_index: r.day_index,
@@ -97,6 +100,10 @@ export default function WorkoutStartPage() {
           exerciseCount: 0,
           lastPerformed: null,
         }));
+
+        // Enforce UI ordering by the day label (e.g., "Day 10" after "Day 2").
+        // This is independent of routine names so routine renames cannot affect day mapping.
+        const baseDays = sortRoutineDays(baseDaysUnsorted);
 
         // Build preview with ONE query
         const ids = baseDays.map((d) => d.id);
