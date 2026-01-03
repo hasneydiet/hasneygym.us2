@@ -6,7 +6,7 @@ import AuthGuard from '@/components/AuthGuard';
 import Navigation from '@/components/Navigation';
 import { supabase } from '@/lib/supabase';
 import { Routine, RoutineDay, RoutineDayExercise, Exercise } from '@/lib/types';
-import { Plus, Trash2, ChevronUp, ChevronDown, X } from 'lucide-react';
+import { Plus, Trash2, ChevronUp, ChevronDown, X, PencilLine, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -27,6 +27,12 @@ export default function RoutineEditorPage() {
   const [newDayName, setNewDayName] = useState('');
   const [selectedExerciseId, setSelectedExerciseId] = useState('');
 
+  // Inline rename (minimal behavior change: updates existing fields only)
+  const [isEditingRoutineName, setIsEditingRoutineName] = useState(false);
+  const [routineNameDraft, setRoutineNameDraft] = useState('');
+  const [editingDayId, setEditingDayId] = useState<string | null>(null);
+  const [dayNameDraft, setDayNameDraft] = useState<Record<string, string>>({});
+
   useEffect(() => {
     loadRoutine();
     loadExercises();
@@ -41,6 +47,7 @@ export default function RoutineEditorPage() {
 
     if (routineData) {
       setRoutine(routineData);
+      setRoutineNameDraft(routineData.name || '');
 
       const { data: daysData } = await supabase
         .from('routine_days')
@@ -50,6 +57,20 @@ export default function RoutineEditorPage() {
 
       if (daysData) {
         setDays(daysData);
+
+        // initialize day name drafts (keeps inputs stable)
+        const drafts: Record<string, string> = {};
+        for (const d of daysData) drafts[d.id] = d.name || '';
+        setDayNameDraft(drafts);
+
+        // Keep drafts in sync (without stomping active edits)
+        setDayNameDraft((prev) => {
+          const next = { ...prev };
+          for (const d of daysData) {
+            if (typeof next[d.id] !== 'string') next[d.id] = d.name || '';
+          }
+          return next;
+        });
 
         const exMap: { [dayId: string]: RoutineDayExercise[] } = {};
         for (const day of daysData) {
@@ -75,6 +96,69 @@ export default function RoutineEditorPage() {
     if (data) setExercises(data);
   };
 
+  const startEditRoutineName = () => {
+    if (!routine) return;
+    setRoutineNameDraft(routine.name || '');
+    setIsEditingRoutineName(true);
+  };
+
+  const saveRoutineName = async () => {
+    if (!routine) return;
+    const nextName = routineNameDraft.trim();
+    if (!nextName || nextName === (routine.name || '')) {
+      setIsEditingRoutineName(false);
+      setRoutineNameDraft(routine.name || '');
+      return;
+    }
+
+    // optimistic UI
+    const prev = routine;
+    setRoutine({ ...routine, name: nextName });
+    setIsEditingRoutineName(false);
+
+    const { error } = await supabase
+      .from('routines')
+      .update({ name: nextName })
+      .eq('id', routineId);
+
+    if (error) {
+      // revert on failure
+      setRoutine(prev);
+      setRoutineNameDraft(prev.name || '');
+      alert('Could not rename routine. Please try again.');
+    }
+  };
+
+  const startEditDayName = (day: RoutineDay) => {
+    setEditingDayId(day.id);
+    setDayNameDraft((prev) => ({ ...prev, [day.id]: day.name || '' }));
+  };
+
+  const saveDayName = async (day: RoutineDay) => {
+    const nextName = (dayNameDraft[day.id] || '').trim();
+    if (!nextName || nextName === (day.name || '')) {
+      setEditingDayId(null);
+      setDayNameDraft((prev) => ({ ...prev, [day.id]: day.name || '' }));
+      return;
+    }
+
+    // optimistic UI
+    const prevDays = days;
+    setDays((cur) => cur.map((d) => (d.id === day.id ? { ...d, name: nextName } : d)));
+    setEditingDayId(null);
+
+    const { error } = await supabase
+      .from('routine_days')
+      .update({ name: nextName })
+      .eq('id', day.id);
+
+    if (error) {
+      setDays(prevDays);
+      setDayNameDraft((prev) => ({ ...prev, [day.id]: day.name || '' }));
+      alert('Could not rename day. Please try again.');
+    }
+  };
+
   const addDay = async () => {
     if (!newDayName.trim()) return;
 
@@ -92,6 +176,7 @@ export default function RoutineEditorPage() {
     if (data) {
       setDays([...days, data]);
       setDayExercises({ ...dayExercises, [data.id]: [] });
+      setDayNameDraft((prev) => ({ ...prev, [data.id]: data.name || '' }));
       setNewDayName('');
       setShowAddDay(false);
     }
@@ -199,7 +284,62 @@ export default function RoutineEditorPage() {
             >
               ← Back to Routines
             </button>
-            <h1 className="page-title">{routine?.name}</h1>
+            <div className="flex items-start justify-between gap-3">
+              {isEditingRoutineName ? (
+                <div className="flex-1">
+                  <Input
+                    value={routineNameDraft}
+                    onChange={(e) => setRoutineNameDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') saveRoutineName();
+                      if (e.key === 'Escape') {
+                        setIsEditingRoutineName(false);
+                        setRoutineNameDraft(routine?.name || '');
+                      }
+                    }}
+                    onBlur={saveRoutineName}
+                    className="h-12 text-base font-semibold"
+                    aria-label="Routine name"
+                    autoFocus
+                  />
+                </div>
+              ) : (
+                <h1 className="page-title flex-1 pr-2">{routine?.name}</h1>
+              )}
+
+              {isEditingRoutineName ? (
+                <div className="flex items-center gap-1 pt-1">
+                  <button
+                    onClick={saveRoutineName}
+                    className="icon-btn"
+                    aria-label="Save routine name"
+                    title="Save"
+                  >
+                    <Check className="w-5 h-5" />
+                  </button>
+                  <button
+                    onClick={() => {
+                      setIsEditingRoutineName(false);
+                      setRoutineNameDraft(routine?.name || '');
+                    }}
+                    className="icon-btn"
+                    aria-label="Cancel"
+                    title="Cancel"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={startEditRoutineName}
+                  className="icon-btn"
+                  aria-label="Rename routine"
+                  title="Rename"
+                >
+                  <PencilLine className="w-5 h-5" />
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="space-y-6">
@@ -210,7 +350,37 @@ export default function RoutineEditorPage() {
               return (
                 <div key={day.id} className="surface p-6">
                   <div className="flex justify-between items-center mb-4">
-                    <h2 className="text-lg font-semibold tracking-tight">{day.name}</h2>
+                    {editingDayId === day.id ? (
+                      <div className="flex-1 pr-2">
+                        <Input
+                          value={dayNameDraft[day.id] ?? ''}
+                          onChange={(e) => setDayNameDraft((prev) => ({ ...prev, [day.id]: e.target.value }))}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') saveDayName(day);
+                            if (e.key === 'Escape') {
+                              setEditingDayId(null);
+                              setDayNameDraft((prev) => ({ ...prev, [day.id]: day.name || '' }));
+                            }
+                          }}
+                          onBlur={() => saveDayName(day)}
+                          className="h-11 text-sm font-semibold"
+                          aria-label="Day name"
+                          autoFocus
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 flex-1 pr-2">
+                        <h2 className="text-lg font-semibold tracking-tight truncate">{day.name}</h2>
+                        <button
+                          onClick={() => startEditDayName(day)}
+                          className="icon-btn"
+                          aria-label="Rename day"
+                          title="Rename day"
+                        >
+                          <PencilLine className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
                     <button
                       onClick={() => deleteDay(day.id)}
                       className="icon-btn text-destructive hover:text-destructive"
