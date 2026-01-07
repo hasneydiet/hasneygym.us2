@@ -28,12 +28,32 @@ export default function CoachPage() {
       setLoading(true);
       setError(null);
 
-      const { data, error } = await supabase.rpc('coach_list_users');
-      if (error) {
-        setError(error.message || 'Failed to load users.');
+      // Fetch via server-side endpoint (uses service role key on the server).
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) {
+        setError('No session token found.');
         setUsers([]);
-      } else {
-        setUsers((data || []) as CoachUserRow[]);
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/coach/users', {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store',
+        });
+        const json = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          setError(json?.error || 'Failed to load users.');
+          setUsers([]);
+        } else {
+          setUsers((json?.users || []) as CoachUserRow[]);
+        }
+      } catch (e: any) {
+        setError(e?.message || 'Failed to load users.');
+        setUsers([]);
       }
       setLoading(false);
     };
