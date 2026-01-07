@@ -9,7 +9,20 @@ type CoachState = {
   userId: string | null;
   email: string | null;
   impersonateUserId: string | null;
+  ready: boolean;
 };
+
+function isValidUuid(v: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+}
+
+function sanitizeImpersonation(raw: string | null) {
+  if (!raw) return null;
+  const v = String(raw).trim();
+  if (!v || v.toLowerCase() === 'null' || v.toLowerCase() === 'undefined') return null;
+  if (!isValidUuid(v)) return null;
+  return v;
+}
 
 export function useCoach() {
   const [state, setState] = useState<CoachState>({
@@ -17,6 +30,7 @@ export function useCoach() {
     userId: null,
     email: null,
     impersonateUserId: null,
+    ready: false,
   });
 
   // Load initial auth state + persisted impersonation.
@@ -30,7 +44,8 @@ export function useCoach() {
 
       let impersonateUserId: string | null = null;
       if (typeof window !== 'undefined') {
-        impersonateUserId = window.localStorage.getItem(COACH_IMPERSONATE_KEY);
+        impersonateUserId = sanitizeImpersonation(window.localStorage.getItem(COACH_IMPERSONATE_KEY));
+        if (!impersonateUserId) window.localStorage.removeItem(COACH_IMPERSONATE_KEY);
       }
 
       const isCoach = !!email && email.toLowerCase() === COACH_EMAIL.toLowerCase();
@@ -42,7 +57,7 @@ export function useCoach() {
       }
 
       if (!cancelled) {
-        setState({ isCoach, userId, email, impersonateUserId });
+        setState({ isCoach, userId, email, impersonateUserId, ready: true });
       }
     };
 
@@ -55,14 +70,15 @@ export function useCoach() {
 
       let impersonateUserId: string | null = null;
       if (typeof window !== 'undefined') {
-        impersonateUserId = window.localStorage.getItem(COACH_IMPERSONATE_KEY);
+        impersonateUserId = sanitizeImpersonation(window.localStorage.getItem(COACH_IMPERSONATE_KEY));
+        if (!impersonateUserId) window.localStorage.removeItem(COACH_IMPERSONATE_KEY);
         if (!isCoach) {
           window.localStorage.removeItem(COACH_IMPERSONATE_KEY);
           impersonateUserId = null;
         }
       }
 
-      setState({ isCoach, userId, email, impersonateUserId });
+      setState({ isCoach, userId, email, impersonateUserId, ready: true });
     });
 
     return () => {
@@ -92,6 +108,13 @@ export function useCoach() {
       return;
     }
 
+    // Safety: only allow valid UUIDs to be persisted/used.
+    if (!isValidUuid(id)) {
+      window.localStorage.removeItem(COACH_IMPERSONATE_KEY);
+      setState((s) => ({ ...s, impersonateUserId: null }));
+      return;
+    }
+
     window.localStorage.setItem(COACH_IMPERSONATE_KEY, id);
     setState((s) => ({ ...s, impersonateUserId: id }));
   };
@@ -103,5 +126,6 @@ export function useCoach() {
     impersonateUserId: state.impersonateUserId,
     effectiveUserId,
     setImpersonateUserId,
+    ready: state.ready,
   };
 }

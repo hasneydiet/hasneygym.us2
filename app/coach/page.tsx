@@ -18,7 +18,7 @@ type CoachUserRow = {
 
 export default function CoachPage() {
   const router = useRouter();
-  const { isCoach, setImpersonateUserId } = useCoach();
+  const { isCoach, ready, setImpersonateUserId } = useCoach();
   const [users, setUsers] = useState<CoachUserRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -44,10 +44,10 @@ export default function CoachPage() {
 
   useEffect(() => {
     // Client-side guard (DB enforces the real authorization).
-    if (isCoach === false) {
+    if (ready && isCoach === false) {
       router.replace('/history');
     }
-  }, [isCoach, router]);
+  }, [ready, isCoach, router]);
 
   const handleOpenUser = (userId: string) => {
     setImpersonateUserId(userId);
