@@ -36,9 +36,12 @@ export default function RoutineEditorPage() {
   const [dayNameDraft, setDayNameDraft] = useState<Record<string, string>>({});
 
   useEffect(() => {
+    // When the coach selects/changes impersonation, effectiveUserId changes.
+    // Reload routine/days/exercises for the selected user.
+    if (!effectiveUserId) return;
     loadRoutine();
     loadExercises();
-  }, [routineId]);
+  }, [routineId, effectiveUserId]);
 
   const loadRoutine = async () => {
     if (!effectiveUserId) return;
@@ -92,6 +95,7 @@ export default function RoutineEditorPage() {
   };
 
   const loadExercises = async () => {
+    if (!effectiveUserId) return;
     const { data } = await supabase
       .from('exercises')
       .select('*')
