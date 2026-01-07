@@ -85,6 +85,12 @@ test('smoke: server renders login page and protected route shell loads', async (
     assert.equal(workoutStart.status, 200);
     // Protected routes should still render shell; client-side auth will redirect.
     assert.ok(/Loading/i.test(workoutStart.text));
+
+const coach = await fetchText(`${baseUrl}/coach`);
+assert.equal(coach.status, 200);
+// Coach route should exist and render shell; client-side auth will redirect if not authorized.
+assert.ok(/Loading/i.test(coach.text));
+
   } finally {
     proc.kill('SIGTERM');
   }

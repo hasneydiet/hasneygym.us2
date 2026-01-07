@@ -4,14 +4,16 @@ import { useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { Dumbbell, Calendar, History, LogOut, Sun, Moon, Play } from 'lucide-react';
+import { Dumbbell, Calendar, History, LogOut, Sun, Moon, Play, Users } from 'lucide-react';
 import { useTheme } from '@/lib/theme';
+import { useCoach } from '@/hooks/useCoach';
 import BrandLogo from '@/components/BrandLogo';
 
 export default function Navigation() {
   const pathname = usePathname();
   const router = useRouter();
   const { theme, toggleTheme } = useTheme();
+  const { isCoach } = useCoach();
 
   // Prevent content from being hidden behind bottom tab bar
   useEffect(() => {
@@ -32,6 +34,7 @@ export default function Navigation() {
     { href: '/exercises', icon: Dumbbell, label: 'Exercises' },
     { href: '/routines', icon: Calendar, label: 'Routines' },
     { href: '/history', icon: History, label: 'History' },
+    ...(isCoach ? [{ href: '/coach', icon: Users, label: 'Coach' }] : []),
   ];
 
   const isActive = (href: string) => {

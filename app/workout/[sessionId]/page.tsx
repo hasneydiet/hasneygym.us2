@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { useCoach } from '@/hooks/useCoach';
 
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
@@ -103,6 +104,7 @@ const TECHNIQUE_GUIDES: Record<
 export default function WorkoutPage() {
   const params = useParams();
   const router = useRouter();
+  const { effectiveUserId } = useCoach();
   const sessionId = params.sessionId as string;
 
   const [session, setSession] = useState<WorkoutSession | null>(null);
@@ -257,7 +259,7 @@ const openTechnique = (key: string) => {
   useEffect(() => {
     loadWorkout();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]);
+  }, [sessionId, effectiveUserId]);
 
   // Apply pending focus after async updates (e.g., adding a set triggers reload)
   useEffect(() => {
@@ -274,6 +276,7 @@ const openTechnique = (key: string) => {
   }, [pendingFocusKey, sets]);
 
   const loadWorkout = async () => {
+    if (!effectiveUserId) return;
     const { data: sessionData } = await supabase
       .from('workout_sessions')
       .select('*, routines(name), routine_days(name)')

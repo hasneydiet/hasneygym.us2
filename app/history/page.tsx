@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import AuthGuard from '@/components/AuthGuard';
 import Navigation from '@/components/Navigation';
 import { supabase } from '@/lib/supabase';
+import { useCoach } from '@/hooks/useCoach';
 import { WorkoutSession } from '@/lib/types';
 import { format } from 'date-fns';
 import { Trash2 } from 'lucide-react';
@@ -14,18 +15,21 @@ export const dynamic = 'force-dynamic';
 
 export default function HistoryPage() {
   const router = useRouter();
+  const { effectiveUserId } = useCoach();
   const [sessions, setSessions] = useState<WorkoutSession[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     loadSessions();
-  }, []);
+  }, [effectiveUserId]);
 
   const loadSessions = async () => {
+    if (!effectiveUserId) return;
     try {
       const { data, error } = await supabase
         .from('workout_sessions')
         .select('*, routines(name), routine_days(name)')
+      .eq('user_id', effectiveUserId)
         .order('started_at', { ascending: false });
 
       if (error) throw error;

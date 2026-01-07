@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import AuthGuard from '@/components/AuthGuard';
 import Navigation from '@/components/Navigation';
 import { supabase } from '@/lib/supabase';
+import { useCoach } from '@/hooks/useCoach';
 import { Exercise, TECHNIQUE_TAGS } from '@/lib/types';
 import { Plus, Search, Edit2, Trash2, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -124,6 +125,7 @@ export const dynamic = 'force-dynamic';
 
 export default function ExercisesPage() {
   const router = useRouter();
+  const { effectiveUserId } = useCoach();
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [showForm, setShowForm] = useState(false);
@@ -139,12 +141,14 @@ export default function ExercisesPage() {
 
   useEffect(() => {
     loadExercises();
-  }, []);
+  }, [effectiveUserId]);
 
   const loadExercises = async () => {
+    if (!effectiveUserId) return;
     const { data, error } = await supabase
       .from('exercises')
       .select('*')
+      .eq('user_id', effectiveUserId)
       .order('name');
 
     if (!error && data) {
@@ -170,11 +174,10 @@ export default function ExercisesPage() {
         .update(payload)
         .eq('id', editingExercise.id);
     } else {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
+      if (effectiveUserId) {
         await supabase.from('exercises').insert({
           ...payload,
-          user_id: user.id,
+          user_id: effectiveUserId,
         });
       }
     }

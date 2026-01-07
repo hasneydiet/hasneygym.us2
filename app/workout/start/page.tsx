@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Navigation from '@/components/Navigation';
 import { supabase } from '@/lib/supabase';
+import { useCoach } from '@/hooks/useCoach';
 import type { RoutineDay } from '@/lib/types';
 import { sortRoutineDays } from '@/lib/routineDaySort';
 import { Button } from '@/components/ui/button';
@@ -55,6 +56,7 @@ async function getAuthedUser() {
 
 export default function WorkoutStartPage() {
   const router = useRouter();
+  const { effectiveUserId } = useCoach();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -82,6 +84,7 @@ export default function WorkoutStartPage() {
         const { data: dayRows, error: daysErr } = await supabase
           .from('routine_days')
           .select('id, routine_id, day_index, name, created_at, routines(name)')
+          .eq('routines.user_id', effectiveUserId)
           // Primary ordering must follow Day 1, Day 2, ...
           .order('day_index', { ascending: true })
           // Secondary tie-breaker for deterministic results
@@ -188,7 +191,7 @@ export default function WorkoutStartPage() {
       const { data: session, error: sessErr } = await supabase
         .from('workout_sessions')
         .insert({
-          user_id: user.id,
+          user_id: effectiveUserId,
           routine_id: day.routine_id,
           routine_day_id: day.id,
           started_at: new Date().toISOString(),
@@ -360,3 +363,4 @@ export default function WorkoutStartPage() {
     </div>
   );
 }
+

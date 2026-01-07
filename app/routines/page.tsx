@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import AuthGuard from '@/components/AuthGuard';
 import Navigation from '@/components/Navigation';
 import { supabase } from '@/lib/supabase';
+import { useCoach } from '@/hooks/useCoach';
 import { Routine } from '@/lib/types';
 import { Plus, Edit2, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -15,18 +16,21 @@ export const dynamic = 'force-dynamic';
 
 export default function RoutinesPage() {
   const router = useRouter();
+  const { effectiveUserId } = useCoach();
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({ name: '', notes: '' });
 
   useEffect(() => {
     loadRoutines();
-  }, []);
+  }, [effectiveUserId]);
 
   const loadRoutines = async () => {
+    if (!effectiveUserId) return;
     const { data, error } = await supabase
       .from('routines')
       .select('*')
+      .eq('user_id', effectiveUserId)
       .order('created_at', { ascending: false });
 
     if (!error && data) {
@@ -44,7 +48,7 @@ export default function RoutinesPage() {
       .from('routines')
       .insert({
         ...formData,
-        user_id: user.id,
+        user_id: effectiveUserId,
       })
       .select()
       .single();

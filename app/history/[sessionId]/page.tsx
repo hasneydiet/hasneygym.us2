@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import AuthGuard from '@/components/AuthGuard';
 import Navigation from '@/components/Navigation';
 import { supabase } from '@/lib/supabase';
+import { useCoach } from '@/hooks/useCoach';
 import { WorkoutSession, WorkoutExercise, WorkoutSet } from '@/lib/types';
 import { format } from 'date-fns';
 import { Trash2 } from 'lucide-react';
@@ -16,6 +17,7 @@ export const dynamic = 'force-dynamic';
 export default function SessionDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const { effectiveUserId } = useCoach();
   const sessionId = params.sessionId as string;
 
   const [session, setSession] = useState<WorkoutSession | null>(null);
@@ -24,9 +26,10 @@ export default function SessionDetailPage() {
 
   useEffect(() => {
     loadSession();
-  }, [sessionId]);
+  }, [sessionId, effectiveUserId]);
 
   const loadSession = async () => {
+    if (!effectiveUserId) return;
     const { data: sessionData } = await supabase
       .from('workout_sessions')
       .select('*, routines(name), routine_days(name)')
@@ -234,3 +237,4 @@ function ExerciseDetail({
     </div>
   );
 }
+
