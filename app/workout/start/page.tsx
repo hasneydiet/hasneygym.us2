@@ -86,7 +86,8 @@ export default function WorkoutStartPage() {
         // Load routine days + routine name
         const { data: dayRows, error: daysErr } = await supabase
           .from('routine_days')
-          .select('id, routine_id, day_index, name, created_at, routines(name)')
+          // Use an INNER join so the filter on routines.user_id is enforced server-side.
+          .select('id, routine_id, day_index, name, created_at, routines!inner(name, user_id)')
           .eq('routines.user_id', uid)
           // Primary ordering must follow Day 1, Day 2, ...
           .order('day_index', { ascending: true })

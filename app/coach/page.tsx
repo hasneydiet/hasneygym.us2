@@ -13,7 +13,6 @@ export const dynamic = 'force-dynamic';
 type CoachUserRow = {
   id: string;
   email: string | null;
-  created_at: string;
 };
 
 export default function CoachPage() {

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import AuthGuard from '@/components/AuthGuard';
 import Navigation from '@/components/Navigation';
 import { supabase } from '@/lib/supabase';
+import { useCoach } from '@/hooks/useCoach';
 import { WorkoutSession } from '@/lib/types';
 import { Play, Dumbbell, Calendar, TrendingUp } from 'lucide-react';
 import { format } from 'date-fns';
@@ -15,18 +16,21 @@ export const dynamic = 'force-dynamic';
 
 export default function DashboardPage() {
   const router = useRouter();
+  const { effectiveUserId } = useCoach();
   const [recentSessions, setRecentSessions] = useState<WorkoutSession[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     loadRecentSessions();
-  }, []);
+  }, [effectiveUserId]);
 
   const loadRecentSessions = async () => {
     try {
+      if (!effectiveUserId) return;
       const { data, error } = await supabase
         .from('workout_sessions')
         .select('*, routines(name), routine_days(name)')
+        .eq('user_id', effectiveUserId)
         .order('started_at', { ascending: false })
         .limit(5);
 
