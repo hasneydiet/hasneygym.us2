@@ -10,6 +10,13 @@ import { Plus, Search, Edit2, Trash2, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 // Non-breaking: HTML datalist suggestions keep inputs free-form while providing a fast picker on mobile/desktop.
 const MUSCLE_GROUP_OPTIONS = [
@@ -269,35 +276,24 @@ export default function ExercisesPage() {
             </div>
           </div>
 
-          {/* Muscle group quick filter (minimal UI, matches existing styling) */}
+          {/* Muscle group filter (Hevy-style: dropdown) */}
           <div className="mb-6">
-            <div className="flex gap-2 overflow-x-auto pb-1">
-              <button
-                type="button"
-                onClick={() => setSelectedMuscleGroup('')}
-                className={`tap-target min-h-8 px-3 py-1 rounded-full text-xs font-medium transition-colors border whitespace-nowrap ${
-                  selectedMuscleGroup
-                    ? 'bg-secondary/70 text-secondary-foreground border-border/60 hover:bg-secondary'
-                    : 'bg-primary text-primary-foreground border-primary/30 shadow-sm'
-                }`}
-              >
-                All
-              </button>
-              {MUSCLE_GROUP_OPTIONS.map((g) => (
-                <button
-                  key={g}
-                  type="button"
-                  onClick={() => setSelectedMuscleGroup(g)}
-                  className={`tap-target min-h-8 px-3 py-1 rounded-full text-xs font-medium transition-colors border whitespace-nowrap ${
-                    selectedMuscleGroup.toLowerCase() === g.toLowerCase()
-                      ? 'bg-primary text-primary-foreground border-primary/30 shadow-sm'
-                      : 'bg-secondary/70 text-secondary-foreground border-border/60 hover:bg-secondary'
-                  }`}
-                >
-                  {g}
-                </button>
-              ))}
-            </div>
+            <Select
+              value={selectedMuscleGroup || '__all__'}
+              onValueChange={(v) => setSelectedMuscleGroup(v === '__all__' ? '' : v)}
+            >
+              <SelectTrigger className="h-11 rounded-xl">
+                <SelectValue placeholder="All Muscles" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">All Muscles</SelectItem>
+                {MUSCLE_GROUP_OPTIONS.map((g) => (
+                  <SelectItem key={g} value={g}>
+                    {g}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           {showForm && (
