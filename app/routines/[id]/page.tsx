@@ -5,7 +5,6 @@ import { useRouter, useParams } from 'next/navigation';
 import AuthGuard from '@/components/AuthGuard';
 import Navigation from '@/components/Navigation';
 import { supabase } from '@/lib/supabase';
-import { useCoach } from '@/hooks/useCoach';
 import { Routine, RoutineDay, RoutineDayExercise, Exercise } from '@/lib/types';
 import { Plus, Trash2, ChevronUp, ChevronDown, X, PencilLine, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -17,7 +16,6 @@ export const dynamic = 'force-dynamic';
 export default function RoutineEditorPage() {
   const params = useParams();
   const router = useRouter();
-  const { effectiveUserId } = useCoach();
   const routineId = params.id as string;
 
   const [routine, setRoutine] = useState<Routine | null>(null);
@@ -36,20 +34,15 @@ export default function RoutineEditorPage() {
   const [dayNameDraft, setDayNameDraft] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    // When the coach selects/changes impersonation, effectiveUserId changes.
-    // Reload routine/days/exercises for the selected user.
-    if (!effectiveUserId) return;
     loadRoutine();
     loadExercises();
-  }, [routineId, effectiveUserId]);
+  }, [routineId]);
 
   const loadRoutine = async () => {
-    if (!effectiveUserId) return;
     const { data: routineData } = await supabase
       .from('routines')
       .select('*')
       .eq('id', routineId)
-      .eq('user_id', effectiveUserId)
       .single();
 
     if (routineData) {
@@ -95,11 +88,9 @@ export default function RoutineEditorPage() {
   };
 
   const loadExercises = async () => {
-    if (!effectiveUserId) return;
     const { data } = await supabase
       .from('exercises')
       .select('*')
-      .eq('user_id', effectiveUserId)
       .order('name');
 
     if (data) setExercises(data);

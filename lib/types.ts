@@ -5,9 +5,10 @@ export interface Profile {
 
 export interface Exercise {
   id: string;
-  user_id: string;
+  created_by: string | null;
   name: string;
   muscle_group: string;
+  muscle_section: string;
   equipment: string;
   notes: string;
   created_at: string;
@@ -22,7 +23,7 @@ export interface Exercise {
 
 export interface Routine {
   id: string;
-  user_id: string;
+  created_by: string | null;
   name: string;
   notes: string;
   created_at: string;

@@ -80,15 +80,11 @@ export default function WorkoutStartPage() {
           return;
         }
 
-        // If coach is impersonating, use the effective user id; otherwise fall back to the authed user.
-        const uid = effectiveUserId ?? user.id;
-
         // Load routine days + routine name
         const { data: dayRows, error: daysErr } = await supabase
           .from('routine_days')
           // Use an INNER join so the filter on routines.user_id is enforced server-side.
-          .select('id, routine_id, day_index, name, created_at, routines!inner(name, user_id)')
-          .eq('routines.user_id', uid)
+          .select('id, routine_id, day_index, name, created_at, routines(name)')
           // Primary ordering must follow Day 1, Day 2, ...
           .order('day_index', { ascending: true })
           // Secondary tie-breaker for deterministic results

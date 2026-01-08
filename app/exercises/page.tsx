@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import AuthGuard from '@/components/AuthGuard';
 import Navigation from '@/components/Navigation';
 import { supabase } from '@/lib/supabase';
-import { useCoach } from '@/hooks/useCoach';
 import { Exercise, TECHNIQUE_TAGS } from '@/lib/types';
 import { Plus, Search, Edit2, Trash2, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -125,9 +124,9 @@ export const dynamic = 'force-dynamic';
 
 export default function ExercisesPage() {
   const router = useRouter();
-  const { effectiveUserId } = useCoach();
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedMuscleGroup, setSelectedMuscleGroup] = useState<string>('');
   const [showForm, setShowForm] = useState(false);
   const [editingExercise, setEditingExercise] = useState<Exercise | null>(null);
   const [formData, setFormData] = useState({
@@ -141,14 +140,12 @@ export default function ExercisesPage() {
 
   useEffect(() => {
     loadExercises();
-  }, [effectiveUserId]);
+  }, []);
 
   const loadExercises = async () => {
-    if (!effectiveUserId) return;
     const { data, error } = await supabase
       .from('exercises')
       .select('*')
-      .eq('user_id', effectiveUserId)
       .order('name');
 
     if (!error && data) {
@@ -159,10 +156,12 @@ export default function ExercisesPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    const normalizeEquipment = (v: string) => v.trim().toLowerCase();
+
     const payload = {
       name: formData.name,
       muscle_group: formData.muscle_group,
-      equipment: formData.equipment,
+      equipment: normalizeEquipment(formData.equipment),
       notes: formData.notes,
       default_technique_tags: formData.default_technique_tags,
       default_set_scheme: formData.default_set_scheme && formData.default_set_scheme.sets ? formData.default_set_scheme : null,
@@ -174,12 +173,7 @@ export default function ExercisesPage() {
         .update(payload)
         .eq('id', editingExercise.id);
     } else {
-      if (effectiveUserId) {
-        await supabase.from('exercises').insert({
-          ...payload,
-          user_id: effectiveUserId,
-        });
-      }
+      await supabase.from('exercises').insert(payload);
     }
 
     setFormData({
@@ -224,11 +218,16 @@ export default function ExercisesPage() {
     });
   };
 
-  const filteredExercises = exercises.filter(
-    (ex) =>
-      ex.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      ex.muscle_group.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredExercises = exercises.filter((ex) => {
+    const matchesGroup = selectedMuscleGroup
+      ? (ex.muscle_group || '').toLowerCase() === selectedMuscleGroup.toLowerCase()
+      : true;
+    const q = searchTerm.trim().toLowerCase();
+    const matchesSearch = !q
+      ? true
+      : ex.name.toLowerCase().includes(q) || (ex.muscle_group || '').toLowerCase().includes(q);
+    return matchesGroup && matchesSearch;
+  });
 
   return (
     <AuthGuard>
@@ -267,6 +266,37 @@ export default function ExercisesPage() {
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10"
               />
+            </div>
+          </div>
+
+          {/* Muscle group quick filter (minimal UI, matches existing styling) */}
+          <div className="mb-6">
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              <button
+                type="button"
+                onClick={() => setSelectedMuscleGroup('')}
+                className={`tap-target min-h-8 px-3 py-1 rounded-full text-xs font-medium transition-colors border whitespace-nowrap ${
+                  selectedMuscleGroup
+                    ? 'bg-secondary/70 text-secondary-foreground border-border/60 hover:bg-secondary'
+                    : 'bg-primary text-primary-foreground border-primary/30 shadow-sm'
+                }`}
+              >
+                All
+              </button>
+              {MUSCLE_GROUP_OPTIONS.map((g) => (
+                <button
+                  key={g}
+                  type="button"
+                  onClick={() => setSelectedMuscleGroup(g)}
+                  className={`tap-target min-h-8 px-3 py-1 rounded-full text-xs font-medium transition-colors border whitespace-nowrap ${
+                    selectedMuscleGroup.toLowerCase() === g.toLowerCase()
+                      ? 'bg-primary text-primary-foreground border-primary/30 shadow-sm'
+                      : 'bg-secondary/70 text-secondary-foreground border-border/60 hover:bg-secondary'
+                  }`}
+                >
+                  {g}
+                </button>
+              ))}
             </div>
           </div>
 
@@ -448,7 +478,7 @@ export default function ExercisesPage() {
                         {exercise.muscle_group || '-'}
                       </td>
                       <td className="px-3 sm:px-4 py-3 text-sm text-muted-foreground break-words hidden md:table-cell">
-                        {exercise.equipment || '-'}
+                        {(exercise.equipment || '-').replace(/\b\w/g, (c) => c.toUpperCase())}
                       </td>
                       <td className="px-2 sm:px-4 py-3 text-right whitespace-nowrap">
                         <div className="inline-flex items-center justify-end gap-1">
