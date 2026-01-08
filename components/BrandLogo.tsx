@@ -1,7 +1,6 @@
 'use client';
 
 import Link from 'next/link';
-import Image from 'next/image';
 
 type BrandLogoProps = {
   href?: string;
@@ -26,21 +25,11 @@ export default function BrandLogo({
   const content = (
     <div className={`flex items-center ${centered ? 'justify-center' : ''} ${className}`}>
       <div className={`leading-tight ${centered ? 'text-center' : ''}`}>
-        <div className={`flex items-center ${centered ? 'justify-center' : ''}`}>
-          {/*
-            Wide wordmark logo:
-            - Height-based sizing prevents overflow on iPhone + Galaxy Ultra
-            - Max width keeps it inside header without changing layout
-          */}
-          <Image
-            src="/logo.png"
-            alt="Dtracker"
-            width={2048}
-            height={674}
-            priority
-            className="h-8 w-auto max-w-[170px] md:h-9 md:max-w-[240px]"
-          />
-          <span className="sr-only">Dtracker</span>
+        <div className={`flex items-baseline gap-0.5 ${centered ? 'justify-center' : ''}`}>
+          <span className="text-2xl md:text-[26px] font-extrabold tracking-tight leading-none">
+            <span className="text-[#E53A9D]">D</span>
+            <span className="text-black dark:text-white">tracker</span>
+          </span>
         </div>
 
         {showTagline && (
