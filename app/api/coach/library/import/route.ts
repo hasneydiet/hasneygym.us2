@@ -27,11 +27,8 @@ function extractLibraryPayload(body: any): any | null {
   const lib = body.library && typeof body.library === 'object' ? body.library : body;
   if (!lib || typeof lib !== 'object') return null;
 
-  const keys = ['exercises', 'routines', 'routine_days', 'routine_day_exercises'] as const;
-  for (const k of keys) {
-    if (!Array.isArray((lib as any)[k])) return null;
-  }
-  return lib;
+  if (!Array.isArray((lib as any).exercises)) return null;
+  return { exercises: (lib as any).exercises };
 }
 
 export async function POST(req: Request) {
@@ -75,12 +72,12 @@ export async function POST(req: Request) {
   const library = extractLibraryPayload(body);
   if (!library) {
     return NextResponse.json(
-      { error: 'Malformed payload. Expected JSON with arrays: exercises, routines, routine_days, routine_day_exercises.' },
+      { error: 'Malformed payload. Expected JSON with an exercises array.' },
       { status: 400 }
     );
   }
 
-  const { data, error } = await supabase.rpc('admin_import_library', { p_payload: library });
+  const { data, error } = await supabase.rpc('admin_import_exercise_library', { p_payload: library });
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

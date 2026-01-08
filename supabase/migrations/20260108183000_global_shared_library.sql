@@ -1,373 +1,384 @@
 /*
-  20260108183000_global_shared_library.sql (FIXED v4)
+  # Global Shared Library for Exercises & Routines
 
-  Fixes:
-  - Removes invalid ''public'' quoting
-  - Dedupe exercises without MIN(uuid)
-  - Repoints FK references before deleting duplicates
-  - No routine_days.day_number assumption
-  - Admin export/import that does not assume extra routine_days columns
+  Converts per-user libraries into a single shared global library.
+
+  Exercises
+  - Rename user_id -> created_by (nullable; default auth.uid())
+  - Add muscle_section for finer filtering
+  - Normalize equipment to lowercase for consistent filtering
+  - Add indexes for common filters
+  - Add unique constraint to prevent duplicates and enable safe upserts
+
+  Routines
+  - Rename user_id -> created_by (nullable; default auth.uid())
+  - Update RLS policies for shared read / restricted write
+
+  RLS model:
+  - Any authenticated user can SELECT exercises/routines and related routine days/exercises.
+  - Any authenticated user can INSERT exercises/routines and related routine days/exercises.
+  - UPDATE/DELETE allowed only for (creator OR coach).
+  - Coach is detected via public.is_coach().
+
+  NOTE: This migration intentionally leaves workout_* tables user-scoped.
 */
 
 BEGIN;
 
--- ============================================================
--- 0) Drop existing policies on target tables (defensive)
--- ============================================================
-DO $$
-DECLARE
-  pol RECORD;
-BEGIN
-  FOR pol IN
-    SELECT schemaname, tablename, policyname
-    FROM pg_policies
-    WHERE schemaname = 'public'
-      AND tablename IN ('exercises','routines','routine_days','routine_day_exercises')
-  LOOP
-    EXECUTE format('DROP POLICY IF EXISTS %I ON %I.%I;', pol.policyname, pol.schemaname, pol.tablename);
-  END LOOP;
-END $$;
+-- ----------------------------
+-- Schema changes: Exercises
+-- ----------------------------
 
--- ============================================================
--- 1) EXERCISES: user-scoped -> global shared
--- ============================================================
-
--- Rename user_id -> created_by if needed
 DO $$
 BEGIN
   IF EXISTS (
     SELECT 1 FROM information_schema.columns
-    WHERE table_schema='public' AND table_name='exercises' AND column_name='user_id'
-  ) AND NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_schema='public' AND table_name='exercises' AND column_name='created_by'
+    WHERE table_schema = 'public' AND table_name = 'exercises' AND column_name = 'user_id'
   ) THEN
-    EXECUTE 'ALTER TABLE public.exercises RENAME COLUMN user_id TO created_by';
+    ALTER TABLE public.exercises RENAME COLUMN user_id TO created_by;
   END IF;
 END $$;
 
--- created_by nullable + default auth.uid()
-DO $$
-BEGIN
-  IF EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_schema='public' AND table_name='exercises' AND column_name='created_by'
-  ) THEN
-    EXECUTE 'ALTER TABLE public.exercises ALTER COLUMN created_by DROP NOT NULL';
-    EXECUTE 'ALTER TABLE public.exercises ALTER COLUMN created_by SET DEFAULT auth.uid()';
-  END IF;
-END $$;
-
--- Add muscle_section
 ALTER TABLE public.exercises
-  ADD COLUMN IF NOT EXISTS muscle_section TEXT NOT NULL DEFAULT '';
+  ALTER COLUMN created_by DROP NOT NULL;
 
--- Normalize values
+-- Change FK to SET NULL so global entries (or deleted users) don't cascade-delete shared data
+DO $$
+BEGIN
+  -- Drop any existing FK on created_by (name may differ) by searching pg_constraint.
+  EXECUTE (
+    SELECT 'ALTER TABLE public.exercises DROP CONSTRAINT ' || quote_ident(c.conname) || ';'
+    FROM pg_constraint c
+    JOIN pg_class t ON t.oid = c.conrelid
+    JOIN pg_namespace n ON n.oid = t.relnamespace
+    WHERE n.nspname='public' AND t.relname='exercises' AND c.contype='f'
+      AND pg_get_constraintdef(c.oid) LIKE '%(created_by)%'
+    LIMIT 1
+  );
+EXCEPTION WHEN OTHERS THEN
+  -- ignore if not found
+  NULL;
+END $$;
+
+ALTER TABLE public.exercises
+  ADD CONSTRAINT exercises_created_by_fkey
+  FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL;
+
+ALTER TABLE public.exercises
+  ALTER COLUMN created_by SET DEFAULT auth.uid();
+
+ALTER TABLE public.exercises
+  ADD COLUMN IF NOT EXISTS muscle_section text NOT NULL DEFAULT '';
+
+-- Normalize existing rows (best effort, non-breaking)
 UPDATE public.exercises
 SET
-  name = trim(coalesce(name,'')),
-  muscle_group = trim(coalesce(muscle_group,'')),
-  muscle_section = trim(coalesce(muscle_section,'')),
-  equipment = lower(trim(coalesce(equipment,'')));
+  name = trim(name),
+  muscle_group = COALESCE(trim(muscle_group), ''),
+  muscle_section = COALESCE(trim(muscle_section), ''),
+  equipment = COALESCE(lower(trim(equipment)), '');
 
--- SAFE DEDUPE: repoint FKs first, then delete dupes
-CREATE TEMP TABLE IF NOT EXISTS tmp_exercise_dedupe_map (
-  dup_id uuid PRIMARY KEY,
-  canonical_id uuid NOT NULL
-) ON COMMIT DROP;
-
-TRUNCATE TABLE tmp_exercise_dedupe_map;
-
+-- Deduplicate before adding unique constraint (keep oldest row by created_at then id)
 WITH ranked AS (
   SELECT
     id,
-    name,
-    muscle_group,
-    muscle_section,
-    equipment,
     ROW_NUMBER() OVER (
-      PARTITION BY name, muscle_group, muscle_section, equipment
-      ORDER BY id::text
-    ) AS rn,
-    FIRST_VALUE(id) OVER (
-      PARTITION BY name, muscle_group, muscle_section, equipment
-      ORDER BY id::text
-    ) AS canonical_id
+      PARTITION BY lower(name), lower(muscle_group), lower(muscle_section), lower(equipment)
+      ORDER BY created_at ASC NULLS LAST, id ASC
+    ) AS rn
   FROM public.exercises
 )
-INSERT INTO tmp_exercise_dedupe_map (dup_id, canonical_id)
-SELECT id, canonical_id
-FROM ranked
-WHERE rn > 1;
-
--- Repoint routine_day_exercises.exercise_id -> canonical
-UPDATE public.routine_day_exercises rde
-SET exercise_id = m.canonical_id
-FROM tmp_exercise_dedupe_map m
-WHERE rde.exercise_id = m.dup_id;
-
--- Repoint workout_exercises.exercise_id -> canonical (only if table exists)
-DO $$
-BEGIN
-  IF EXISTS (
-    SELECT 1 FROM information_schema.tables
-    WHERE table_schema='public' AND table_name='workout_exercises'
-  ) THEN
-    EXECUTE '
-      UPDATE public.workout_exercises we
-      SET exercise_id = m.canonical_id
-      FROM tmp_exercise_dedupe_map m
-      WHERE we.exercise_id = m.dup_id
-    ';
-  END IF;
-END $$;
-
--- Delete duplicate exercises
 DELETE FROM public.exercises e
-USING tmp_exercise_dedupe_map m
-WHERE e.id = m.dup_id;
+USING ranked r
+WHERE e.id = r.id AND r.rn > 1;
 
--- Indexes
+-- Drop old per-user index if it exists
+DROP INDEX IF EXISTS public.idx_exercises_user_id;
+
+-- Add indexes for common filters
 CREATE INDEX IF NOT EXISTS idx_exercises_muscle_group ON public.exercises (muscle_group);
 CREATE INDEX IF NOT EXISTS idx_exercises_muscle_section ON public.exercises (muscle_section);
 CREATE INDEX IF NOT EXISTS idx_exercises_equipment ON public.exercises (equipment);
 CREATE INDEX IF NOT EXISTS idx_exercises_created_by ON public.exercises (created_by);
 
--- Unique constraint for safe upserts
+-- Unique constraint to prevent duplicates and enable safe upsert for seed/import
 DO $$
 BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint
-    WHERE conname = 'exercises_unique_key'
-      AND conrelid = 'public.exercises'::regclass
+    WHERE conname = 'exercises_unique_name_group_section_equipment'
   ) THEN
-    EXECUTE '
-      ALTER TABLE public.exercises
-      ADD CONSTRAINT exercises_unique_key
-      UNIQUE (name, muscle_group, muscle_section, equipment)
-    ';
+    ALTER TABLE public.exercises
+      ADD CONSTRAINT exercises_unique_name_group_section_equipment
+      UNIQUE (name, muscle_group, muscle_section, equipment);
   END IF;
 END $$;
 
--- ============================================================
--- 2) ROUTINES: user-scoped -> global shared
--- ============================================================
+-- ----------------------------
+-- Schema changes: Routines
+-- ----------------------------
 
--- Rename user_id -> created_by if needed
 DO $$
 BEGIN
   IF EXISTS (
     SELECT 1 FROM information_schema.columns
-    WHERE table_schema='public' AND table_name='routines' AND column_name='user_id'
-  ) AND NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_schema='public' AND table_name='routines' AND column_name='created_by'
+    WHERE table_schema = 'public' AND table_name = 'routines' AND column_name = 'user_id'
   ) THEN
-    EXECUTE 'ALTER TABLE public.routines RENAME COLUMN user_id TO created_by';
+    ALTER TABLE public.routines RENAME COLUMN user_id TO created_by;
   END IF;
 END $$;
 
--- created_by nullable + default auth.uid()
+ALTER TABLE public.routines
+  ALTER COLUMN created_by DROP NOT NULL;
+
 DO $$
 BEGIN
-  IF EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_schema='public' AND table_name='routines' AND column_name='created_by'
-  ) THEN
-    EXECUTE 'ALTER TABLE public.routines ALTER COLUMN created_by DROP NOT NULL';
-    EXECUTE 'ALTER TABLE public.routines ALTER COLUMN created_by SET DEFAULT auth.uid()';
-  END IF;
+  EXECUTE (
+    SELECT 'ALTER TABLE public.routines DROP CONSTRAINT ' || quote_ident(c.conname) || ';'
+    FROM pg_constraint c
+    JOIN pg_class t ON t.oid = c.conrelid
+    JOIN pg_namespace n ON n.oid = t.relnamespace
+    WHERE n.nspname='public' AND t.relname='routines' AND c.contype='f'
+      AND pg_get_constraintdef(c.oid) LIKE '%(created_by)%'
+    LIMIT 1
+  );
+EXCEPTION WHEN OTHERS THEN
+  NULL;
 END $$;
 
+ALTER TABLE public.routines
+  ADD CONSTRAINT routines_created_by_fkey
+  FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL;
+
+ALTER TABLE public.routines
+  ALTER COLUMN created_by SET DEFAULT auth.uid();
+
+DROP INDEX IF EXISTS public.idx_routines_user_id;
 CREATE INDEX IF NOT EXISTS idx_routines_created_by ON public.routines (created_by);
 
--- ============================================================
--- 3) RLS: Global shared library policies
--- ============================================================
+-- ----------------------------
+-- RLS: replace per-user policies with shared-library policies
+-- ----------------------------
 
-ALTER TABLE public.exercises ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.routines ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.routine_days ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.routine_day_exercises ENABLE ROW LEVEL SECURITY;
+-- Exercises: drop old user/coach policies if present
+DROP POLICY IF EXISTS "Users can view own exercises" ON public.exercises;
+DROP POLICY IF EXISTS "Users can insert own exercises" ON public.exercises;
+DROP POLICY IF EXISTS "Users can update own exercises" ON public.exercises;
+DROP POLICY IF EXISTS "Users can delete own exercises" ON public.exercises;
 
--- Exercises
-CREATE POLICY exercises_read_all
-ON public.exercises
-FOR SELECT
-USING (auth.role() = 'authenticated');
+DROP POLICY IF EXISTS "Coach can select exercises" ON public.exercises;
+DROP POLICY IF EXISTS "Coach can insert exercises" ON public.exercises;
+DROP POLICY IF EXISTS "Coach can update exercises" ON public.exercises;
+DROP POLICY IF EXISTS "Coach can delete exercises" ON public.exercises;
 
-CREATE POLICY exercises_insert_auth
-ON public.exercises
-FOR INSERT
-WITH CHECK (auth.role() = 'authenticated');
+-- Routines: drop old user/coach policies if present
+DROP POLICY IF EXISTS "Users can view own routines" ON public.routines;
+DROP POLICY IF EXISTS "Users can insert own routines" ON public.routines;
+DROP POLICY IF EXISTS "Users can update own routines" ON public.routines;
+DROP POLICY IF EXISTS "Users can delete own routines" ON public.routines;
 
-CREATE POLICY exercises_update_owner_or_coach
-ON public.exercises
-FOR UPDATE
-USING (created_by = auth.uid() OR public.is_coach())
-WITH CHECK (created_by = auth.uid() OR public.is_coach());
+DROP POLICY IF EXISTS "Coach can select routines" ON public.routines;
+DROP POLICY IF EXISTS "Coach can insert routines" ON public.routines;
+DROP POLICY IF EXISTS "Coach can update routines" ON public.routines;
+DROP POLICY IF EXISTS "Coach can delete routines" ON public.routines;
 
-CREATE POLICY exercises_delete_owner_or_coach
-ON public.exercises
-FOR DELETE
-USING (created_by = auth.uid() OR public.is_coach());
+-- Routine days: drop old user/coach policies if present
+DROP POLICY IF EXISTS "Users can view routine days" ON public.routine_days;
+DROP POLICY IF EXISTS "Users can insert routine days" ON public.routine_days;
+DROP POLICY IF EXISTS "Users can update routine days" ON public.routine_days;
+DROP POLICY IF EXISTS "Users can delete routine days" ON public.routine_days;
 
--- Routines
-CREATE POLICY routines_read_all
-ON public.routines
-FOR SELECT
-USING (auth.role() = 'authenticated');
+DROP POLICY IF EXISTS "Coach can select routine days" ON public.routine_days;
+DROP POLICY IF EXISTS "Coach can insert routine days" ON public.routine_days;
+DROP POLICY IF EXISTS "Coach can update routine days" ON public.routine_days;
+DROP POLICY IF EXISTS "Coach can delete routine days" ON public.routine_days;
 
-CREATE POLICY routines_insert_auth
-ON public.routines
-FOR INSERT
-WITH CHECK (auth.role() = 'authenticated');
+-- Routine day exercises: drop old user/coach policies if present
+DROP POLICY IF EXISTS "Users can view routine day exercises" ON public.routine_day_exercises;
+DROP POLICY IF EXISTS "Users can insert routine day exercises" ON public.routine_day_exercises;
+DROP POLICY IF EXISTS "Users can update routine day exercises" ON public.routine_day_exercises;
+DROP POLICY IF EXISTS "Users can delete routine day exercises" ON public.routine_day_exercises;
 
-CREATE POLICY routines_update_owner_or_coach
-ON public.routines
-FOR UPDATE
-USING (created_by = auth.uid() OR public.is_coach())
-WITH CHECK (created_by = auth.uid() OR public.is_coach());
+DROP POLICY IF EXISTS "Coach can select routine day exercises" ON public.routine_day_exercises;
+DROP POLICY IF EXISTS "Coach can insert routine day exercises" ON public.routine_day_exercises;
+DROP POLICY IF EXISTS "Coach can update routine day exercises" ON public.routine_day_exercises;
+DROP POLICY IF EXISTS "Coach can delete routine day exercises" ON public.routine_day_exercises;
 
-CREATE POLICY routines_delete_owner_or_coach
-ON public.routines
-FOR DELETE
-USING (created_by = auth.uid() OR public.is_coach());
+-- New policies: Exercises (shared read, authenticated create, creator/coach edit)
+CREATE POLICY exercises_select_all
+  ON public.exercises FOR SELECT
+  TO authenticated
+  USING (true);
 
--- routine_days: read all, write if parent routine editable
-CREATE POLICY routine_days_read_all
-ON public.routine_days
-FOR SELECT
-USING (auth.role() = 'authenticated');
+CREATE POLICY exercises_insert_authenticated
+  ON public.exercises FOR INSERT
+  TO authenticated
+  WITH CHECK (auth.role() = 'authenticated');
 
-CREATE POLICY routine_days_insert_owner_or_coach
-ON public.routine_days
-FOR INSERT
-WITH CHECK (
-  auth.role() = 'authenticated'
-  AND EXISTS (
-    SELECT 1
-    FROM public.routines r
-    WHERE r.id = routine_days.routine_id
-      AND (r.created_by = auth.uid() OR public.is_coach())
+CREATE POLICY exercises_update_creator_or_coach
+  ON public.exercises FOR UPDATE
+  TO authenticated
+  USING (created_by = auth.uid() OR public.is_coach())
+  WITH CHECK (created_by = auth.uid() OR public.is_coach());
+
+CREATE POLICY exercises_delete_creator_or_coach
+  ON public.exercises FOR DELETE
+  TO authenticated
+  USING (created_by = auth.uid() OR public.is_coach());
+
+-- New policies: Routines
+CREATE POLICY routines_select_all
+  ON public.routines FOR SELECT
+  TO authenticated
+  USING (true);
+
+CREATE POLICY routines_insert_authenticated
+  ON public.routines FOR INSERT
+  TO authenticated
+  WITH CHECK (auth.role() = 'authenticated');
+
+CREATE POLICY routines_update_creator_or_coach
+  ON public.routines FOR UPDATE
+  TO authenticated
+  USING (created_by = auth.uid() OR public.is_coach())
+  WITH CHECK (created_by = auth.uid() OR public.is_coach());
+
+CREATE POLICY routines_delete_creator_or_coach
+  ON public.routines FOR DELETE
+  TO authenticated
+  USING (created_by = auth.uid() OR public.is_coach());
+
+-- New policies: Routine days (shared read, authenticated write only if can modify parent routine)
+CREATE POLICY routine_days_select_all
+  ON public.routine_days FOR SELECT
+  TO authenticated
+  USING (true);
+
+CREATE POLICY routine_days_insert_if_parent_editable
+  ON public.routine_days FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM public.routines r
+      WHERE r.id = routine_days.routine_id
+        AND (r.created_by = auth.uid() OR public.is_coach())
+    )
+  );
+
+CREATE POLICY routine_days_update_if_parent_editable
+  ON public.routine_days FOR UPDATE
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.routines r
+      WHERE r.id = routine_days.routine_id
+        AND (r.created_by = auth.uid() OR public.is_coach())
+    )
   )
-);
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM public.routines r
+      WHERE r.id = routine_days.routine_id
+        AND (r.created_by = auth.uid() OR public.is_coach())
+    )
+  );
 
-CREATE POLICY routine_days_update_owner_or_coach
-ON public.routine_days
-FOR UPDATE
-USING (
-  auth.role() = 'authenticated'
-  AND EXISTS (
-    SELECT 1
-    FROM public.routines r
-    WHERE r.id = routine_days.routine_id
-      AND (r.created_by = auth.uid() OR public.is_coach())
-  )
-)
-WITH CHECK (
-  auth.role() = 'authenticated'
-  AND EXISTS (
-    SELECT 1
-    FROM public.routines r
-    WHERE r.id = routine_days.routine_id
-      AND (r.created_by = auth.uid() OR public.is_coach())
-  )
-);
+CREATE POLICY routine_days_delete_if_parent_editable
+  ON public.routine_days FOR DELETE
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.routines r
+      WHERE r.id = routine_days.routine_id
+        AND (r.created_by = auth.uid() OR public.is_coach())
+    )
+  );
 
-CREATE POLICY routine_days_delete_owner_or_coach
-ON public.routine_days
-FOR DELETE
-USING (
-  auth.role() = 'authenticated'
-  AND EXISTS (
-    SELECT 1
-    FROM public.routines r
-    WHERE r.id = routine_days.routine_id
-      AND (r.created_by = auth.uid() OR public.is_coach())
-  )
-);
+-- New policies: Routine day exercises (shared read, authenticated write only if can modify parent routine)
+CREATE POLICY routine_day_exercises_select_all
+  ON public.routine_day_exercises FOR SELECT
+  TO authenticated
+  USING (true);
 
--- routine_day_exercises: read all, write if parent routine editable
-CREATE POLICY routine_day_exercises_read_all
-ON public.routine_day_exercises
-FOR SELECT
-USING (auth.role() = 'authenticated');
+CREATE POLICY routine_day_exercises_insert_if_parent_editable
+  ON public.routine_day_exercises FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    EXISTS (
+      SELECT 1
+      FROM public.routine_days d
+      JOIN public.routines r ON r.id = d.routine_id
+      WHERE d.id = routine_day_exercises.routine_day_id
+        AND (r.created_by = auth.uid() OR public.is_coach())
+    )
+  );
 
-CREATE POLICY routine_day_exercises_insert_owner_or_coach
-ON public.routine_day_exercises
-FOR INSERT
-WITH CHECK (
-  auth.role() = 'authenticated'
-  AND EXISTS (
-    SELECT 1
-    FROM public.routine_days rd
-    JOIN public.routines r ON r.id = rd.routine_id
-    WHERE rd.id = routine_day_exercises.routine_day_id
-      AND (r.created_by = auth.uid() OR public.is_coach())
+CREATE POLICY routine_day_exercises_update_if_parent_editable
+  ON public.routine_day_exercises FOR UPDATE
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1
+      FROM public.routine_days d
+      JOIN public.routines r ON r.id = d.routine_id
+      WHERE d.id = routine_day_exercises.routine_day_id
+        AND (r.created_by = auth.uid() OR public.is_coach())
+    )
   )
-);
+  WITH CHECK (
+    EXISTS (
+      SELECT 1
+      FROM public.routine_days d
+      JOIN public.routines r ON r.id = d.routine_id
+      WHERE d.id = routine_day_exercises.routine_day_id
+        AND (r.created_by = auth.uid() OR public.is_coach())
+    )
+  );
 
-CREATE POLICY routine_day_exercises_update_owner_or_coach
-ON public.routine_day_exercises
-FOR UPDATE
-USING (
-  auth.role() = 'authenticated'
-  AND EXISTS (
-    SELECT 1
-    FROM public.routine_days rd
-    JOIN public.routines r ON r.id = rd.routine_id
-    WHERE rd.id = routine_day_exercises.routine_day_id
-      AND (r.created_by = auth.uid() OR public.is_coach())
-  )
-)
-WITH CHECK (
-  auth.role() = 'authenticated'
-  AND EXISTS (
-    SELECT 1
-    FROM public.routine_days rd
-    JOIN public.routines r ON r.id = rd.routine_id
-    WHERE rd.id = routine_day_exercises.routine_day_id
-      AND (r.created_by = auth.uid() OR public.is_coach())
-  )
-);
+CREATE POLICY routine_day_exercises_delete_if_parent_editable
+  ON public.routine_day_exercises FOR DELETE
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1
+      FROM public.routine_days d
+      JOIN public.routines r ON r.id = d.routine_id
+      WHERE d.id = routine_day_exercises.routine_day_id
+        AND (r.created_by = auth.uid() OR public.is_coach())
+    )
+  );
 
-CREATE POLICY routine_day_exercises_delete_owner_or_coach
-ON public.routine_day_exercises
-FOR DELETE
-USING (
-  auth.role() = 'authenticated'
-  AND EXISTS (
-    SELECT 1
-    FROM public.routine_days rd
-    JOIN public.routines r ON r.id = rd.routine_id
-    WHERE rd.id = routine_day_exercises.routine_day_id
-      AND (r.created_by = auth.uid() OR public.is_coach())
-  )
-);
-
--- ============================================================
--- 4) Admin RPCs (service_role only) - EXPORT / IMPORT
--- ============================================================
+-- ----------------------------
+-- Coach-only import/export functions (called via server using service role)
+-- ----------------------------
 
 CREATE OR REPLACE FUNCTION public.admin_export_library()
 RETURNS jsonb
-LANGUAGE sql
+LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
 AS $$
-  SELECT jsonb_build_object(
+DECLARE
+  payload jsonb;
+BEGIN
+  IF NOT (public.is_coach() OR auth.role() = 'service_role') THEN
+    RAISE EXCEPTION 'not authorized';
+  END IF;
+
+  payload := jsonb_build_object(
     'version', 1,
     'exported_at', now(),
-    'exercises', COALESCE((SELECT jsonb_agg(to_jsonb(e) ORDER BY e.muscle_group, e.muscle_section, e.name) FROM public.exercises e), '[]'::jsonb),
-    'routines', COALESCE((SELECT jsonb_agg(to_jsonb(r) ORDER BY r.name) FROM public.routines r), '[]'::jsonb),
-    'routine_days', COALESCE((SELECT jsonb_agg(to_jsonb(rd) ORDER BY rd.routine_id, rd.id::text) FROM public.routine_days rd), '[]'::jsonb),
-    'routine_day_exercises', COALESCE((SELECT jsonb_agg(to_jsonb(rde) ORDER BY rde.routine_day_id, rde.id::text) FROM public.routine_day_exercises rde), '[]'::jsonb)
+    'exercises', COALESCE((SELECT jsonb_agg(e ORDER BY e.name) FROM public.exercises e), '[]'::jsonb),
+    'routines', COALESCE((SELECT jsonb_agg(r ORDER BY r.created_at) FROM public.routines r), '[]'::jsonb),
+    'routine_days', COALESCE((SELECT jsonb_agg(d ORDER BY d.routine_id, d.day_index) FROM public.routine_days d), '[]'::jsonb),
+    'routine_day_exercises', COALESCE((SELECT jsonb_agg(x ORDER BY x.routine_day_id, x.order_index) FROM public.routine_day_exercises x), '[]'::jsonb)
   );
+
+  RETURN payload;
+END;
 $$;
 
--- Import: upsert exercises by unique key; upsert routines/days/rde by id.
--- NOTE: For routine_days and routine_day_exercises we upsert ONLY required columns to avoid guessing schema.
+-- Import uses a single transaction inside the function.
 CREATE OR REPLACE FUNCTION public.admin_import_library(p_payload jsonb)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -375,146 +386,162 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  v_ex_count int := 0;
-  v_r_count int := 0;
-  v_rd_count int := 0;
-  v_rde_count int := 0;
+  v_exercises jsonb;
+  v_routines jsonb;
+  v_days jsonb;
+  v_day_exercises jsonb;
+  inserted_exercises int := 0;
+  inserted_routines int := 0;
+  inserted_days int := 0;
+  inserted_day_exercises int := 0;
 BEGIN
-  IF p_payload IS NULL OR jsonb_typeof(p_payload) <> 'object' THEN
-    RAISE EXCEPTION 'Payload must be a JSON object';
+  IF NOT (public.is_coach() OR auth.role() = 'service_role') THEN
+    RAISE EXCEPTION 'not authorized';
   END IF;
 
-  CREATE TEMP TABLE IF NOT EXISTS exercise_id_map (
-    payload_id uuid PRIMARY KEY,
-    actual_id  uuid NOT NULL
-  ) ON COMMIT DROP;
+  IF p_payload IS NULL OR jsonb_typeof(p_payload) <> 'object' THEN
+    RAISE EXCEPTION 'payload must be a JSON object';
+  END IF;
 
-  TRUNCATE TABLE exercise_id_map;
+  v_exercises := COALESCE(p_payload->'exercises', '[]'::jsonb);
+  v_routines := COALESCE(p_payload->'routines', '[]'::jsonb);
+  v_days := COALESCE(p_payload->'routine_days', '[]'::jsonb);
+  v_day_exercises := COALESCE(p_payload->'routine_day_exercises', '[]'::jsonb);
 
-  -- Exercises upsert by unique key
-  WITH incoming AS (
+  IF jsonb_typeof(v_exercises) <> 'array'
+    OR jsonb_typeof(v_routines) <> 'array'
+    OR jsonb_typeof(v_days) <> 'array'
+    OR jsonb_typeof(v_day_exercises) <> 'array'
+  THEN
+    RAISE EXCEPTION 'exercises/routines/routine_days/routine_day_exercises must be arrays';
+  END IF;
+
+  -- Exercises upsert by unique key (name+group+section+equipment). Keep created_by as NULL when not provided.
+  WITH rows AS (
     SELECT
-      (e->>'id')::uuid AS payload_id,
-      trim(coalesce(e->>'name','')) AS name,
-      trim(coalesce(e->>'muscle_group','')) AS muscle_group,
-      trim(coalesce(e->>'muscle_section','')) AS muscle_section,
-      lower(trim(coalesce(e->>'equipment',''))) AS equipment,
-      NULLIF(e->>'created_by','')::uuid AS created_by
-    FROM jsonb_array_elements(COALESCE(p_payload->'exercises','[]'::jsonb)) e
-  ),
-  upserted AS (
-    INSERT INTO public.exercises (name, muscle_group, muscle_section, equipment, created_by)
-    SELECT i.name, i.muscle_group, i.muscle_section, i.equipment, i.created_by
-    FROM incoming i
-    WHERE i.name <> '' AND i.muscle_group <> '' AND i.equipment <> ''
-    ON CONFLICT ON CONSTRAINT exercises_unique_key
-    DO UPDATE SET
-      name = EXCLUDED.name,
-      muscle_group = EXCLUDED.muscle_group,
-      muscle_section = EXCLUDED.muscle_section,
-      equipment = EXCLUDED.equipment
-    RETURNING 1
+      COALESCE(NULLIF(trim((x->>'name')::text), ''), NULL) AS name,
+      COALESCE(trim((x->>'muscle_group')::text), '') AS muscle_group,
+      COALESCE(trim((x->>'muscle_section')::text), '') AS muscle_section,
+      COALESCE(lower(trim((x->>'equipment')::text)), '') AS equipment,
+      COALESCE((x->>'notes')::text, '') AS notes,
+      (x->'default_technique_tags') AS default_technique_tags,
+      (x->'default_set_scheme') AS default_set_scheme
+    FROM jsonb_array_elements(v_exercises) x
   )
-  SELECT COUNT(*) INTO v_ex_count FROM upserted;
+  INSERT INTO public.exercises (name, muscle_group, muscle_section, equipment, notes, default_technique_tags, default_set_scheme, created_by)
+  SELECT
+    r.name, r.muscle_group, r.muscle_section, r.equipment,
+    r.notes,
+    CASE WHEN jsonb_typeof(r.default_technique_tags) = 'array' THEN r.default_technique_tags ELSE '[]'::jsonb END,
+    CASE WHEN jsonb_typeof(r.default_set_scheme) = 'object' THEN r.default_set_scheme ELSE NULL END,
+    NULL
+  FROM rows r
+  WHERE r.name IS NOT NULL
+  ON CONFLICT (name, muscle_group, muscle_section, equipment)
+  DO UPDATE SET
+    notes = EXCLUDED.notes,
+    default_technique_tags = EXCLUDED.default_technique_tags,
+    default_set_scheme = EXCLUDED.default_set_scheme;
 
-  -- Map payload exercise IDs to actual IDs by unique key
-  INSERT INTO exercise_id_map (payload_id, actual_id)
-  SELECT i.payload_id, e.id
-  FROM (
-    SELECT
-      (x->>'id')::uuid AS payload_id,
-      trim(coalesce(x->>'name','')) AS name,
-      trim(coalesce(x->>'muscle_group','')) AS muscle_group,
-      trim(coalesce(x->>'muscle_section','')) AS muscle_section,
-      lower(trim(coalesce(x->>'equipment',''))) AS equipment
-    FROM jsonb_array_elements(COALESCE(p_payload->'exercises','[]'::jsonb)) x
-  ) i
-  JOIN public.exercises e
-    ON e.name = i.name
-   AND e.muscle_group = i.muscle_group
-   AND e.muscle_section = i.muscle_section
-   AND e.equipment = i.equipment
-  ON CONFLICT (payload_id) DO UPDATE SET actual_id = EXCLUDED.actual_id;
+  GET DIAGNOSTICS inserted_exercises = ROW_COUNT;
 
-  -- Routines upsert by id
-  WITH incoming AS (
+  -- Routines: upsert by id when provided; otherwise insert new.
+  -- We do NOT attempt to merge by name to avoid clobbering user edits unexpectedly.
+  WITH rows AS (
     SELECT
-      (r->>'id')::uuid AS id,
-      r->>'name' AS name,
-      NULLIF(r->>'created_by','')::uuid AS created_by
-    FROM jsonb_array_elements(COALESCE(p_payload->'routines','[]'::jsonb)) r
-  ),
-  upserted AS (
-    INSERT INTO public.routines (id, name, created_by)
-    SELECT i.id, i.name, i.created_by
-    FROM incoming i
-    WHERE i.id IS NOT NULL AND coalesce(i.name,'') <> ''
-    ON CONFLICT (id) DO UPDATE SET
-      name = EXCLUDED.name,
-      created_by = EXCLUDED.created_by
-    RETURNING 1
+      NULLIF((x->>'id')::text, '')::uuid AS id,
+      COALESCE(NULLIF(trim((x->>'name')::text), ''), NULL) AS name,
+      COALESCE((x->>'notes')::text, '') AS notes
+    FROM jsonb_array_elements(v_routines) x
   )
-  SELECT COUNT(*) INTO v_r_count FROM upserted;
+  INSERT INTO public.routines (id, name, notes, created_by)
+  SELECT
+    COALESCE(r.id, gen_random_uuid()),
+    r.name,
+    r.notes,
+    NULL
+  FROM rows r
+  WHERE r.name IS NOT NULL
+  ON CONFLICT (id)
+  DO UPDATE SET
+    name = EXCLUDED.name,
+    notes = EXCLUDED.notes;
 
-  -- routine_days: upsert only (id, routine_id)
-  WITH incoming AS (
-    SELECT
-      (rd->>'id')::uuid AS id,
-      (rd->>'routine_id')::uuid AS routine_id
-    FROM jsonb_array_elements(COALESCE(p_payload->'routine_days','[]'::jsonb)) rd
-  ),
-  upserted AS (
-    INSERT INTO public.routine_days (id, routine_id)
-    SELECT i.id, i.routine_id
-    FROM incoming i
-    WHERE i.id IS NOT NULL AND i.routine_id IS NOT NULL
-    ON CONFLICT (id) DO UPDATE SET
-      routine_id = EXCLUDED.routine_id
-    RETURNING 1
-  )
-  SELECT COUNT(*) INTO v_rd_count FROM upserted;
+  GET DIAGNOSTICS inserted_routines = ROW_COUNT;
 
-  -- routine_day_exercises: upsert only required columns (id, routine_day_id, exercise_id)
-  WITH incoming AS (
+  -- Routine days: upsert by id when provided
+  WITH rows AS (
     SELECT
-      (rde->>'id')::uuid AS id,
-      (rde->>'routine_day_id')::uuid AS routine_day_id,
-      (rde->>'exercise_id')::uuid AS payload_exercise_id
-    FROM jsonb_array_elements(COALESCE(p_payload->'routine_day_exercises','[]'::jsonb)) rde
-  ),
-  mapped AS (
-    SELECT
-      i.id,
-      i.routine_day_id,
-      COALESCE(m.actual_id, i.payload_exercise_id) AS exercise_id
-    FROM incoming i
-    LEFT JOIN exercise_id_map m ON m.payload_id = i.payload_exercise_id
-  ),
-  upserted AS (
-    INSERT INTO public.routine_day_exercises (id, routine_day_id, exercise_id)
-    SELECT id, routine_day_id, exercise_id
-    FROM mapped
-    WHERE id IS NOT NULL AND routine_day_id IS NOT NULL AND exercise_id IS NOT NULL
-    ON CONFLICT (id) DO UPDATE SET
-      routine_day_id = EXCLUDED.routine_day_id,
-      exercise_id = EXCLUDED.exercise_id
-    RETURNING 1
+      NULLIF((x->>'id')::text, '')::uuid AS id,
+      NULLIF((x->>'routine_id')::text, '')::uuid AS routine_id,
+      COALESCE((x->>'day_index')::int, 0) AS day_index,
+      COALESCE(NULLIF(trim((x->>'name')::text), ''), 'Day') AS name
+    FROM jsonb_array_elements(v_days) x
   )
-  SELECT COUNT(*) INTO v_rde_count FROM upserted;
+  INSERT INTO public.routine_days (id, routine_id, day_index, name)
+  SELECT
+    COALESCE(r.id, gen_random_uuid()),
+    r.routine_id,
+    r.day_index,
+    r.name
+  FROM rows r
+  WHERE r.routine_id IS NOT NULL
+  ON CONFLICT (id)
+  DO UPDATE SET
+    routine_id = EXCLUDED.routine_id,
+    day_index = EXCLUDED.day_index,
+    name = EXCLUDED.name;
+
+  GET DIAGNOSTICS inserted_days = ROW_COUNT;
+
+  -- Routine day exercises: upsert by id when provided
+  WITH rows AS (
+    SELECT
+      NULLIF((x->>'id')::text, '')::uuid AS id,
+      NULLIF((x->>'routine_day_id')::text, '')::uuid AS routine_day_id,
+      NULLIF((x->>'exercise_id')::text, '')::uuid AS exercise_id,
+      COALESCE((x->>'order_index')::int, 0) AS order_index,
+      NULLIF((x->>'superset_group_id')::text, '')::uuid AS superset_group_id,
+      (x->'default_sets') AS default_sets
+    FROM jsonb_array_elements(v_day_exercises) x
+  )
+  INSERT INTO public.routine_day_exercises (id, routine_day_id, exercise_id, order_index, superset_group_id, default_sets)
+  SELECT
+    COALESCE(r.id, gen_random_uuid()),
+    r.routine_day_id,
+    r.exercise_id,
+    r.order_index,
+    r.superset_group_id,
+    CASE WHEN jsonb_typeof(r.default_sets) = 'array' THEN r.default_sets ELSE '[]'::jsonb END
+  FROM rows r
+  WHERE r.routine_day_id IS NOT NULL AND r.exercise_id IS NOT NULL
+  ON CONFLICT (id)
+  DO UPDATE SET
+    routine_day_id = EXCLUDED.routine_day_id,
+    exercise_id = EXCLUDED.exercise_id,
+    order_index = EXCLUDED.order_index,
+    superset_group_id = EXCLUDED.superset_group_id,
+    default_sets = EXCLUDED.default_sets;
+
+  GET DIAGNOSTICS inserted_day_exercises = ROW_COUNT;
 
   RETURN jsonb_build_object(
     'ok', true,
-    'exercises_upserted', v_ex_count,
-    'routines_upserted', v_r_count,
-    'routine_days_upserted', v_rd_count,
-    'routine_day_exercises_upserted', v_rde_count
+    'exercises_upserted', inserted_exercises,
+    'routines_upserted', inserted_routines,
+    'routine_days_upserted', inserted_days,
+    'routine_day_exercises_upserted', inserted_day_exercises
   );
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.admin_export_library() FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.admin_import_library(jsonb) FROM PUBLIC, anon, authenticated;
+-- Do not expose admin functions to regular authenticated users.
+REVOKE ALL ON FUNCTION public.admin_export_library() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.admin_import_library(jsonb) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.admin_export_library() FROM authenticated;
+REVOKE ALL ON FUNCTION public.admin_import_library(jsonb) FROM authenticated;
 
+-- Allow service role (used by server-side endpoints) to execute if needed.
 GRANT EXECUTE ON FUNCTION public.admin_export_library() TO service_role;
 GRANT EXECUTE ON FUNCTION public.admin_import_library(jsonb) TO service_role;
 

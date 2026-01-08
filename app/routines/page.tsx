@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import AuthGuard from '@/components/AuthGuard';
 import Navigation from '@/components/Navigation';
 import { supabase } from '@/lib/supabase';
+import { useCoach } from '@/hooks/useCoach';
 import { Routine } from '@/lib/types';
 import { Plus, Edit2, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -15,18 +16,23 @@ export const dynamic = 'force-dynamic';
 
 export default function RoutinesPage() {
   const router = useRouter();
+  const { effectiveUserId, ready } = useCoach();
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({ name: '', notes: '' });
 
   useEffect(() => {
-    loadRoutines();
-  }, []);
+    if (!ready) return;
+    if (effectiveUserId) loadRoutines(effectiveUserId);
+  }, [ready, effectiveUserId]);
 
-  const loadRoutines = async () => {
+  const loadRoutines = async (uid: string) => {
+    if (!uid) return;
+
     const { data, error } = await supabase
       .from('routines')
       .select('*')
+      .eq('user_id', uid)
       .order('created_at', { ascending: false });
 
     if (!error && data) {
@@ -37,9 +43,12 @@ export default function RoutinesPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    const uid = effectiveUserId;
+    if (!uid) return;
+
     const { data, error } = await supabase
       .from('routines')
-      .insert(formData)
+      .insert({ ...formData, user_id: uid })
       .select()
       .single();
 
@@ -51,7 +60,7 @@ export default function RoutinesPage() {
   const handleDelete = async (id: string) => {
     if (confirm('Delete this routine and all its data?')) {
       await supabase.from('routines').delete().eq('id', id);
-      loadRoutines();
+      if (effectiveUserId) loadRoutines(effectiveUserId);
     }
   };
 

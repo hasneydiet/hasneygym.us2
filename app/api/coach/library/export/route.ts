@@ -54,7 +54,7 @@ export async function GET(req: Request) {
   }
 
   // Use RPC so the export structure remains stable across schema evolution.
-  const { data, error } = await supabase.rpc('admin_export_library');
+  const { data, error } = await supabase.rpc('admin_export_exercise_library');
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

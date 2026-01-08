@@ -78,13 +78,14 @@ export default function WorkoutStartPage() {
         if (!user) {
           router.push('/login');
           return;
-        }
+        }        const uid = effectiveUserId ?? user.id;
 
-        // Load routine days + routine name
+        // Load routine days + routine name (scoped to the effective user)
         const { data: dayRows, error: daysErr } = await supabase
           .from('routine_days')
-          // Use an INNER join so the filter on routines.user_id is enforced server-side.
-          .select('id, routine_id, day_index, name, created_at, routines(name)')
+          // Force inner join so the foreign-table filter is enforced
+          .select('id, routine_id, day_index, name, created_at, routines!inner(name, user_id)')
+          .eq('routines.user_id', uid)
           // Primary ordering must follow Day 1, Day 2, ...
           .order('day_index', { ascending: true })
           // Secondary tie-breaker for deterministic results
@@ -365,4 +366,3 @@ export default function WorkoutStartPage() {
     </div>
   );
 }
-
