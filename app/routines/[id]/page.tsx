@@ -191,7 +191,7 @@ export default function RoutineEditorPage() {
   const deleteDay = async (dayId: string) => {
     if (confirm('Delete this day?')) {
       await supabase.from('routine_days').delete().eq('id', dayId);
-      loadRoutine();
+      if (effectiveUserId) loadRoutine(effectiveUserId);
     }
   };
 
@@ -212,7 +212,7 @@ export default function RoutineEditorPage() {
       .single();
 
     if (data) {
-      loadRoutine();
+      if (effectiveUserId) loadRoutine(effectiveUserId);
       setShowAddExercise(null);
       setSelectedExerciseId('');
     }
@@ -220,7 +220,7 @@ export default function RoutineEditorPage() {
 
   const deleteExerciseFromDay = async (exerciseId: string) => {
     await supabase.from('routine_day_exercises').delete().eq('id', exerciseId);
-    loadRoutine();
+    if (effectiveUserId) loadRoutine(effectiveUserId);
   };
 
   const moveExercise = async (dayId: string, exerciseId: string, direction: 'up' | 'down') => {
@@ -241,7 +241,7 @@ export default function RoutineEditorPage() {
         .eq('id', exs[i].id);
     }
 
-    loadRoutine();
+    if (effectiveUserId) loadRoutine(effectiveUserId);
   };
 
   const toggleSuperset = async (dayId: string, exerciseId: string) => {
@@ -256,7 +256,7 @@ export default function RoutineEditorPage() {
       .update({ superset_group_id: newGroupId })
       .eq('id', exerciseId);
 
-    loadRoutine();
+    if (effectiveUserId) loadRoutine(effectiveUserId);
   };
 
   const groupBySupersets = (exs: RoutineDayExercise[]) => {
