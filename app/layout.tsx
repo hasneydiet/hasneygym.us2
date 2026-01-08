@@ -7,17 +7,18 @@ import PWARegister from '@/components/pwa/PWARegister';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'SpartanX - Hasney Personal Workout Tracker',
-  description: 'Hasney Personal Workout Tracker',
+  title: 'Dtracker - Personal Workout Tracker',
+  description: 'Personal Workout Tracker',
   viewport: 'width=device-width, initial-scale=1, maximum-scale=5, viewport-fit=cover',
   manifest: '/manifest.json',
-  themeColor: '#c1121f',
+  themeColor: '#E53A9D',
   icons: {
     icon: [
+      { url: '/icons/icon-32x32.png', sizes: '32x32', type: 'image/png' },
       { url: '/icons/icon-192x192.png', sizes: '192x192', type: 'image/png' },
       { url: '/icons/icon-512x512.png', sizes: '512x512', type: 'image/png' },
     ],
-    apple: [{ url: '/icons/icon-192x192.png', sizes: '192x192', type: 'image/png' }],
+    apple: [{ url: '/icons/icon-180x180.png', sizes: '180x180', type: 'image/png' }],
   },
 };
 

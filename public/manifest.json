@@ -1,14 +1,20 @@
 {
-  "name": "SpartanX",
-  "short_name": "SpartanX",
-  "description": "Gym workout tracker",
+  "name": "Dtracker",
+  "short_name": "Dtracker",
+  "description": "Personal Workout Tracker",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "background_color": "#0b0b0b",
-  "theme_color": "#c1121f",
+  "theme_color": "#E53A9D",
   "orientation": "portrait",
   "icons": [
+    {
+      "src": "/icons/icon-32x32.png",
+      "sizes": "32x32",
+      "type": "image/png",
+      "purpose": "any"
+    },
     {
       "src": "/icons/icon-72x72.png",
       "sizes": "72x72",
@@ -36,6 +42,12 @@
     {
       "src": "/icons/icon-152x152.png",
       "sizes": "152x152",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-180x180.png",
+      "sizes": "180x180",
       "type": "image/png",
       "purpose": "any"
     },

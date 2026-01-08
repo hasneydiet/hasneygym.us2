@@ -620,7 +620,7 @@ const openTechnique = (key: string) => {
       className="tap-target -mt-0.5"
       aria-label={`How to perform ${exercise.exercises!.default_technique_tags![0]}`}
     >
-      <Badge className="rounded-full border border-sky-400/30 bg-sky-500/15 px-3 py-1 text-xs font-semibold text-sky-200 hover:bg-sky-500/20">
+      <Badge className="rounded-full border border-primary/30 bg-primary/15 px-3 py-1 text-xs font-semibold text-primary hover:bg-primary/20">
         {exercise.exercises!.default_technique_tags![0]}
       </Badge>
     </button>

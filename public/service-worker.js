@@ -1,4 +1,4 @@
-/* SpartanX PWA Service Worker (safe defaults for Next.js) */
+/* Dtracker PWA Service Worker (safe defaults for Next.js) */
 const CACHE_NAME = 'spartanx-pwa-v1';
 const CORE_ASSETS = [
   '/',

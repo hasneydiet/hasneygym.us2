@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 
 type BrandLogoProps = {
   href?: string;
@@ -11,7 +12,6 @@ type BrandLogoProps = {
 
   /**
    * Kept for backward compatibility.
-   * (Previously used when helmet icon existed)
    */
   iconSize?: number;
 };
@@ -26,9 +26,21 @@ export default function BrandLogo({
   const content = (
     <div className={`flex items-center ${centered ? 'justify-center' : ''} ${className}`}>
       <div className={`leading-tight ${centered ? 'text-center' : ''}`}>
-        <div className="text-lg md:text-xl font-bold">
-          <span className="text-gray-900 dark:text-white">Spartan</span>
-          <span className="text-green-600 dark:text-green-500 font-extrabold">X</span>
+        <div className={`flex items-center ${centered ? 'justify-center' : ''}`}>
+          {/*
+            Wide wordmark logo:
+            - Height-based sizing prevents overflow on iPhone + Galaxy Ultra
+            - Max width keeps it inside header without changing layout
+          */}
+          <Image
+            src="/logo.png"
+            alt="Dtracker"
+            width={2048}
+            height={674}
+            priority
+            className="h-8 w-auto max-w-[170px] md:h-9 md:max-w-[240px]"
+          />
+          <span className="sr-only">Dtracker</span>
         </div>
 
         {showTagline && (
@@ -37,7 +49,7 @@ export default function BrandLogo({
               taglineOnMobile ? '' : 'hidden md:block'
             }`}
           >
-            Hasney Personal Workout Tracker
+            Personal Workout Tracker
           </div>
         )}
       </div>
