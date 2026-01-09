@@ -7,6 +7,8 @@ import { useCoach } from '@/hooks/useCoach';
 
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Plus } from 'lucide-react';
 type WorkoutSession = any;
 type WorkoutExercise = any;
 type WorkoutSet = any;
@@ -112,6 +114,12 @@ export default function WorkoutPage() {
   const [sets, setSets] = useState<{ [exerciseId: string]: WorkoutSet[] }>({});
 
   const [prevSetsByExercise, setPrevSetsByExercise] = useState<Record<string, WorkoutSet[]>>({});
+
+  // Add Exercise (session-only): allows adding extra exercises during a workout day
+  const [showAddExercise, setShowAddExercise] = useState(false);
+  const [selectedExerciseId, setSelectedExerciseId] = useState('');
+  const [availableExercises, setAvailableExercises] = useState<any[]>([]);
+  const [addingExercise, setAddingExercise] = useState(false);
 
   // Micro-interactions: track which set was just added/removed for subtle animations
   const [highlightSetId, setHighlightSetId] = useState<string | null>(null);
@@ -261,6 +269,30 @@ const openTechnique = (key: string) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, effectiveUserId]);
 
+  // Load exercise list lazily for the session-only "Add Exercise" flow
+  useEffect(() => {
+    if (!showAddExercise) return;
+    let cancelled = false;
+
+    const load = async () => {
+      if (availableExercises.length > 0) return;
+
+      const { data, error } = await supabase
+        .from('exercises')
+        .select('id, name')
+        .order('name');
+
+      if (!cancelled && !error && data) {
+        setAvailableExercises(data);
+      }
+    };
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [showAddExercise, availableExercises.length]);
+
   // Apply pending focus after async updates (e.g., adding a set triggers reload)
   useEffect(() => {
     if (!pendingFocusKey) return;
@@ -313,6 +345,73 @@ const openTechnique = (key: string) => {
     setSets(map);
 
     await loadPreviousSetsForExercises(exData, sessionData.started_at);
+  };
+
+  const addExerciseToSession = async () => {
+    if (!selectedExerciseId) {
+      alert('Select an exercise first.');
+      return;
+    }
+    if (addingExercise) return;
+
+    try {
+      setAddingExercise(true);
+
+      // determine order index (append to end)
+      const nextOrder = exercises.length;
+
+      // pull default set scheme for a better starter experience (still session-only)
+      const { data: exMeta } = await supabase
+        .from('exercises')
+        .select('default_set_scheme')
+        .eq('id', selectedExerciseId)
+        .maybeSingle();
+
+      const scheme = (exMeta as any)?.default_set_scheme ?? null;
+      const schemeSets = scheme && typeof scheme === 'object' ? Number((scheme as any).sets) : NaN;
+      const schemeReps = scheme && typeof scheme === 'object' ? Number((scheme as any).reps) : NaN;
+
+      const setsCount = Number.isFinite(schemeSets) ? Math.max(1, Math.floor(schemeSets)) : 1;
+      const defaultReps = Number.isFinite(schemeReps) ? Math.max(0, Math.floor(schemeReps)) : 0;
+
+      const { data: newWorkoutExercise, error: weErr } = await supabase
+        .from('workout_exercises')
+        .insert({
+          workout_session_id: sessionId,
+          exercise_id: selectedExerciseId,
+          order_index: nextOrder,
+          technique_tags: [],
+        })
+        .select('id')
+        .single();
+
+      if (weErr) throw weErr;
+
+      const workoutExerciseId = (newWorkoutExercise as any)?.id as string | undefined;
+      if (!workoutExerciseId) throw new Error('Failed to create workout exercise.');
+
+      const setsToInsert = Array.from({ length: setsCount }).map((_, i) => ({
+        workout_exercise_id: workoutExerciseId,
+        set_index: i,
+        reps: defaultReps,
+        weight: 0,
+        rpe: null,
+        is_completed: false,
+      }));
+
+      const { error: wsErr } = await supabase.from('workout_sets').insert(setsToInsert);
+      if (wsErr) throw wsErr;
+
+      // Reset UI and reload workout (so it appears immediately and is logged to history via session tables)
+      setSelectedExerciseId('');
+      setShowAddExercise(false);
+      await loadWorkout();
+    } catch (e: any) {
+      console.error(e);
+      alert(e?.message || 'Failed to add exercise.');
+    } finally {
+      setAddingExercise(false);
+    }
   };
 
   const loadPreviousSetsForExercises = async (exData: WorkoutExercise[], startedAt: string) => {
@@ -776,6 +875,53 @@ const openTechnique = (key: string) => {
           })}
 
           <div className="pt-6 space-y-3">
+            {showAddExercise ? (
+              <div className="surface p-4">
+                <select
+                  value={selectedExerciseId}
+                  onChange={(e) => setSelectedExerciseId(e.target.value)}
+                  className="w-full h-11 rounded-xl border border-input bg-background bg-opacity-70 backdrop-blur px-3 text-sm text-foreground mb-3"
+                >
+                  <option value="">Select Exercise</option>
+                  {availableExercises.map((ex) => (
+                    <option key={ex.id} value={ex.id}>
+                      {ex.name}
+                    </option>
+                  ))}
+                </select>
+
+                <div className="flex gap-2">
+                  <Button
+                    onClick={addExerciseToSession}
+                    disabled={addingExercise}
+                    className="flex-1"
+                  >
+                    {addingExercise ? 'Adding…' : 'Add'}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setShowAddExercise(false);
+                      setSelectedExerciseId('');
+                    }}
+                    disabled={addingExercise}
+                    className="flex-1"
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <Button
+                variant="outline"
+                onClick={() => setShowAddExercise(true)}
+                className="w-full gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Add Exercise</span>
+              </Button>
+            )}
+
             <button
               onClick={endWorkout}
               disabled={ending || discarding}
