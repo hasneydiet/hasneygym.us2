@@ -145,7 +145,7 @@ const openTechnique = (key: string) => {
 
   // Rest timer
   const [restSecondsRemaining, setRestSecondsRemaining] = useState<number | null>(null);
-  const [restDurationSeconds, setRestDurationSeconds] = useState<number>(90);
+  const [restExerciseId, setRestExerciseId] = useState<string | null>(null);
   const restIntervalRef = useRef<number | null>(null);
   const beepedRef = useRef(false);
 
@@ -245,15 +245,17 @@ const openTechnique = (key: string) => {
 
   const stopRestTimer = () => {
     setRestSecondsRemaining(null);
+    setRestExerciseId(null);
     if (restIntervalRef.current) {
       window.clearInterval(restIntervalRef.current);
       restIntervalRef.current = null;
     }
   };
 
-  const startRestTimer = (seconds: number) => {
+  const startRestTimer = (exerciseId: string, seconds: number) => {
     const dur = clampInt(seconds, 5, 600);
     beepedRef.current = false;
+    setRestExerciseId(exerciseId);
     setRestSecondsRemaining(dur);
 
     if (restIntervalRef.current) {
@@ -522,10 +524,17 @@ const openTechnique = (key: string) => {
     }
   };
 
-  const handleToggleCompleted = async (setRow: any) => {
+  const getExerciseRestSeconds = (ex: any): number => {
+    const v = ex?.exercises?.rest_seconds ?? ex?.exercises?.default_set_scheme?.restSeconds;
+    const n = Number(v);
+    if (!Number.isFinite(n) || n <= 0) return 60;
+    return Math.floor(n);
+  };
+
+  const handleToggleCompleted = async (workoutExerciseRow: any, setRow: any) => {
     const willComplete = !setRow.is_completed;
     await saveSet(setRow.id, 'is_completed', willComplete);
-    if (willComplete) startRestTimer(restDurationSeconds);
+    if (willComplete) startRestTimer(workoutExerciseRow.id, getExerciseRestSeconds(workoutExerciseRow));
   };
 
   const endWorkout = async () => {
@@ -693,60 +702,7 @@ const openTechnique = (key: string) => {
           </div>
         </div>
 
-        {/* Floating rest timer (only while resting). This stays visible while scrolling, instead of occupying the header. */}
-        {restSecondsRemaining !== null && (
-          <div className="fixed left-1/2 bottom-4 z-50 -translate-x-1/2">
-            <div className="inline-flex items-center gap-2 rounded-full border border-green-600/60 bg-green-900/25 backdrop-blur px-3 py-2 shadow-lg shadow-black/30">
-              <span className="text-[11px] font-semibold text-green-300">REST</span>
-              <span className="font-mono text-sm font-semibold tabular-nums text-green-100">{formatClock(restSecondsRemaining)}</span>
-              <button
-                type="button"
-                onClick={() => setRestSecondsRemaining((v) => (v === null ? null : v + 15))}
-                className="min-h-[36px] min-w-[36px] rounded-full bg-white/10 text-green-100 border border-green-700/50 text-xs font-semibold"
-                title="+15s"
-              >
-                +15
-              </button>
-              <button
-                type="button"
-                onClick={() => setRestSecondsRemaining((v) => (v === null ? null : v + 30))}
-                className="min-h-[36px] min-w-[36px] rounded-full bg-white/10 text-green-100 border border-green-700/50 text-xs font-semibold"
-                title="+30s"
-              >
-                +30
-              </button>
-              <button
-                type="button"
-                onClick={stopRestTimer}
-                className="min-h-[36px] min-w-[36px] rounded-full bg-white/10 text-green-100 border border-green-700/50 text-xs font-semibold"
-                title="Stop rest timer"
-              >
-                ✕
-              </button>
-            </div>
-          </div>
-        )}
-
-        {restSecondsRemaining === null && (
-          <div className="mb-6 flex flex-wrap items-center gap-2">
-            <span className="text-xs font-semibold text-gray-300 mr-1">Rest:</span>
-            {[60, 90, 120].map((sec) => {
-              const active = restDurationSeconds === sec;
-              return (
-                <button
-                  key={sec}
-                  type="button"
-                  onClick={() => setRestDurationSeconds(sec)}
-                  className={`min-h-[44px] px-4 rounded-full text-sm font-semibold border transition ${
-                    active ? 'bg-white text-gray-900 border-white' : 'bg-gray-900/60 text-white border-gray-700'
-                  }`}
-                >
-                  {sec}s
-                </button>
-              );
-            })}
-          </div>
-        )}
+        {/* Rest timer is displayed inside each exercise card (HEVY style). */}
 
         <div className="space-y-6">
           {exercises.map((exercise: any) => {
@@ -754,21 +710,31 @@ const openTechnique = (key: string) => {
 
             return (
               <div key={exercise.id} className="bg-gray-900/40 border border-gray-800 rounded-2xl p-4 sm:p-5 shadow-lg shadow-black/20">
-<div className="mb-2 flex items-start justify-between gap-3">
-  <h3 className="section-title text-white">{exercise.exercises?.name || 'Exercise'}</h3>
-  {exercise.exercises?.default_technique_tags?.[0] ? (
-    <button
-      type="button"
-      onClick={() => openTechnique(exercise.exercises!.default_technique_tags![0])}
-      className="tap-target -mt-0.5"
-      aria-label={`How to perform ${exercise.exercises!.default_technique_tags![0]}`}
-    >
-      <Badge className="rounded-full border border-primary/30 bg-primary/15 px-3 py-1 text-xs font-semibold text-primary hover:bg-primary/20">
-        {exercise.exercises!.default_technique_tags![0]}
-      </Badge>
-    </button>
-  ) : null}
-</div>
+                <div className="mb-3">
+                  <h3 className="section-title text-white">{exercise.exercises?.name || 'Exercise'}</h3>
+
+                  {exercise.exercises?.default_technique_tags?.[0] ? (
+                    <button
+                      type="button"
+                      onClick={() => openTechnique(exercise.exercises!.default_technique_tags![0])}
+                      className="tap-target mt-1"
+                      aria-label={`How to perform ${exercise.exercises!.default_technique_tags![0]}`}
+                    >
+                      <Badge className="rounded-full border border-primary/30 bg-primary/15 px-3 py-1 text-xs font-semibold text-primary hover:bg-primary/20">
+                        {exercise.exercises!.default_technique_tags![0]}
+                      </Badge>
+                    </button>
+                  ) : null}
+
+                  <div className="mt-2 inline-flex items-center gap-2 text-sm text-gray-300">
+                    <Clock className="h-4 w-4 text-gray-300" />
+                    {restSecondsRemaining !== null && restExerciseId === exercise.id ? (
+                      <span className="font-medium">Rest Timer: {formatClock(restSecondsRemaining)}</span>
+                    ) : (
+                      <span className="font-medium">Rest Timer: {formatClock(getExerciseRestSeconds(exercise))}</span>
+                    )}
+                  </div>
+                </div>
 
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
@@ -871,7 +837,7 @@ const openTechnique = (key: string) => {
 
                             <td className="px-2 py-2 text-center">
                               <button
-                                onClick={() => handleToggleCompleted(set)}
+                                onClick={() => handleToggleCompleted(exercise, set)}
                                 className={`w-11 h-11 rounded border-2 flex items-center justify-center ${
                                   set.is_completed ? 'bg-white border-white text-gray-900' : 'border-gray-700'
                                 }`}

@@ -12,6 +12,8 @@ export interface Exercise {
   equipment: string;
   notes: string;
   created_at: string;
+  /** Default rest time after a completed set (in seconds). */
+  rest_seconds?: number;
   default_technique_tags: string[];
   default_set_scheme: {
     sets?: number;

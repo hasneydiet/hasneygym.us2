@@ -141,6 +141,7 @@ export default function ExercisesPage() {
     muscle_group: '',
     equipment: '',
     notes: '',
+    rest_seconds: 60,
     default_technique_tags: [] as string[],
     default_set_scheme: null as { sets?: number; reps?: number; restSeconds?: number; notes?: string } | null,
   });
@@ -170,6 +171,7 @@ export default function ExercisesPage() {
       muscle_group: formData.muscle_group,
       equipment: normalizeEquipment(formData.equipment),
       notes: formData.notes,
+      rest_seconds: Number.isFinite(formData.rest_seconds) ? Math.max(0, Math.floor(formData.rest_seconds)) : 60,
       default_technique_tags: formData.default_technique_tags,
       default_set_scheme: formData.default_set_scheme && formData.default_set_scheme.sets ? formData.default_set_scheme : null,
     };
@@ -188,6 +190,7 @@ export default function ExercisesPage() {
       muscle_group: '',
       equipment: '',
       notes: '',
+      rest_seconds: 60,
       default_technique_tags: [],
       default_set_scheme: null,
     });
@@ -203,6 +206,7 @@ export default function ExercisesPage() {
       muscle_group: exercise.muscle_group,
       equipment: exercise.equipment,
       notes: exercise.notes,
+      rest_seconds: (exercise as any).rest_seconds ?? 60,
       default_technique_tags: exercise.default_technique_tags || [],
       default_set_scheme: exercise.default_set_scheme || null,
     });
@@ -252,6 +256,7 @@ export default function ExercisesPage() {
                   muscle_group: '',
                   equipment: '',
                   notes: '',
+                  rest_seconds: 60,
                   default_technique_tags: [],
                   default_set_scheme: null,
                 });
@@ -339,6 +344,24 @@ export default function ExercisesPage() {
                     onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                     rows={3}
                   />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-foreground/80 mb-1">
+                    Rest Timer (seconds)
+                  </label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={formData.rest_seconds}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      rest_seconds: parseInt(e.target.value) || 0,
+                    })}
+                  />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Default rest after completing a set for this exercise. Default is 60 seconds.
+                  </p>
                 </div>
 
                 <div>
