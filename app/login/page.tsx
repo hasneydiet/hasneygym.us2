@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { COACH_EMAIL } from '@/lib/coach';
 import BrandLogo from '@/components/BrandLogo';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,13 +19,16 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
+  const isCoachEmail = (email?: string | null) =>
+    !!email && email.toLowerCase() === COACH_EMAIL.toLowerCase();
+
   useEffect(() => {
     const checkAuth = async () => {
       const {
         data: { session },
       } = await supabase.auth.getSession();
       if (session) {
-        router.push('/workout/start');
+        router.push(isCoachEmail(session.user.email) ? '/coach' : '/workout/start');
       }
     };
     checkAuth();
@@ -48,7 +52,7 @@ export default function LoginPage() {
           await supabase.from('profiles').insert({
             id: data.user.id,
           });
-          router.push('/workout/start');
+          router.push(isCoachEmail(session.user.email) ? '/coach' : '/workout/start');
         }
       } else {
         const { error } = await supabase.auth.signInWithPassword({
@@ -57,7 +61,7 @@ export default function LoginPage() {
         });
 
         if (error) throw error;
-        router.push('/workout/start');
+        router.push(isCoachEmail(session.user.email) ? '/coach' : '/workout/start');
       }
     } catch (err: any) {
       setError(err.message);
