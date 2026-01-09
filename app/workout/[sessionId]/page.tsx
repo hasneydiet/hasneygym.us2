@@ -145,6 +145,7 @@ const openTechnique = (key: string) => {
   const [restSecondsRemaining, setRestSecondsRemaining] = useState<number | null>(null);
   const [restDurationSeconds, setRestDurationSeconds] = useState<number>(90);
   const restIntervalRef = useRef<number | null>(null);
+  const beepedRef = useRef(false);
 
   // Input focus map for fast logging (mobile + keyboard)
   const inputRefs = useRef<Map<string, HTMLInputElement>>(new Map());
@@ -165,6 +166,34 @@ const openTechnique = (key: string) => {
     try {
       // haptics on supported mobile devices (non-blocking)
       if (typeof navigator !== 'undefined' && 'vibrate' in navigator) (navigator as any).vibrate(pattern);
+    } catch {}
+  };
+
+  const playBeep = () => {
+    // Simple beep using Web Audio API (no external assets)
+    try {
+      const AudioCtx = (window as any).AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = 880;
+      gain.gain.value = 0.0001;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      const now = ctx.currentTime;
+      // quick attack/decay
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(0.25, now + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.20);
+      osc.start(now);
+      osc.stop(now + 0.22);
+      osc.onended = () => {
+        try {
+          ctx.close();
+        } catch {}
+      };
     } catch {}
   };
 
@@ -222,6 +251,7 @@ const openTechnique = (key: string) => {
 
   const startRestTimer = (seconds: number) => {
     const dur = clampInt(seconds, 5, 600);
+    beepedRef.current = false;
     setRestSecondsRemaining(dur);
 
     if (restIntervalRef.current) {
@@ -237,6 +267,11 @@ const openTechnique = (key: string) => {
           if (restIntervalRef.current) {
             window.clearInterval(restIntervalRef.current);
             restIntervalRef.current = null;
+          }
+          if (!beepedRef.current) {
+            beepedRef.current = true;
+            playBeep();
+            vibrate([60, 40, 60]);
           }
           return null;
         }
@@ -649,39 +684,42 @@ const openTechnique = (key: string) => {
               <span className="text-[11px] font-semibold text-gray-300">TIME</span>
               <span className="font-mono text-sm font-semibold tabular-nums">{formatClock(elapsedSeconds)}</span>
             </div>
-
-            {restSecondsRemaining !== null && (
-              <div className="inline-flex items-center gap-2 rounded-full border border-green-600/60 bg-green-900/20 px-3 py-1.5">
-                <span className="text-[11px] font-semibold text-green-300">REST</span>
-                <span className="font-mono text-sm font-semibold tabular-nums">{formatClock(restSecondsRemaining)}</span>
-                <button
-                  type="button"
-                  onClick={() => setRestSecondsRemaining((v) => (v === null ? null : v + 15))}
-                  className="min-h-[36px] min-w-[36px] rounded-full bg-white/10 text-green-100 border border-green-700/50 text-xs font-semibold"
-                  title="+15s"
-                >
-                  +15
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setRestSecondsRemaining((v) => (v === null ? null : v + 30))}
-                  className="min-h-[36px] min-w-[36px] rounded-full bg-white/10 text-green-100 border border-green-700/50 text-xs font-semibold"
-                  title="+30s"
-                >
-                  +30
-                </button>
-                <button
-                  type="button"
-                  onClick={stopRestTimer}
-                  className="min-h-[36px] min-w-[36px] rounded-full bg-white/10 text-green-100 border border-green-700/50 text-xs font-semibold"
-                  title="Stop rest timer"
-                >
-                  ✕
-                </button>
-              </div>
-            )}
           </div>
         </div>
+
+        {/* Floating rest timer (only while resting). This stays visible while scrolling, instead of occupying the header. */}
+        {restSecondsRemaining !== null && (
+          <div className="fixed left-1/2 bottom-4 z-50 -translate-x-1/2">
+            <div className="inline-flex items-center gap-2 rounded-full border border-green-600/60 bg-green-900/25 backdrop-blur px-3 py-2 shadow-lg shadow-black/30">
+              <span className="text-[11px] font-semibold text-green-300">REST</span>
+              <span className="font-mono text-sm font-semibold tabular-nums text-green-100">{formatClock(restSecondsRemaining)}</span>
+              <button
+                type="button"
+                onClick={() => setRestSecondsRemaining((v) => (v === null ? null : v + 15))}
+                className="min-h-[36px] min-w-[36px] rounded-full bg-white/10 text-green-100 border border-green-700/50 text-xs font-semibold"
+                title="+15s"
+              >
+                +15
+              </button>
+              <button
+                type="button"
+                onClick={() => setRestSecondsRemaining((v) => (v === null ? null : v + 30))}
+                className="min-h-[36px] min-w-[36px] rounded-full bg-white/10 text-green-100 border border-green-700/50 text-xs font-semibold"
+                title="+30s"
+              >
+                +30
+              </button>
+              <button
+                type="button"
+                onClick={stopRestTimer}
+                className="min-h-[36px] min-w-[36px] rounded-full bg-white/10 text-green-100 border border-green-700/50 text-xs font-semibold"
+                title="Stop rest timer"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
 
         {restSecondsRemaining === null && (
           <div className="mb-6 flex flex-wrap items-center gap-2">
