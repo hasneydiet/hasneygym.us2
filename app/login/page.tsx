@@ -52,16 +52,19 @@ export default function LoginPage() {
           await supabase.from('profiles').insert({
             id: data.user.id,
           });
-          router.push(isCoachEmail(session.user.email) ? '/coach' : '/workout/start');
+          // signUp returns the created user; use it (or fallback to entered email)
+          router.push(isCoachEmail(data.user.email ?? email) ? '/coach' : '/workout/start');
         }
       } else {
-        const { error } = await supabase.auth.signInWithPassword({
+        const { data, error } = await supabase.auth.signInWithPassword({
           email,
           password,
         });
 
         if (error) throw error;
-        router.push(isCoachEmail(session.user.email) ? '/coach' : '/workout/start');
+        // signIn returns session/user depending on settings; fall back to entered email
+        const signedInEmail = data.user?.email ?? data.session?.user.email ?? email;
+        router.push(isCoachEmail(signedInEmail) ? '/coach' : '/workout/start');
       }
     } catch (err: any) {
       setError(err.message);
