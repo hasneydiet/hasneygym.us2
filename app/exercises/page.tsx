@@ -203,10 +203,10 @@ export default function ExercisesPage() {
     setEditingExercise(exercise);
     setFormData({
       name: exercise.name,
-      muscle_group: exercise.muscle_group || '',
-      equipment: exercise.equipment || '',
-      notes: exercise.notes || '',
-      rest_seconds: exercise.rest_seconds ?? 60,
+      muscle_group: exercise.muscle_group,
+      equipment: exercise.equipment,
+      notes: exercise.notes,
+      rest_seconds: (exercise as any).rest_seconds ?? 60,
       default_technique_tags: exercise.default_technique_tags || [],
       default_set_scheme: exercise.default_set_scheme || null,
     });
@@ -214,53 +214,42 @@ export default function ExercisesPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this exercise?')) return;
-
-    await supabase.from('exercises').delete().eq('id', id);
-    loadExercises();
+    if (confirm('Delete this exercise?')) {
+      await supabase.from('exercises').delete().eq('id', id);
+      loadExercises();
+    }
   };
 
   const toggleTechniqueTag = (tag: string) => {
-    setFormData((prev) => {
-      const exists = prev.default_technique_tags.includes(tag);
-      return {
-        ...prev,
-        default_technique_tags: exists
-          ? prev.default_technique_tags.filter((t) => t !== tag)
-          : [...prev.default_technique_tags, tag],
-      };
+    setFormData({
+      ...formData,
+      default_technique_tags: formData.default_technique_tags.includes(tag)
+        ? formData.default_technique_tags.filter(t => t !== tag)
+        : [...formData.default_technique_tags, tag],
     });
   };
 
-  const filteredExercises = useMemo(() => {
-    const term = searchTerm.trim().toLowerCase();
-
-    return exercises.filter((exercise) => {
-      const matchesSearch =
-        !term ||
-        exercise.name.toLowerCase().includes(term) ||
-        (exercise.muscle_group || '').toLowerCase().includes(term) ||
-        (exercise.equipment || '').toLowerCase().includes(term) ||
-        (exercise.notes || '').toLowerCase().includes(term);
-
-      const matchesMuscleGroup = !selectedMuscleGroup || exercise.muscle_group === selectedMuscleGroup;
-
-      return matchesSearch && matchesMuscleGroup;
-    });
-  }, [exercises, searchTerm, selectedMuscleGroup]);
+  const filteredExercises = exercises.filter((ex) => {
+    const matchesGroup = selectedMuscleGroup
+      ? (ex.muscle_group || '').toLowerCase() === selectedMuscleGroup.toLowerCase()
+      : true;
+    const q = searchTerm.trim().toLowerCase();
+    const matchesSearch = !q
+      ? true
+      : ex.name.toLowerCase().includes(q) || (ex.muscle_group || '').toLowerCase().includes(q);
+    return matchesGroup && matchesSearch;
+  });
 
   return (
     <AuthGuard>
       <div className="app-shell">
-        <div className="page">
-          <div className="flex items-start justify-between gap-4 mb-5">
-            <div>
-              <h1 className="page-title">Exercises</h1>
-              <p className="page-subtitle">Manage your exercise library.</p>
-            </div>
-
+        <Navigation />
+        <div className="page max-w-none">
+          <div className="flex justify-between items-center mb-6">
+            <h1 className="page-title">Exercises</h1>
             <Button
               onClick={() => {
+                setShowForm(true);
                 setEditingExercise(null);
                 setFormData({
                   name: '',
@@ -271,57 +260,62 @@ export default function ExercisesPage() {
                   default_technique_tags: [],
                   default_set_scheme: null,
                 });
-                setShowForm(true);
               }}
               className="gap-2"
             >
-              <Plus className="h-4 w-4" />
-              Add
+              <Plus className="w-5 h-5" />
+              <span>Add Exercise</span>
             </Button>
           </div>
 
-          <div className="surface p-4 sm:p-5 mb-5">
-            <div className="flex flex-col sm:flex-row gap-3">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Search exercises..."
-                  className="pl-9"
-                />
-              </div>
-
-              <Select
-                value={selectedMuscleGroup}
-                onValueChange={(v) => setSelectedMuscleGroup(v === '__all__' ? '' : v)}
-              >
-                <SelectTrigger className="w-full sm:w-[220px]">
-                  <SelectValue placeholder="All muscle groups" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__all__">All muscle groups</SelectItem>
-                  {MUSCLE_GROUP_OPTIONS.map((mg) => (
-                    <SelectItem key={mg} value={mg}>
-                      {mg}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          <div className="mb-6">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-5 h-5" />
+              <Input
+                type="text"
+                placeholder="Search exercises..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10"
+              />
             </div>
           </div>
 
+          {/* Muscle group filter (Hevy-style: dropdown) */}
+          <div className="mb-6">
+            <Select
+              value={selectedMuscleGroup || '__all__'}
+              onValueChange={(v) => setSelectedMuscleGroup(v === '__all__' ? '' : v)}
+            >
+              <SelectTrigger className="h-11 rounded-xl">
+                <SelectValue placeholder="All Muscles" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">All Muscles</SelectItem>
+                {MUSCLE_GROUP_OPTIONS.map((g) => (
+                  <SelectItem key={g} value={g}>
+                    {g}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
           {showForm && (
-            <div className="surface p-5 sm:p-6 mb-6">
+            <div className="surface p-6 mb-6">
+              <h2 className="text-lg font-semibold tracking-tight mb-4">
+                {editingExercise ? 'Edit Exercise' : 'New Exercise'}
+              </h2>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-foreground/80 mb-1">
-                    Exercise Name
+                    Exercise Name *
                   </label>
                   <Input
+                    type="text"
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    placeholder="E.g., Bench Press"
+                    required
                   />
                 </div>
 
@@ -350,6 +344,24 @@ export default function ExercisesPage() {
                     onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                     rows={3}
                   />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-foreground/80 mb-1">
+                    Rest Timer (seconds)
+                  </label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={formData.rest_seconds}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      rest_seconds: parseInt(e.target.value) || 0,
+                    })}
+                  />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Default rest after completing a set for this exercise. Default is 60 seconds.
+                  </p>
                 </div>
 
                 <div>
@@ -403,21 +415,18 @@ export default function ExercisesPage() {
                         })}
                       />
                     </div>
-
-                    {/* ✅ Rest timer input moved here and now controls exercises.rest_seconds */}
                     <div>
                       <label className="block text-xs text-muted-foreground mb-1">Rest (seconds)</label>
                       <Input
                         type="number"
                         min="0"
-                        value={formData.rest_seconds}
+                        value={formData.default_set_scheme?.restSeconds || 0}
                         onChange={(e) => setFormData({
                           ...formData,
-                          rest_seconds: parseInt(e.target.value) || 0,
+                          default_set_scheme: { ...formData.default_set_scheme, restSeconds: parseInt(e.target.value) || 0 },
                         })}
                       />
                     </div>
-
                     <div>
                       <label className="block text-xs text-muted-foreground mb-1">Notes</label>
                       <Input
@@ -452,68 +461,84 @@ export default function ExercisesPage() {
             </div>
           )}
 
-          {!showForm && (
-            <>
-              {filteredExercises.length === 0 ? (
-                <div className="surface p-6 text-center">
-                  <div className="text-sm text-muted-foreground">No exercises found.</div>
-                </div>
-              ) : (
-                <div className="space-y-3">
+          {/*
+            Table container
+            - Keep the card within the viewport on mobile (no clipped edges)
+            - Allow horizontal scroll *inside* the card if the table can't fit
+          */}
+          {/*
+            On mobile we keep the table in a card.
+            On desktop there's plenty of space, so we remove the boxed look.
+          */}
+          <div className="surface overflow-hidden w-full max-w-full md:bg-transparent md:border-0 md:shadow-none md:rounded-none md:overflow-visible">
+            <div className="w-full max-w-full overflow-x-auto md:overflow-x-visible">
+              <table className="w-full table-fixed">
+                <colgroup>
+                  <col className="w-[70%] md:w-[44%]" />
+                  <col className="hidden md:table-column w-[0%] md:w-[22%]" />
+                  <col className="hidden md:table-column w-[0%] md:w-[22%]" />
+                  <col className="w-[30%] md:w-[12%]" />
+                </colgroup>
+                <thead className="bg-muted/40 border-b border-border/60">
+                  <tr>
+                    <th className="px-3 sm:px-4 py-3 text-left text-xs sm:text-sm font-medium text-muted-foreground">Name</th>
+                    <th className="px-3 sm:px-4 py-3 text-left text-xs sm:text-sm font-medium text-muted-foreground hidden md:table-cell">Muscle Group</th>
+                    <th className="px-3 sm:px-4 py-3 text-left text-xs sm:text-sm font-medium text-muted-foreground hidden md:table-cell">Equipment</th>
+                    <th className="px-3 sm:px-4 py-3 text-right text-xs sm:text-sm font-medium text-muted-foreground">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/60">
                   {filteredExercises.map((exercise) => (
-                    <div key={exercise.id} className="surface p-4 sm:p-5">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="font-semibold text-foreground truncate">{exercise.name}</div>
-                          <div className="text-xs text-muted-foreground mt-1">
-                            {(exercise.muscle_group || 'Unassigned') + ' • ' + (exercise.equipment || 'Any')}
-                          </div>
-                          <div className="text-xs text-muted-foreground mt-1">Rest: {exercise.rest_seconds ?? 60}s</div>
-                        </div>
-
-                        <div className="flex gap-1">
-                          <Button
-                            variant="ghost"
-                            size="icon"
+                    <tr key={exercise.id} className="hover:bg-accent/30">
+                      <td className="px-3 sm:px-4 py-3 text-sm font-medium text-foreground break-words">
+                        {exercise.name}
+                      </td>
+                      <td className="px-3 sm:px-4 py-3 text-sm text-muted-foreground break-words hidden md:table-cell">
+                        {exercise.muscle_group || '-'}
+                      </td>
+                      <td className="px-3 sm:px-4 py-3 text-sm text-muted-foreground break-words hidden md:table-cell">
+                        {(exercise.equipment || '-').replace(/\b\w/g, (c) => c.toUpperCase())}
+                      </td>
+                      <td className="px-2 sm:px-4 py-3 text-right whitespace-nowrap">
+                        <div className="inline-flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => router.push(`/exercises/${exercise.id}`)}
+                            className="icon-btn"
+                            title="View Progress"
+                            aria-label="View exercise progress"
+                          >
+                            <TrendingUp className="w-4 h-4" />
+                          </button>
+                          <button
                             onClick={() => handleEdit(exercise)}
-                            className="h-9 w-9"
+                            className="icon-btn"
+                            title="Edit"
+                            aria-label="Edit exercise"
                           >
-                            <Edit2 className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                          <button
                             onClick={() => handleDelete(exercise.id)}
-                            className="h-9 w-9"
+                            className="icon-btn text-destructive hover:text-destructive"
+                            title="Delete"
+                            aria-label="Delete exercise"
                           >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                            <Trash2 className="w-4 h-4" />
+                          </button>
                         </div>
-                      </div>
-
-                      {exercise.notes ? (
-                        <div className="text-sm text-muted-foreground mt-3 whitespace-pre-wrap">{exercise.notes}</div>
-                      ) : null}
-                    </div>
+                      </td>
+                    </tr>
                   ))}
+                </tbody>
+              </table>
+              {filteredExercises.length === 0 && (
+                <div className="text-center py-12 text-muted-foreground">
+                  {searchTerm ? 'No exercises found' : 'No exercises yet. Create your first exercise!'}
                 </div>
               )}
-
-              <div className="mt-6">
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={() => router.push('/coach')}
-                >
-                  <TrendingUp className="h-4 w-4 mr-2" />
-                  Coach Area
-                </Button>
-              </div>
-            </>
-          )}
+            </div>
+          </div>
         </div>
-
-        <Navigation />
       </div>
     </AuthGuard>
   );
