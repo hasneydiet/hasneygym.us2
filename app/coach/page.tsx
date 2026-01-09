@@ -31,6 +31,128 @@ export default function CoachPage() {
     return sessionData.session?.access_token || null;
   };
 
+  // Excel-friendly CSV export/import helpers for the exercise library.
+  const csvEscape = (v: any) => {
+    const s = v === null || v === undefined ? '' : String(v);
+    const needsQuotes = /[",\n\r\t]/.test(s);
+    const escaped = s.replace(/"/g, '""');
+    return needsQuotes ? `"${escaped}"` : escaped;
+  };
+
+  const exercisesToCsv = (rows: any[]) => {
+    const headers = [
+      'name',
+      'muscle_group',
+      'equipment',
+      'notes',
+      'rest_seconds',
+      'default_technique_tags',
+      'default_set_scheme_sets',
+      'default_set_scheme_reps',
+      'default_set_scheme_restSeconds',
+      'default_set_scheme_notes',
+    ];
+
+    const lines = [headers.join(',')];
+    for (const r of rows || []) {
+      const scheme = (r?.default_set_scheme && typeof r.default_set_scheme === 'object') ? r.default_set_scheme : {};
+      const tags = Array.isArray(r?.default_technique_tags) ? r.default_technique_tags.join(';') : (r?.default_technique_tags || '');
+      const values = [
+        r?.name,
+        r?.muscle_group,
+        r?.equipment,
+        r?.notes,
+        r?.rest_seconds,
+        tags,
+        scheme?.sets,
+        scheme?.reps,
+        scheme?.restSeconds,
+        scheme?.notes,
+      ].map(csvEscape);
+      lines.push(values.join(','));
+    }
+
+    // Add UTF-8 BOM so Excel opens it cleanly.
+    return `\uFEFF${lines.join('\n')}`;
+  };
+
+  const parseCsv = (text: string) => {
+    // Minimal CSV parser (supports quotes + commas). Returns array of objects keyed by header.
+    const rows: string[][] = [];
+    let i = 0;
+    const s = text.replace(/^\uFEFF/, '');
+    const len = s.length;
+    const nextRow = () => {
+      const row: string[] = [];
+      let field = '';
+      let inQuotes = false;
+      while (i < len) {
+        const ch = s[i];
+        if (inQuotes) {
+          if (ch === '"') {
+            if (s[i + 1] === '"') {
+              field += '"';
+              i += 2;
+              continue;
+            }
+            inQuotes = false;
+            i++;
+            continue;
+          }
+          field += ch;
+          i++;
+          continue;
+        }
+        if (ch === '"') {
+          inQuotes = true;
+          i++;
+          continue;
+        }
+        if (ch === ',') {
+          row.push(field);
+          field = '';
+          i++;
+          continue;
+        }
+        if (ch === '\n') {
+          row.push(field);
+          i++;
+          break;
+        }
+        if (ch === '\r') {
+          // handle CRLF
+          row.push(field);
+          i++;
+          if (s[i] === '\n') i++;
+          break;
+        }
+        field += ch;
+        i++;
+      }
+      // last line (EOF)
+      if (i >= len) row.push(field);
+      return row;
+    };
+
+    while (i < len) {
+      const row = nextRow();
+      if (row.length === 1 && row[0] === '' && i >= len) break;
+      rows.push(row);
+    }
+
+    if (rows.length === 0) return [];
+    const headers = rows[0].map((h) => h.trim());
+    const out: any[] = [];
+    for (let r = 1; r < rows.length; r++) {
+      const line = rows[r];
+      if (line.every((v) => (v ?? '').trim() === '')) continue;
+      const obj: any = {};
+      for (let c = 0; c < headers.length; c++) obj[headers[c]] = line[c] ?? '';
+      out.push(obj);
+    }
+    return out;
+  };
+
   const handleExportLibrary = async () => {
     setLibraryStatus(null);
     const token = await getAccessToken();
@@ -52,18 +174,21 @@ export default function CoachPage() {
       }
 
       const payload = json?.library ?? json;
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const rows = Array.isArray((payload as any)?.exercises) ? (payload as any).exercises : [];
+
+      const csv = exercisesToCsv(rows);
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
       const url = URL.createObjectURL(blob);
 
       const a = document.createElement('a');
       a.href = url;
-      a.download = `library-export-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`;
+      a.download = `exercises-export-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.csv`;
       document.body.appendChild(a);
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
 
-      setLibraryStatus('Exported library JSON.');
+      setLibraryStatus('Exported exercises CSV (Excel-friendly).');
     } catch (e: any) {
       setLibraryStatus(e?.message || 'Export failed.');
     }
@@ -86,7 +211,51 @@ export default function CoachPage() {
 
     try {
       const text = await file.text();
-      const parsed = JSON.parse(text);
+      const isCsv = file.name.toLowerCase().endsWith('.csv');
+      const parsed = isCsv ? null : JSON.parse(text);
+
+      // If CSV, convert to the JSON payload the existing import endpoint expects.
+      const csvPayload = isCsv
+        ? (() => {
+            const rows = parseCsv(text);
+            const exercises = rows.map((r: any) => {
+              const tags = (r.default_technique_tags || '')
+                .split(';')
+                .map((t: string) => t.trim())
+                .filter(Boolean);
+
+              const toInt = (v: any) => {
+                const n = parseInt(String(v ?? '').trim(), 10);
+                return Number.isFinite(n) ? n : null;
+              };
+
+              const sets = toInt(r.default_set_scheme_sets);
+              const reps = toInt(r.default_set_scheme_reps);
+              const restSeconds = toInt(r.default_set_scheme_restSeconds);
+              const schemeNotes = String(r.default_set_scheme_notes || '').trim();
+              const default_set_scheme = sets ? {
+                sets,
+                reps: reps ?? 0,
+                restSeconds: restSeconds ?? 0,
+                notes: schemeNotes || null,
+              } : null;
+
+              return {
+                name: String(r.name || '').trim(),
+                muscle_group: String(r.muscle_group || '').trim() || null,
+                equipment: String(r.equipment || '').trim() || null,
+                notes: String(r.notes || '').trim() || null,
+                rest_seconds: toInt(r.rest_seconds) ?? 60,
+                default_technique_tags: tags,
+                default_set_scheme,
+              };
+            }).filter((e: any) => e.name);
+
+            return { exercises };
+          })()
+        : null;
+
+      const body = isCsv ? csvPayload : parsed;
 
       const res = await fetch('/api/coach/library/import', {
         method: 'POST',
@@ -94,7 +263,7 @@ export default function CoachPage() {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(parsed),
+        body: JSON.stringify(body),
       });
 
       const json = await res.json().catch(() => ({}));
@@ -103,7 +272,7 @@ export default function CoachPage() {
         return;
       }
 
-      setLibraryStatus('Imported library successfully.');
+      setLibraryStatus(isCsv ? 'Imported exercises from CSV successfully.' : 'Imported library successfully.');
     } catch (e: any) {
       setLibraryStatus(e?.message || 'Import failed.');
     } finally {
@@ -181,7 +350,7 @@ export default function CoachPage() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="application/json"
+                accept="application/json,text/csv,.csv"
                 className="hidden"
                 onChange={(e) => handleImportFileChosen(e.target.files?.[0] || null)}
               />
