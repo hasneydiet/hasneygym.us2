@@ -8,7 +8,17 @@ import { useCoach } from '@/hooks/useCoach';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Plus } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
+
+import { ChevronLeft, Clock, MoreVertical, Plus, ArrowUpDown, Repeat, Layers, Trash2 } from 'lucide-react';
 type WorkoutSession = any;
 type WorkoutExercise = any;
 type WorkoutSet = any;
@@ -20,6 +30,16 @@ function formatClock(totalSeconds: number) {
   const ss = s % 60;
   const pad = (n: number) => String(n).padStart(2, '0');
   return hh > 0 ? `${hh}:${pad(mm)}:${pad(ss)}` : `${mm}:${pad(ss)}`;
+}
+
+function formatHms(totalSeconds: number) {
+  const s = Math.max(0, Math.floor(totalSeconds));
+  const hh = Math.floor(s / 3600);
+  const mm = Math.floor((s % 3600) / 60);
+  const ss = s % 60;
+  if (hh > 0) return `${hh}h ${mm}min ${ss}s`;
+  if (mm > 0) return `${mm}min ${ss}s`;
+  return `${ss}s`;
 }
 
 function clampInt(n: number, min: number, max: number) {
@@ -113,13 +133,18 @@ export default function WorkoutPage() {
   const [exercises, setExercises] = useState<WorkoutExercise[]>([]);
   const [sets, setSets] = useState<{ [exerciseId: string]: WorkoutSet[] }>({});
 
-  const [prevSetsByExercise, setPrevSetsByExercise] = useState<Record<string, WorkoutSet[]>>({});
+  // Exercise action sheet ("…" menu) and pickers (replace/add/superset)
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [menuExercise, setMenuExercise] = useState<WorkoutExercise | null>(null);
 
-  // Add Exercise (session-only): allows adding extra exercises during a workout day
-  const [showAddExercise, setShowAddExercise] = useState(false);
-  const [selectedExerciseId, setSelectedExerciseId] = useState('');
-  const [availableExercises, setAvailableExercises] = useState<any[]>([]);
-  const [addingExercise, setAddingExercise] = useState(false);
+  const [replaceOpen, setReplaceOpen] = useState(false);
+  const [reorderOpen, setReorderOpen] = useState(false);
+  const [supersetOpen, setSupersetOpen] = useState(false);
+  const [addExerciseOpen, setAddExerciseOpen] = useState(false);
+  const [allExercises, setAllExercises] = useState<any[]>([]);
+  const [exerciseSearch, setExerciseSearch] = useState('');
+
+  const [prevSetsByExercise, setPrevSetsByExercise] = useState<Record<string, WorkoutSet[]>>({});
 
   // Micro-interactions: track which set was just added/removed for subtle animations
   const [highlightSetId, setHighlightSetId] = useState<string | null>(null);
@@ -269,30 +294,6 @@ const openTechnique = (key: string) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, effectiveUserId]);
 
-  // Load exercise list lazily for the session-only "Add Exercise" flow
-  useEffect(() => {
-    if (!showAddExercise) return;
-    let cancelled = false;
-
-    const load = async () => {
-      if (availableExercises.length > 0) return;
-
-      const { data, error } = await supabase
-        .from('exercises')
-        .select('id, name')
-        .order('name');
-
-      if (!cancelled && !error && data) {
-        setAvailableExercises(data);
-      }
-    };
-
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, [showAddExercise, availableExercises.length]);
-
   // Apply pending focus after async updates (e.g., adding a set triggers reload)
   useEffect(() => {
     if (!pendingFocusKey) return;
@@ -347,73 +348,6 @@ const openTechnique = (key: string) => {
     await loadPreviousSetsForExercises(exData, sessionData.started_at);
   };
 
-  const addExerciseToSession = async () => {
-    if (!selectedExerciseId) {
-      alert('Select an exercise first.');
-      return;
-    }
-    if (addingExercise) return;
-
-    try {
-      setAddingExercise(true);
-
-      // determine order index (append to end)
-      const nextOrder = exercises.length;
-
-      // pull default set scheme for a better starter experience (still session-only)
-      const { data: exMeta } = await supabase
-        .from('exercises')
-        .select('default_set_scheme')
-        .eq('id', selectedExerciseId)
-        .maybeSingle();
-
-      const scheme = (exMeta as any)?.default_set_scheme ?? null;
-      const schemeSets = scheme && typeof scheme === 'object' ? Number((scheme as any).sets) : NaN;
-      const schemeReps = scheme && typeof scheme === 'object' ? Number((scheme as any).reps) : NaN;
-
-      const setsCount = Number.isFinite(schemeSets) ? Math.max(1, Math.floor(schemeSets)) : 1;
-      const defaultReps = Number.isFinite(schemeReps) ? Math.max(0, Math.floor(schemeReps)) : 0;
-
-      const { data: newWorkoutExercise, error: weErr } = await supabase
-        .from('workout_exercises')
-        .insert({
-          workout_session_id: sessionId,
-          exercise_id: selectedExerciseId,
-          order_index: nextOrder,
-          technique_tags: [],
-        })
-        .select('id')
-        .single();
-
-      if (weErr) throw weErr;
-
-      const workoutExerciseId = (newWorkoutExercise as any)?.id as string | undefined;
-      if (!workoutExerciseId) throw new Error('Failed to create workout exercise.');
-
-      const setsToInsert = Array.from({ length: setsCount }).map((_, i) => ({
-        workout_exercise_id: workoutExerciseId,
-        set_index: i,
-        reps: defaultReps,
-        weight: 0,
-        rpe: null,
-        is_completed: false,
-      }));
-
-      const { error: wsErr } = await supabase.from('workout_sets').insert(setsToInsert);
-      if (wsErr) throw wsErr;
-
-      // Reset UI and reload workout (so it appears immediately and is logged to history via session tables)
-      setSelectedExerciseId('');
-      setShowAddExercise(false);
-      await loadWorkout();
-    } catch (e: any) {
-      console.error(e);
-      alert(e?.message || 'Failed to add exercise.');
-    } finally {
-      setAddingExercise(false);
-    }
-  };
-
   const loadPreviousSetsForExercises = async (exData: WorkoutExercise[], startedAt: string) => {
     setPrevSetsByExercise({});
 
@@ -465,6 +399,101 @@ const openTechnique = (key: string) => {
     const map: Record<string, WorkoutSet[]> = {};
     for (const [k, v] of entries) map[k] = v;
     setPrevSetsByExercise(map);
+  };
+
+  const ensureAllExercisesLoaded = async () => {
+    if (!effectiveUserId) return;
+    if (allExercises.length > 0) return;
+    const { data, error } = await supabase
+      .from('exercises')
+      .select('id, name')
+      .eq('user_id', effectiveUserId)
+      .order('name');
+    if (!error && data) setAllExercises(data);
+  };
+
+  const openMenuForExercise = (ex: WorkoutExercise) => {
+    setMenuExercise(ex);
+    setMenuOpen(true);
+  };
+
+  const swapOrder = async (a: WorkoutExercise, b: WorkoutExercise) => {
+    // Swap order_index for two workout_exercises rows
+    const aIdx = a.order_index;
+    const bIdx = b.order_index;
+    await supabase.from('workout_exercises').update({ order_index: bIdx }).eq('id', a.id);
+    await supabase.from('workout_exercises').update({ order_index: aIdx }).eq('id', b.id);
+    await loadWorkout();
+  };
+
+  const handleMoveUp = async () => {
+    if (!menuExercise) return;
+    const idx = exercises.findIndex((e) => e.id === menuExercise.id);
+    if (idx <= 0) return;
+    await swapOrder(exercises[idx], exercises[idx - 1]);
+  };
+
+  const handleMoveDown = async () => {
+    if (!menuExercise) return;
+    const idx = exercises.findIndex((e) => e.id === menuExercise.id);
+    if (idx < 0 || idx >= exercises.length - 1) return;
+    await swapOrder(exercises[idx], exercises[idx + 1]);
+  };
+
+  const handleRemoveExercise = async () => {
+    if (!menuExercise) return;
+    setMenuOpen(false);
+    await supabase.from('workout_exercises').delete().eq('id', menuExercise.id);
+    await loadWorkout();
+  };
+
+  const handleReplaceExercisePick = async (newExerciseId: string) => {
+    if (!menuExercise) return;
+    setReplaceOpen(false);
+    setMenuOpen(false);
+
+    // Reset this workout_exercise to point at the new exercise and clear its sets
+    await supabase.from('workout_sets').delete().eq('workout_exercise_id', menuExercise.id);
+    await supabase
+      .from('workout_exercises')
+      .update({ exercise_id: newExerciseId })
+      .eq('id', menuExercise.id);
+
+    // Create an initial blank set
+    await supabase.from('workout_sets').insert({ workout_exercise_id: menuExercise.id, set_index: 0, reps: 0, weight: 0, is_completed: false });
+    await loadWorkout();
+  };
+
+  const handleAddExercisePick = async (exerciseId: string) => {
+    if (!effectiveUserId) return;
+    setAddExerciseOpen(false);
+
+    // Determine next order index
+    const nextIdx = exercises.length ? Math.max(...exercises.map((e: any) => e.order_index ?? 0)) + 1 : 0;
+    const { data: inserted, error } = await supabase
+      .from('workout_exercises')
+      .insert({ workout_session_id: sessionId, exercise_id: exerciseId, order_index: nextIdx, technique_tags: [] })
+      .select('id')
+      .single();
+
+    if (error || !inserted?.id) {
+      alert('Could not add exercise. Please try again.');
+      return;
+    }
+
+    await supabase.from('workout_sets').insert({ workout_exercise_id: inserted.id, set_index: 0, reps: 0, weight: 0, is_completed: false });
+    await loadWorkout();
+  };
+
+  const handleSupersetPick = async (otherWorkoutExerciseId: string) => {
+    if (!menuExercise) return;
+    setSupersetOpen(false);
+    setMenuOpen(false);
+
+    const groupId = (typeof crypto !== 'undefined' && 'randomUUID' in crypto) ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+    await supabase.from('workout_exercises').update({ superset_group_id: groupId }).eq('id', menuExercise.id);
+    await supabase.from('workout_exercises').update({ superset_group_id: groupId }).eq('id', otherWorkoutExerciseId);
+    await loadWorkout();
   };
 
   const saveSet = async (setId: string, field: string, value: any) => {
@@ -636,169 +665,184 @@ const openTechnique = (key: string) => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-950 via-gray-900 to-gray-950 text-white">
-      <div className="max-w-5xl mx-auto px-4 py-6">
-        <div className="flex items-start justify-between gap-4 mb-6">
-          <div className="min-w-0">
-            <h1 className="text-2xl font-bold truncate">{session?.routines?.name || 'Workout'}</h1>
-            {session?.routine_days?.name && <p className="text-gray-400 truncate">{session.routine_days.name}</p>}
-          </div>
+    <div className="min-h-screen bg-[hsl(var(--background))] text-[hsl(var(--foreground))]">
+      <div className="max-w-5xl mx-auto px-4 pb-10">
+        {/* Hevy-inspired header (layout only; no app logic changes) */}
+        <div className="sticky top-0 z-10 -mx-4 px-4 pt-4 pb-3 bg-[hsl(var(--background))]">
+          <div className="flex items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => router.back()}
+              className="tap-target inline-flex items-center justify-center h-10 w-10 rounded-full bg-transparent hover:bg-white/5"
+              aria-label="Back"
+            >
+              <ChevronLeft className="h-6 w-6" />
+            </button>
 
-          <div className="flex flex-col items-end gap-2 shrink-0">
-            <div className="inline-flex items-center gap-2 rounded-full border border-gray-700 bg-gray-900/60 px-3 py-1.5">
-              <span className="text-[11px] font-semibold text-gray-300">TIME</span>
-              <span className="font-mono text-sm font-semibold tabular-nums">{formatClock(elapsedSeconds)}</span>
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-medium text-[hsl(var(--muted-foreground))]">Log Workout</div>
+              <div className="truncate text-[13px] text-[hsl(var(--primary))] font-mono tabular-nums">
+                {formatHms(elapsedSeconds)}
+              </div>
             </div>
 
-            {restSecondsRemaining !== null && (
-              <div className="inline-flex items-center gap-2 rounded-full border border-green-600/60 bg-green-900/20 px-3 py-1.5">
-                <span className="text-[11px] font-semibold text-green-300">REST</span>
-                <span className="font-mono text-sm font-semibold tabular-nums">{formatClock(restSecondsRemaining)}</span>
-                <button
-                  type="button"
-                  onClick={() => setRestSecondsRemaining((v) => (v === null ? null : v + 15))}
-                  className="min-h-[36px] min-w-[36px] rounded-full bg-white/10 text-green-100 border border-green-700/50 text-xs font-semibold"
-                  title="+15s"
-                >
-                  +15
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setRestSecondsRemaining((v) => (v === null ? null : v + 30))}
-                  className="min-h-[36px] min-w-[36px] rounded-full bg-white/10 text-green-100 border border-green-700/50 text-xs font-semibold"
-                  title="+30s"
-                >
-                  +30
-                </button>
-                <button
-                  type="button"
-                  onClick={stopRestTimer}
-                  className="min-h-[36px] min-w-[36px] rounded-full bg-white/10 text-green-100 border border-green-700/50 text-xs font-semibold"
-                  title="Stop rest timer"
-                >
-                  ✕
-                </button>
-              </div>
-            )}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="tap-target inline-flex items-center justify-center h-10 w-10 rounded-full bg-transparent hover:bg-white/5"
+                aria-label="Timer"
+                onClick={() => {
+                  // no-op for now; timer icon is present to match expected UI
+                }}
+              >
+                <Clock className="h-5 w-5" />
+              </button>
+              <Button
+                onClick={endWorkout}
+                disabled={ending || discarding}
+                className="h-10 px-5 rounded-xl bg-[hsl(var(--primary))] text-white hover:bg-[hsl(var(--primary))]/90"
+              >
+                Finish
+              </Button>
+            </div>
           </div>
+
+          <div className="mt-3">
+            <div className="text-2xl font-semibold truncate">{session?.routines?.name || 'Workout'}</div>
+            {session?.routine_days?.name ? (
+              <div className="text-sm text-[hsl(var(--muted-foreground))] truncate">{session.routine_days.name}</div>
+            ) : null}
+          </div>
+
+          {restSecondsRemaining !== null ? (
+            <div className="mt-3 inline-flex items-center gap-2 text-sm text-[hsl(var(--primary))]">
+              <Clock className="h-4 w-4" />
+              <span>Rest Timer: {formatHms(restSecondsRemaining)}</span>
+              <button
+                type="button"
+                onClick={() => setRestSecondsRemaining((v) => (v === null ? null : v + 15))}
+                className="ml-2 h-8 px-3 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--input))] text-white"
+              >
+                +15
+              </button>
+              <button
+                type="button"
+                onClick={() => setRestSecondsRemaining((v) => (v === null ? null : v + 30))}
+                className="h-8 px-3 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--input))] text-white"
+              >
+                +30
+              </button>
+              <button
+                type="button"
+                onClick={stopRestTimer}
+                className="h-8 px-3 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--input))] text-white"
+              >
+                ✕
+              </button>
+            </div>
+          ) : null}
         </div>
 
-        {restSecondsRemaining === null && (
-          <div className="mb-6 flex flex-wrap items-center gap-2">
-            <span className="text-xs font-semibold text-gray-300 mr-1">Rest:</span>
-            {[60, 90, 120].map((sec) => {
-              const active = restDurationSeconds === sec;
-              return (
-                <button
-                  key={sec}
-                  type="button"
-                  onClick={() => setRestDurationSeconds(sec)}
-                  className={`min-h-[44px] px-4 rounded-full text-sm font-semibold border transition ${
-                    active ? 'bg-white text-gray-900 border-white' : 'bg-gray-900/60 text-white border-gray-700'
-                  }`}
-                >
-                  {sec}s
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        <div className="space-y-6">
+        <div className="space-y-6 pt-4">
           {exercises.map((exercise: any) => {
             const prevSets = prevSetsByExercise[exercise.id] || [];
 
+            const technique =
+              exercise.technique_tags?.[0] ||
+              exercise.exercises?.default_technique_tags?.[0] ||
+              null;
+
             return (
-              <div key={exercise.id} className="bg-gray-900/40 border border-gray-800 rounded-2xl p-4 sm:p-5 shadow-lg shadow-black/20">
-<div className="mb-2 flex items-start justify-between gap-3">
-  <h3 className="section-title text-white">{exercise.exercises?.name || 'Exercise'}</h3>
-  {exercise.exercises?.default_technique_tags?.[0] ? (
-    <button
-      type="button"
-      onClick={() => openTechnique(exercise.exercises!.default_technique_tags![0])}
-      className="tap-target -mt-0.5"
-      aria-label={`How to perform ${exercise.exercises!.default_technique_tags![0]}`}
-    >
-      <Badge className="rounded-full border border-primary/30 bg-primary/15 px-3 py-1 text-xs font-semibold text-primary hover:bg-primary/20">
-        {exercise.exercises!.default_technique_tags![0]}
-      </Badge>
-    </button>
-  ) : null}
-</div>
+              <div
+                key={exercise.id}
+                className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-4 py-4 shadow-sm"
+              >
+                <div className="flex items-start gap-3">
+                  <div className="h-12 w-12 rounded-full bg-white/10 flex items-center justify-center text-sm font-semibold">
+                    {(exercise.exercises?.name || 'E')
+                      .split(' ')
+                      .slice(0, 2)
+                      .map((p: string) => p[0]?.toUpperCase())
+                      .join('')}
+                  </div>
 
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-[11px] uppercase tracking-wide text-gray-300/80 border-b border-gray-800">
-                        <th className="px-2 py-2 w-12">Set</th>
-                        <th className="px-2 py-2">Reps</th>
-                        <th className="px-2 py-2">Weight</th>
-                        <th className="px-2 py-2 text-center">Done</th>
-                        <th className="px-2 py-2 w-12 text-center">Del</th>
-                      </tr>
-                    </thead>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="truncate text-[18px] font-semibold text-[hsl(var(--primary))]">
+                          {exercise.exercises?.name || 'Exercise'}
+                        </div>
+                        {technique ? (
+                          <button
+                            type="button"
+                            onClick={() => openTechnique(technique)}
+                            className="mt-1 inline-flex items-center gap-2 text-sm text-white/90"
+                          >
+                            <Badge className="rounded-full border border-[hsl(var(--border))] bg-[hsl(var(--surface))] px-3 py-1 text-xs font-semibold text-white">
+                              {technique}
+                            </Badge>
+                          </button>
+                        ) : null}
+                      </div>
 
-                    <tbody>
+                      <button
+                        type="button"
+                        onClick={() => openMenuForExercise(exercise)}
+                        className="tap-target inline-flex items-center justify-center h-10 w-10 rounded-full hover:bg-white/5"
+                        aria-label="Exercise options"
+                      >
+                        <MoreVertical className="h-5 w-5" />
+                      </button>
+                    </div>
+
+                    <div className="mt-3 flex items-center gap-2 text-sm text-[hsl(var(--primary))]">
+                      <Clock className="h-4 w-4" />
+                      <span>Rest Timer: {formatHms(restSecondsRemaining ?? restDurationSeconds)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-4">
+                  <div className="grid grid-cols-[56px_1fr_92px_76px_56px] gap-2 border-b border-[hsl(var(--divider))] pb-2 text-[11px] font-semibold uppercase tracking-wide text-[hsl(var(--muted-foreground))]">
+                    <div>Set</div>
+                    <div>Previous</div>
+                    <div className="text-center">Lbs</div>
+                    <div className="text-center">Reps</div>
+                    <div className="text-center">✓</div>
+                  </div>
+
+                  <div className="mt-2 space-y-2">
                       {(sets[exercise.id] || []).map((set: any, idx: number) => {
                         const prev = prevSets[idx];
                         const prevReps = prev?.reps ?? null;
                         const prevWeight = prev?.weight ?? null;
 
-                        const repsPlaceholder =
-                          prevReps !== null && prevReps !== undefined && prevReps !== '' ? String(prevReps) : '';
-                        const weightPlaceholder =
-                          prevWeight !== null && prevWeight !== undefined && prevWeight !== '' ? String(prevWeight) : '';
-
                         return (
-                          <tr
+                          <div
                             key={set.id}
                             className={
-                              "set-row " +
+                              "grid grid-cols-[56px_1fr_92px_76px_56px] gap-2 items-center " +
                               (set.id === highlightSetId ? "set-row--new " : "") +
                               (removingSetIds.has(set.id) ? "set-row--removing " : "")
                             }
                           >
-                            <td className="px-2 py-2 font-semibold text-gray-200 tabular-nums">{idx + 1}</td>
+                            <div className="text-sm font-semibold tabular-nums text-white/90">{idx + 1}</div>
 
-                            <td className="px-2 py-2">
-                              <input
-                                type="number"
-                                inputMode="numeric"
-                                 aria-label={`Reps for set ${idx + 1}`}
-                                placeholder={repsPlaceholder}
-                                value={getDisplayValue(set.id, 'reps', set.reps)}
-                                onChange={(e) => setDraftValue(set.id, 'reps', e.target.value)}
-                                onFocus={(e) => e.currentTarget.select()}
-                                ref={(el) => {
-                                  const keyA = `${exercise.id}:${set.id}:reps`;
-                                  const keyB = `${exercise.id}:${idx}:reps`;
-                                  if (el) {
-                                    inputRefs.current.set(keyA, el);
-                                    inputRefs.current.set(keyB, el);
-                                  } else {
-                                    inputRefs.current.delete(keyA);
-                                    inputRefs.current.delete(keyB);
-                                  }
-                                }}
-                                onKeyDown={(e) => handleRepsKeyDown(exercise.id, idx, e)}
-                                onBlur={() => {
-                                  const raw = getDraftRaw(set.id, 'reps').trim();
-                                  const num = raw === '' ? 0 : Number(raw);
-                                  saveSet(set.id, 'reps', Number.isFinite(num) ? num : 0);
-                                  clearDraftField(set.id, 'reps');
-                                }}
-                                className="w-full h-11 px-2 py-2 rounded-xl border border-gray-700 bg-gray-900/40 text-center text-white placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-950"
-                              />
-                              {formatPrevLine('Prev:', prevReps)}
-                            </td>
+                            <div className="text-sm text-white/60 truncate">
+                              {prevWeight || prevReps ? (
+                                <span>{prevWeight ?? 0}lbs x {prevReps ?? 0}</span>
+                              ) : (
+                                <span>-</span>
+                              )}
+                            </div>
 
-                            <td className="px-2 py-2">
+                            <div>
                               <input
                                 type="number"
                                 inputMode="decimal"
-                                 aria-label={`Weight for set ${idx + 1}`}
+                                aria-label={`Weight for set ${idx + 1}`}
                                 step="0.5"
-                                placeholder={weightPlaceholder}
+                                placeholder={prevWeight !== null && prevWeight !== undefined && prevWeight !== '' ? String(prevWeight) : ''}
                                 value={getDisplayValue(set.id, 'weight', set.weight)}
                                 onChange={(e) => setDraftValue(set.id, 'weight', e.target.value)}
                                 onFocus={(e) => e.currentTarget.select()}
@@ -820,54 +864,68 @@ const openTechnique = (key: string) => {
                                   saveSet(set.id, 'weight', Number.isFinite(num) ? num : 0);
                                   clearDraftField(set.id, 'weight');
                                 }}
-                                className="w-full h-11 px-2 py-2 rounded-xl border border-gray-700 bg-gray-900/40 text-center text-white placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-950"
+                                className="w-full h-11 px-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--input))] text-center text-white placeholder:text-white/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20"
                               />
-                              {formatPrevLine('Prev:', prevWeight)}
-                            </td>
+                            </div>
 
-                            <td className="px-2 py-2 text-center">
+                            <div>
+                              <input
+                                type="number"
+                                inputMode="numeric"
+                                aria-label={`Reps for set ${idx + 1}`}
+                                placeholder={prevReps !== null && prevReps !== undefined && prevReps !== '' ? String(prevReps) : ''}
+                                value={getDisplayValue(set.id, 'reps', set.reps)}
+                                onChange={(e) => setDraftValue(set.id, 'reps', e.target.value)}
+                                onFocus={(e) => e.currentTarget.select()}
+                                ref={(el) => {
+                                  const keyA = `${exercise.id}:${set.id}:reps`;
+                                  const keyB = `${exercise.id}:${idx}:reps`;
+                                  if (el) {
+                                    inputRefs.current.set(keyA, el);
+                                    inputRefs.current.set(keyB, el);
+                                  } else {
+                                    inputRefs.current.delete(keyA);
+                                    inputRefs.current.delete(keyB);
+                                  }
+                                }}
+                                onKeyDown={(e) => handleRepsKeyDown(exercise.id, idx, e)}
+                                onBlur={() => {
+                                  const raw = getDraftRaw(set.id, 'reps').trim();
+                                  const num = raw === '' ? 0 : Number(raw);
+                                  saveSet(set.id, 'reps', Number.isFinite(num) ? num : 0);
+                                  clearDraftField(set.id, 'reps');
+                                }}
+                                className="w-full h-11 px-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--input))] text-center text-white placeholder:text-white/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20"
+                              />
+                            </div>
+
+                            <div className="flex items-center justify-center">
                               <button
+                                type="button"
                                 onClick={() => handleToggleCompleted(set)}
-                                className={`w-11 h-11 rounded border-2 flex items-center justify-center ${
-                                  set.is_completed ? 'bg-white border-white text-gray-900' : 'border-gray-700'
+                                className={`h-11 w-11 rounded-xl border flex items-center justify-center ${
+                                  set.is_completed
+                                    ? 'bg-white/20 border-white/30'
+                                    : 'bg-white/5 border-[hsl(var(--border))]'
                                 }`}
-                                title="Mark set complete"
+                                aria-label="Mark set done"
                               >
-                                {set.is_completed && <span className="text-xs">✓</span>}
+                                {set.is_completed ? <span className="text-white">✓</span> : null}
                               </button>
-                            </td>
-
-                            <td className="px-2 py-2 text-center">
-                              <button
-                                onClick={() => deleteSet(exercise.id, set.id)}
-                                className="w-11 h-11 rounded text-gray-300 hover:text-red-400"
-                                title="Delete set"
-                              >
-                                ✕
-                              </button>
-                            </td>
-                          </tr>
+                            </div>
+                          </div>
                         );
                       })}
-                    </tbody>
-                  </table>
 
-                  <div className="mt-3">
-                    <span
-                      role="button"
-                      tabIndex={0}
-                      aria-label="Add set"
+                    <Button
+                      type="button"
                       onClick={() => addSet(exercise.id)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          addSet(exercise.id);
-                        }
-                      }}
-                      className="inline-action"
+                      variant="secondary"
+                      className="mt-3 w-full h-12 rounded-2xl bg-white/10 hover:bg-white/15 text-white"
                     >
-                      + Add set
-                    </span>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Set
+                    </Button>
                   </div>
                 </div>
               </div>
@@ -875,52 +933,19 @@ const openTechnique = (key: string) => {
           })}
 
           <div className="pt-6 space-y-3">
-            {showAddExercise ? (
-              <div className="surface p-4">
-                <select
-                  value={selectedExerciseId}
-                  onChange={(e) => setSelectedExerciseId(e.target.value)}
-                  className="w-full h-11 rounded-xl border border-input bg-background bg-opacity-70 backdrop-blur px-3 text-sm text-foreground mb-3"
-                >
-                  <option value="">Select Exercise</option>
-                  {availableExercises.map((ex) => (
-                    <option key={ex.id} value={ex.id}>
-                      {ex.name}
-                    </option>
-                  ))}
-                </select>
-
-                <div className="flex gap-2">
-                  <Button
-                    onClick={addExerciseToSession}
-                    disabled={addingExercise}
-                    className="flex-1"
-                  >
-                    {addingExercise ? 'Adding…' : 'Add'}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setShowAddExercise(false);
-                      setSelectedExerciseId('');
-                    }}
-                    disabled={addingExercise}
-                    className="flex-1"
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <Button
-                variant="outline"
-                onClick={() => setShowAddExercise(true)}
-                className="w-full gap-2"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Add Exercise</span>
-              </Button>
-            )}
+            <Button
+              type="button"
+              onClick={async () => {
+                await ensureAllExercisesLoaded();
+                setExerciseSearch('');
+                setAddExerciseOpen(true);
+              }}
+              variant="secondary"
+              className="tap-target w-full min-h-[48px] px-4 py-3 rounded-2xl bg-white/10 hover:bg-white/15 text-white"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Add Exercise
+            </Button>
 
             <button
               onClick={endWorkout}
@@ -942,6 +967,199 @@ const openTechnique = (key: string) => {
           {exercises.length === 0 && <div className="text-gray-400">No exercises found for this session.</div>}
         </div>
       </div>
+
+      {/* Exercise options (Hevy-like bottom sheet) */}
+      <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
+        <SheetContent side="bottom" className="border-t border-[hsl(var(--border))] bg-[hsl(var(--surface))] text-white">
+          <SheetHeader>
+            <SheetTitle className="text-white">Options</SheetTitle>
+            <SheetDescription className="text-[hsl(var(--muted-foreground))]">
+              {menuExercise?.exercises?.name || 'Exercise'}
+            </SheetDescription>
+          </SheetHeader>
+
+          <div className="mt-4 space-y-2">
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full justify-start h-12"
+              onClick={() => {
+                setMenuOpen(false);
+                setReorderOpen(true);
+              }}
+            >
+              <ArrowUpDown className="h-5 w-5 mr-3" />
+              Reorder Exercises
+            </Button>
+
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full justify-start h-12"
+              onClick={async () => {
+                await ensureAllExercisesLoaded();
+                setExerciseSearch('');
+                setReplaceOpen(true);
+              }}
+            >
+              <Repeat className="h-5 w-5 mr-3" />
+              Replace Exercise
+            </Button>
+
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full justify-start h-12"
+              onClick={() => {
+                setExerciseSearch('');
+                setSupersetOpen(true);
+              }}
+            >
+              <Layers className="h-5 w-5 mr-3" />
+              Add To Superset
+            </Button>
+
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full justify-start h-12 text-[hsl(var(--destructive))]"
+              onClick={handleRemoveExercise}
+            >
+              <Trash2 className="h-5 w-5 mr-3" />
+              Remove Exercise
+            </Button>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {/* Reorder dialog (minimal safe; preserves data ordering) */}
+      <Dialog open={reorderOpen} onOpenChange={setReorderOpen}>
+        <DialogContent className="bg-[hsl(var(--surface))] border-[hsl(var(--border))] text-white">
+          <DialogHeader>
+            <DialogTitle>Reorder Exercises</DialogTitle>
+            <DialogDescription className="text-[hsl(var(--muted-foreground))]">
+              Use the arrows to move exercises up or down.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2">
+            {exercises.map((ex: any, idx: number) => (
+              <div key={ex.id} className="flex items-center justify-between gap-3 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-2">
+                <div className="min-w-0 truncate">{ex.exercises?.name || 'Exercise'}</div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="h-9 px-3 bg-white/10 hover:bg-white/15 text-white"
+                    disabled={idx === 0}
+                    onClick={() => swapOrder(exercises[idx], exercises[idx - 1])}
+                  >
+                    ↑
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="h-9 px-3 bg-white/10 hover:bg-white/15 text-white"
+                    disabled={idx === exercises.length - 1}
+                    onClick={() => swapOrder(exercises[idx], exercises[idx + 1])}
+                  >
+                    ↓
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Replace exercise picker */}
+      <Dialog open={replaceOpen} onOpenChange={setReplaceOpen}>
+        <DialogContent className="bg-[hsl(var(--surface))] border-[hsl(var(--border))] text-white">
+          <DialogHeader>
+            <DialogTitle>Replace Exercise</DialogTitle>
+            <DialogDescription className="text-[hsl(var(--muted-foreground))]">
+              Select an exercise to replace this one.
+            </DialogDescription>
+          </DialogHeader>
+          <Command>
+            <CommandInput placeholder="Search exercises…" value={exerciseSearch} onValueChange={setExerciseSearch} />
+            <CommandList>
+              <CommandEmpty>No exercises found.</CommandEmpty>
+              <CommandGroup>
+                {allExercises.map((ex) => (
+                  <CommandItem
+                    key={ex.id}
+                    value={ex.name}
+                    onSelect={() => handleReplaceExercisePick(ex.id)}
+                  >
+                    {ex.name}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add exercise picker (adds only to this session/day, not the routine template) */}
+      <Dialog open={addExerciseOpen} onOpenChange={setAddExerciseOpen}>
+        <DialogContent className="bg-[hsl(var(--surface))] border-[hsl(var(--border))] text-white">
+          <DialogHeader>
+            <DialogTitle>Add Exercise</DialogTitle>
+            <DialogDescription className="text-[hsl(var(--muted-foreground))]">
+              Adds to this workout session only.
+            </DialogDescription>
+          </DialogHeader>
+          <Command>
+            <CommandInput placeholder="Search exercises…" value={exerciseSearch} onValueChange={setExerciseSearch} />
+            <CommandList>
+              <CommandEmpty>No exercises found.</CommandEmpty>
+              <CommandGroup>
+                {allExercises.map((ex) => (
+                  <CommandItem
+                    key={ex.id}
+                    value={ex.name}
+                    onSelect={() => handleAddExercisePick(ex.id)}
+                  >
+                    {ex.name}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </DialogContent>
+      </Dialog>
+
+      {/* Superset picker (pairs with another exercise in this session) */}
+      <Dialog open={supersetOpen} onOpenChange={setSupersetOpen}>
+        <DialogContent className="bg-[hsl(var(--surface))] border-[hsl(var(--border))] text-white">
+          <DialogHeader>
+            <DialogTitle>Add To Superset</DialogTitle>
+            <DialogDescription className="text-[hsl(var(--muted-foreground))]">
+              Choose another exercise in this workout to pair as a superset.
+            </DialogDescription>
+          </DialogHeader>
+          <Command>
+            <CommandInput placeholder="Search exercises…" value={exerciseSearch} onValueChange={setExerciseSearch} />
+            <CommandList>
+              <CommandEmpty>No exercises found.</CommandEmpty>
+              <CommandGroup>
+                {exercises
+                  .filter((e: any) => (menuExercise ? e.id !== menuExercise.id : true))
+                  .map((e: any) => (
+                    <CommandItem
+                      key={e.id}
+                      value={e.exercises?.name || ''}
+                      onSelect={() => handleSupersetPick(e.id)}
+                    >
+                      {e.exercises?.name || 'Exercise'}
+                    </CommandItem>
+                  ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </DialogContent>
+      </Dialog>
 
 <Sheet open={techniqueOpen} onOpenChange={setTechniqueOpen}>
   <SheetContent
