@@ -27,14 +27,14 @@ export default function BrandLogo({
       <div className={`leading-tight ${centered ? 'text-center' : ''}`}>
         <div className={`flex items-baseline gap-0.5 ${centered ? 'justify-center' : ''}`}>
           <span className="text-2xl md:text-[26px] font-extrabold tracking-tight leading-none">
-            <span className="text-[#E53A9D]">D</span>
-            <span className="text-black dark:text-white">tracker</span>
+            <span className="text-primary">H</span>
+            <span className="text-foreground">-Core</span>
           </span>
         </div>
 
         {showTagline && (
           <div
-            className={`text-xs text-gray-500 dark:text-gray-400 ${
+            className={`text-xs text-secondary-foreground ${
               taglineOnMobile ? '' : 'hidden md:block'
             }`}
           >
