@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Navigation from '@/components/Navigation';
 import { supabase } from '@/lib/supabase';
@@ -63,6 +63,8 @@ export default function WorkoutStartPage() {
 
   const [days, setDays] = useState<RoutineDayCard[]>([]);
   const [startingId, setStartingId] = useState<string | null>(null);
+
+  const dayIds = useMemo(() => days.map((d) => d.id), [days]);
 
   useEffect(() => {
     let mounted = true;
@@ -173,7 +175,7 @@ export default function WorkoutStartPage() {
     return () => {
       mounted = false;
     };
-  }, [router, effectiveUserId]);
+  }, [router]);
 
   const startRoutineDay = async (day: RoutineDayCard) => {
     try {

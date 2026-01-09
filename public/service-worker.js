@@ -1,11 +1,8 @@
-/* H-Core PWA Service Worker (safe defaults for Next.js) */
-// Bump CACHE_NAME when changing icons/manifest to ensure clients refresh promptly.
-const CACHE_NAME = 'hcore-pwa-v2';
+/* Dtracker PWA Service Worker (safe defaults for Next.js) */
+const CACHE_NAME = 'spartanx-pwa-v1';
 const CORE_ASSETS = [
   '/',
   '/manifest.json',
-  '/favicon.ico',
-  '/icon.png',
   '/icons/icon-192x192.png',
   '/icons/icon-512x512.png',
 ];

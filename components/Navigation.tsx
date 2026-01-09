@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import React, { useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -13,7 +13,7 @@ export default function Navigation() {
   const pathname = usePathname();
   const router = useRouter();
   const { theme, toggleTheme } = useTheme();
-  const { isCoach } = useCoach();
+  const { isCoach, impersonateUserId, setImpersonateUserId } = useCoach();
 
   // Prevent content from being hidden behind bottom tab bar
   useEffect(() => {
@@ -24,37 +24,37 @@ export default function Navigation() {
     };
   }, []);
 
-  // Prefetch primary routes for a snappier, app-like feel.
-  // This does not change UI/logic; it only warms Next's route cache.
-  useEffect(() => {
-    try {
-      for (const href of isCoach
-        ? ['/exercises', '/routines', '/coach']
-        : ['/workout/start', '/exercises', '/routines', '/history']) {
-        router.prefetch(href);
-      }
-    } catch {
-      // Prefetch should never break navigation.
-    }
-  }, [router, isCoach]);
-
   const handleLogout = async () => {
     await supabase.auth.signOut();
     router.push('/login');
   };
 
+  const isImpersonating = Boolean(isCoach && impersonateUserId);
+
+  // Coach navigation:
+  // - Coach (not impersonating): Exercises, Routines, Users
+  // - Coach (impersonating a user): show user tabs (Workout/Exercises/Routines/History) + Users (to exit impersonation)
   const navItems = isCoach
-    ? [
-        { href: '/exercises', icon: Dumbbell, label: 'Exercises' },
-        { href: '/routines', icon: Calendar, label: 'Routines' },
-        { href: '/coach', icon: Users, label: 'Users' },
-      ]
+    ? isImpersonating
+      ? [
+          { href: '/workout/start', icon: Play, label: 'Workout' },
+          { href: '/exercises', icon: Dumbbell, label: 'Exercises' },
+          { href: '/routines', icon: Calendar, label: 'Routines' },
+          { href: '/history', icon: History, label: 'History' },
+          { href: '/coach', icon: Users, label: 'Users' },
+        ]
+      : [
+          { href: '/exercises', icon: Dumbbell, label: 'Exercises' },
+          { href: '/routines', icon: Calendar, label: 'Routines' },
+          { href: '/coach', icon: Users, label: 'Users' },
+        ]
     : [
         { href: '/workout/start', icon: Play, label: 'Workout' },
         { href: '/exercises', icon: Dumbbell, label: 'Exercises' },
         { href: '/routines', icon: Calendar, label: 'Routines' },
         { href: '/history', icon: History, label: 'History' },
       ];
+
 
   const isActive = (href: string) => {
     if (href === '/workout/start') return pathname === '/' || pathname.startsWith('/workout');
@@ -117,10 +117,20 @@ export default function Navigation() {
             {navItems.map((item) => {
               const Icon = item.icon;
               const active = isActive(item.href);
+              const handleNavClick =
+                isImpersonating && item.href === '/coach'
+                  ? (e: React.MouseEvent) => {
+                      e.preventDefault();
+                      setImpersonateUserId(null);
+                      router.push('/coach');
+                    }
+                  : undefined;
+
               return (
                 <Link
                   key={item.href}
                   href={item.href}
+                  onClick={handleNavClick}
                   className={`tap-target flex flex-col items-center justify-center py-3 px-2 text-xs font-medium flex-1 transition-colors ${
                     active
                       ? 'text-primary border-t-2 border-primary'

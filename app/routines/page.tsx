@@ -49,18 +49,11 @@ export default function RoutinesPage() {
   const loadRoutines = async (uid: string) => {
     if (!uid) return;
 
-    // The app's Routine type includes a required `created_by` field, while the DB rows use `user_id`.
-    // Normalize fetched rows to satisfy the type without changing any DB schema or behavior.
-    const normalizeRoutine = (r: any): Routine => ({
-      ...r,
-      created_by: r.created_by ?? r.user_id,
-    });
-
     // Coach (not impersonating): show all routines across all users, deduped by name.
     if (isCoach && !impersonateUserId) {
       const { data, error } = await supabase
         .from('routines')
-        .select('id,user_id,name,notes,created_at')
+        .select('*')
         .order('created_at', { ascending: false });
 
       if (!error && data) {
@@ -71,7 +64,7 @@ export default function RoutinesPage() {
           if (!key) continue;
           if (seen.has(key)) continue;
           seen.add(key);
-          deduped.push(normalizeRoutine(r));
+          deduped.push(r as Routine);
         }
         setRoutines(deduped);
       }
@@ -81,12 +74,12 @@ export default function RoutinesPage() {
     // Everyone else (including coach while impersonating): user-scoped routines.
     const { data, error } = await supabase
       .from('routines')
-      .select('id,user_id,name,notes,created_at')
+      .select('*')
       .eq('user_id', uid)
       .order('created_at', { ascending: false });
 
     if (!error && data) {
-      setRoutines((data as any[]).map(normalizeRoutine));
+      setRoutines(data);
     }
   };
 
