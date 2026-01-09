@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { COACH_EMAIL, COACH_IMPERSONATE_KEY } from '@/lib/coach';
+import { COACH_EMAIL, COACH_IMPERSONATE_EMAIL_KEY, COACH_IMPERSONATE_KEY } from '@/lib/coach';
 
 type CoachState = {
   isCoach: boolean;
@@ -53,6 +53,7 @@ export function useCoach() {
       // If not coach, ensure impersonation is cleared.
       if (!isCoach && typeof window !== 'undefined') {
         window.localStorage.removeItem(COACH_IMPERSONATE_KEY);
+        window.localStorage.removeItem(COACH_IMPERSONATE_EMAIL_KEY);
         impersonateUserId = null;
       }
 
@@ -74,6 +75,7 @@ export function useCoach() {
         if (!impersonateUserId) window.localStorage.removeItem(COACH_IMPERSONATE_KEY);
         if (!isCoach) {
           window.localStorage.removeItem(COACH_IMPERSONATE_KEY);
+          window.localStorage.removeItem(COACH_IMPERSONATE_EMAIL_KEY);
           impersonateUserId = null;
         }
       }
@@ -98,12 +100,14 @@ export function useCoach() {
 
     if (!state.isCoach) {
       window.localStorage.removeItem(COACH_IMPERSONATE_KEY);
+      window.localStorage.removeItem(COACH_IMPERSONATE_EMAIL_KEY);
       setState((s) => ({ ...s, impersonateUserId: null }));
       return;
     }
 
     if (!id) {
       window.localStorage.removeItem(COACH_IMPERSONATE_KEY);
+      window.localStorage.removeItem(COACH_IMPERSONATE_EMAIL_KEY);
       setState((s) => ({ ...s, impersonateUserId: null }));
       return;
     }
@@ -111,6 +115,7 @@ export function useCoach() {
     // Safety: only allow valid UUIDs to be persisted/used.
     if (!isValidUuid(id)) {
       window.localStorage.removeItem(COACH_IMPERSONATE_KEY);
+      window.localStorage.removeItem(COACH_IMPERSONATE_EMAIL_KEY);
       setState((s) => ({ ...s, impersonateUserId: null }));
       return;
     }

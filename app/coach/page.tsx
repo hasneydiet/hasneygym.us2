@@ -7,6 +7,7 @@ import Navigation from '@/components/Navigation';
 import { supabase } from '@/lib/supabase';
 import { useCoach } from '@/hooks/useCoach';
 import { Button } from '@/components/ui/button';
+import { COACH_IMPERSONATE_EMAIL_KEY } from '@/lib/coach';
 
 export const dynamic = 'force-dynamic';
 
@@ -155,7 +156,12 @@ export default function CoachPage() {
     }
   }, [ready, isCoach, router]);
 
-  const handleOpenUser = (userId: string) => {
+  const handleOpenUser = (userId: string, email: string | null) => {
+    // Store email for a lightweight UI indicator in the header while impersonating.
+    if (typeof window !== 'undefined') {
+      if (email) window.localStorage.setItem(COACH_IMPERSONATE_EMAIL_KEY, email);
+      else window.localStorage.removeItem(COACH_IMPERSONATE_EMAIL_KEY);
+    }
     setImpersonateUserId(userId);
     router.push('/history');
   };
@@ -205,7 +211,7 @@ export default function CoachPage() {
                       <div className="text-sm font-medium truncate">{u.email || u.id}</div>
                       <div className="text-xs text-muted-foreground truncate">{u.id}</div>
                     </div>
-                    <Button onClick={() => handleOpenUser(u.id)} className="shrink-0">
+                    <Button onClick={() => handleOpenUser(u.id, u.email)} className="shrink-0">
                       Open
                     </Button>
                   </div>

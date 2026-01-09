@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -8,12 +8,14 @@ import { Dumbbell, Calendar, History, LogOut, Sun, Moon, Play, Users } from 'luc
 import { useTheme } from '@/lib/theme';
 import { useCoach } from '@/hooks/useCoach';
 import BrandLogo from '@/components/BrandLogo';
+import { COACH_IMPERSONATE_EMAIL_KEY } from '@/lib/coach';
 
 export default function Navigation() {
   const pathname = usePathname();
   const router = useRouter();
   const { theme, toggleTheme } = useTheme();
   const { isCoach, impersonateUserId, setImpersonateUserId } = useCoach();
+  const [impersonatedEmail, setImpersonatedEmail] = useState<string | null>(null);
 
   // Prevent content from being hidden behind bottom tab bar
   useEffect(() => {
@@ -23,6 +25,17 @@ export default function Navigation() {
       document.body.style.paddingBottom = prev;
     };
   }, []);
+
+  // UI-only: show which user the coach is impersonating (email) next to the theme toggle.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!isCoach || !impersonateUserId) {
+      setImpersonatedEmail(null);
+      return;
+    }
+    const email = window.localStorage.getItem(COACH_IMPERSONATE_EMAIL_KEY);
+    setImpersonatedEmail(email ? String(email) : null);
+  }, [isCoach, impersonateUserId]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -76,6 +89,18 @@ export default function Navigation() {
                 <Link
                   key={item.href}
                   href={item.href}
+                  onClick={
+                    isImpersonating && item.href === '/coach'
+                      ? (e) => {
+                          e.preventDefault();
+                          if (typeof window !== 'undefined') {
+                            window.localStorage.removeItem(COACH_IMPERSONATE_EMAIL_KEY);
+                          }
+                          setImpersonateUserId(null);
+                          router.push('/coach');
+                        }
+                      : undefined
+                  }
                   className={`px-3 py-2 rounded-xl text-sm font-medium transition-all duration-150 ${
                     isActive(item.href)
                       ? 'bg-primary text-primary-foreground shadow-sm'
@@ -89,6 +114,16 @@ export default function Navigation() {
 
             {/* Actions (mobile + desktop) */}
             <div className="flex items-center gap-2">
+              {isImpersonating && impersonatedEmail ? (
+                <div
+                  className="max-w-[180px] sm:max-w-[240px] truncate text-xs font-medium text-foreground"
+                  title={impersonatedEmail}
+                  aria-label={`Impersonating ${impersonatedEmail}`}
+                >
+                  {impersonatedEmail}
+                </div>
+              ) : null}
+
               <button
                 onClick={toggleTheme}
                 className="icon-btn"
@@ -121,6 +156,9 @@ export default function Navigation() {
                 isImpersonating && item.href === '/coach'
                   ? (e: React.MouseEvent) => {
                       e.preventDefault();
+                      if (typeof window !== 'undefined') {
+                        window.localStorage.removeItem(COACH_IMPERSONATE_EMAIL_KEY);
+                      }
                       setImpersonateUserId(null);
                       router.push('/coach');
                     }
