@@ -29,13 +29,18 @@ export default function Navigation() {
     router.push('/login');
   };
 
-  const navItems = [
-    { href: '/workout/start', icon: Play, label: 'Workout' },
-    { href: '/exercises', icon: Dumbbell, label: 'Exercises' },
-    { href: '/routines', icon: Calendar, label: 'Routines' },
-    { href: '/history', icon: History, label: 'History' },
-    ...(isCoach ? [{ href: '/coach', icon: Users, label: 'Coach' }] : []),
-  ];
+  const navItems = isCoach
+    ? [
+        { href: '/exercises', icon: Dumbbell, label: 'Exercises' },
+        { href: '/routines', icon: Calendar, label: 'Routines' },
+        { href: '/coach', icon: Users, label: 'Users' },
+      ]
+    : [
+        { href: '/workout/start', icon: Play, label: 'Workout' },
+        { href: '/exercises', icon: Dumbbell, label: 'Exercises' },
+        { href: '/routines', icon: Calendar, label: 'Routines' },
+        { href: '/history', icon: History, label: 'History' },
+      ];
 
   const isActive = (href: string) => {
     if (href === '/workout/start') return pathname === '/' || pathname.startsWith('/workout');
