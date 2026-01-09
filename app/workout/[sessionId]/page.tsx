@@ -8,7 +8,7 @@ import { useCoach } from '@/hooks/useCoach';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Plus } from 'lucide-react';
+import { Clock, Plus } from 'lucide-react';
 type WorkoutSession = any;
 type WorkoutExercise = any;
 type WorkoutSet = any;
@@ -673,17 +673,20 @@ const openTechnique = (key: string) => {
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-950 via-gray-900 to-gray-950 text-white">
       <div className="max-w-5xl mx-auto px-4 py-6">
+        {/* Sticky session timer: stays visible while scrolling (HEVY-style) */}
+        <div className="sticky top-0 z-40 -mx-4 px-4 pt-2 pb-3 backdrop-blur bg-black/40 border-b border-gray-800">
+          <div className="flex items-center justify-end">
+            <div className="inline-flex items-center gap-2 rounded-full border border-gray-700 bg-gray-900/60 px-3 py-1.5">
+              <Clock className="h-4 w-4 text-white/90" aria-hidden="true" />
+              <span className="font-mono text-sm font-semibold tabular-nums">{formatClock(elapsedSeconds)}</span>
+            </div>
+          </div>
+        </div>
+
         <div className="flex items-start justify-between gap-4 mb-6">
           <div className="min-w-0">
             <h1 className="text-2xl font-bold truncate">{session?.routines?.name || 'Workout'}</h1>
             {session?.routine_days?.name && <p className="text-gray-400 truncate">{session.routine_days.name}</p>}
-          </div>
-
-          <div className="flex flex-col items-end gap-2 shrink-0">
-            <div className="inline-flex items-center gap-2 rounded-full border border-gray-700 bg-gray-900/60 px-3 py-1.5">
-              <span className="text-[11px] font-semibold text-gray-300">TIME</span>
-              <span className="font-mono text-sm font-semibold tabular-nums">{formatClock(elapsedSeconds)}</span>
-            </div>
           </div>
         </div>
 
@@ -890,22 +893,17 @@ const openTechnique = (key: string) => {
                     </tbody>
                   </table>
 
+                  {/* Add set button (HEVY-style pill) */}
                   <div className="mt-3">
-                    <span
-                      role="button"
-                      tabIndex={0}
+                    <button
+                      type="button"
                       aria-label="Add set"
                       onClick={() => addSet(exercise.id)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          addSet(exercise.id);
-                        }
-                      }}
-                      className="inline-action"
+                      className="w-full h-14 rounded-2xl bg-gray-800/60 border border-gray-700 text-white/90 text-base font-semibold inline-flex items-center justify-center gap-2 active:scale-[0.99]"
                     >
-                      + Add set
-                    </span>
+                      <Plus className="h-5 w-5" aria-hidden="true" />
+                      Add Set
+                    </button>
                   </div>
                 </div>
               </div>
