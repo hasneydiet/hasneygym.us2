@@ -172,30 +172,69 @@ const openTechnique = (key: string) => {
   };
 
   const playBeep = () => {
-    // Simple beep using Web Audio API (no external assets)
+    // Loud "boxing bell" style alert using Web Audio API (no external assets).
+    // Uses a few harmonics + longer decay, plus a second strike.
     try {
       const AudioCtx = (window as any).AudioContext || (window as any).webkitAudioContext;
       if (!AudioCtx) return;
+
       const ctx = new AudioCtx();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.value = 880;
-      gain.gain.value = 0.0001;
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      const now = ctx.currentTime;
-      // quick attack/decay
-      gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.exponentialRampToValueAtTime(0.25, now + 0.01);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.20);
-      osc.start(now);
-      osc.stop(now + 0.22);
-      osc.onended = () => {
+
+      // Smooth out peaks to avoid distortion while staying loud.
+      const compressor = ctx.createDynamicsCompressor();
+      compressor.threshold.setValueAtTime(-18, ctx.currentTime);
+      compressor.knee.setValueAtTime(18, ctx.currentTime);
+      compressor.ratio.setValueAtTime(6, ctx.currentTime);
+      compressor.attack.setValueAtTime(0.003, ctx.currentTime);
+      compressor.release.setValueAtTime(0.15, ctx.currentTime);
+
+      const master = ctx.createGain();
+      master.gain.setValueAtTime(0.9, ctx.currentTime);
+
+      master.connect(compressor);
+      compressor.connect(ctx.destination);
+
+      const strike = (t0: number) => {
+        const gain = ctx.createGain();
+        gain.gain.setValueAtTime(0.0001, t0);
+        // Fast attack, long decay (bell-like)
+        gain.gain.exponentialRampToValueAtTime(0.95, t0 + 0.008);
+        gain.gain.exponentialRampToValueAtTime(0.08, t0 + 0.35);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.2);
+        gain.connect(master);
+
+        const freqs = [740, 1110, 1480]; // bell-ish partials
+        const types: OscillatorType[] = ['triangle', 'sine', 'square'];
+        const oscs = freqs.map((f, i) => {
+          const osc = ctx.createOscillator();
+          osc.type = types[i];
+          osc.frequency.setValueAtTime(f, t0);
+          // slight detune for richness
+          osc.detune.setValueAtTime((i - 1) * 8, t0);
+          osc.connect(gain);
+          osc.start(t0);
+          osc.stop(t0 + 1.25);
+          return osc;
+        });
+
+        // Cleanup when the last oscillator ends
+        oscs[oscs.length - 1].onended = () => {
+          try {
+            gain.disconnect();
+          } catch {}
+        };
+      };
+
+      const now = ctx.currentTime + 0.01;
+      strike(now);
+      strike(now + 0.35);
+
+      // Close audio context after it finishes
+      setTimeout(() => {
         try {
           ctx.close();
         } catch {}
-      };
+      }, 1800);
     } catch {}
   };
 
@@ -713,26 +752,32 @@ const openTechnique = (key: string) => {
                 <div className="mb-3">
                   <h3 className="section-title text-white">{exercise.exercises?.name || 'Exercise'}</h3>
 
-                  {exercise.exercises?.default_technique_tags?.[0] ? (
-                    <button
-                      type="button"
-                      onClick={() => openTechnique(exercise.exercises!.default_technique_tags![0])}
-                      className="tap-target mt-1"
-                      aria-label={`How to perform ${exercise.exercises!.default_technique_tags![0]}`}
-                    >
-                      <Badge className="rounded-full border border-primary/30 bg-primary/15 px-3 py-1 text-xs font-semibold text-primary hover:bg-primary/20">
-                        {exercise.exercises!.default_technique_tags![0]}
-                      </Badge>
-                    </button>
-                  ) : null}
+                  <div className="mt-2 flex items-center justify-between gap-3">
+                    {/* Technique on the left (no pill border) */}
+                    <div className="min-w-0">
+                      {exercise.exercises?.default_technique_tags?.[0] ? (
+                        <button
+                          type="button"
+                          onClick={() => openTechnique(exercise.exercises!.default_technique_tags![0])}
+                          className="tap-target text-sm font-semibold text-primary truncate"
+                          aria-label={`How to perform ${exercise.exercises!.default_technique_tags![0]}`}
+                        >
+                          {exercise.exercises!.default_technique_tags![0]}
+                        </button>
+                      ) : (
+                        <span className="text-sm text-gray-400">&nbsp;</span>
+                      )}
+                    </div>
 
-                  <div className="mt-2 inline-flex items-center gap-2 text-sm text-gray-300">
-                    <Clock className="h-4 w-4 text-gray-300" />
-                    {restSecondsRemaining !== null && restExerciseId === exercise.id ? (
-                      <span className="font-medium">Rest Timer: {formatClock(restSecondsRemaining)}</span>
-                    ) : (
-                      <span className="font-medium">Rest Timer: {formatClock(getExerciseRestSeconds(exercise))}</span>
-                    )}
+                    {/* Rest timer on the right */}
+                    <div className="flex items-center gap-2 text-sm text-gray-300 shrink-0">
+                      <Clock className="h-4 w-4 text-gray-300" />
+                      {restSecondsRemaining !== null && restExerciseId === exercise.id ? (
+                        <span className="font-medium">{formatClock(restSecondsRemaining)}</span>
+                      ) : (
+                        <span className="font-medium">{formatClock(getExerciseRestSeconds(exercise))}</span>
+                      )}
+                    </div>
                   </div>
                 </div>
 
