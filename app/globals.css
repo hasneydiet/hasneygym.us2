@@ -74,8 +74,56 @@ button {
 */
 
 @layer base {
-  /* HEVY exact palette — dark is default */
+  /*
+    Theme tokens
+    - Dark is the default (HEVY-style)
+    - Light theme is supported via removing the `.dark` class
+    - Primary button/interactive accent matches the HEVY blue seen in the screenshots
+  */
+
+  /* Light theme (fallback when `.dark` is not present) */
   :root {
+    --background: 248 249 252; /* rgb derived from hsl(220 33% 98%) */
+    --foreground: 15 23 41; /* rgb derived from hsl(222 47% 11%) */
+    --card: 255 255 255;
+    --card-foreground: 15 23 41;
+    --popover: 255 255 255;
+    --popover-foreground: 15 23 41;
+
+    --secondary: 243 244 246; /* rgb derived from hsl(220 16% 96%) */
+    --secondary-foreground: 15 23 41;
+    --muted: 243 244 246; /* rgb derived from hsl(220 14% 96%) */
+    --muted-foreground: 101 117 139; /* rgb derived from hsl(215 16% 47%) */
+    --accent: 252 232 244; /* rgb derived from hsl(325 78% 95%) */
+    --accent-foreground: 15 23 41;
+
+    /* Primary (HEVY blue from screenshot) */
+    --primary: 0 140 255; /* #008CFF */
+    --primary-foreground: 255 255 255;
+    --primary-pressed: 0 136 238; /* #0088EE */
+
+    --divider: 42 42 53; /* #2A2A35 */
+    --border: 229 231 235; /* rgb derived from hsl(220 13% 91%) */
+    --input: 229 231 235;
+    --ring: 0 140 255; /* #008CFF */
+
+    --disabled-foreground: 90 90 106; /* #5A5A6A */
+
+    --destructive: 239 68 68; /* #EF4444 */
+    --destructive-foreground: 255 255 255;
+
+    /* Charts / data (kept consistent across themes) */
+    --chart-1: 0 140 255; /* Progress/highlights */
+    --chart-2: 34 211 238; /* #22D3EE */
+    --chart-3: 34 197 94; /* #22C55E */
+    --chart-4: 245 158 11; /* #F59E0B */
+    --chart-5: 239 68 68; /* #EF4444 */
+
+    --radius: 1rem;
+  }
+
+  /* Dark theme (default in app via ThemeProvider adding `.dark`) */
+  .dark {
     /* Backgrounds */
     --background: 15 15 20; /* #0F0F14 */
     --card: 24 24 31; /* #18181F */
@@ -94,65 +142,27 @@ button {
     --muted-foreground: 139 139 156; /* #8B8B9C */
     --disabled-foreground: 90 90 106; /* #5A5A6A */
 
-    /* Primary Accent */
-    --primary: 124 58 237; /* #7C3AED */
-    --primary-foreground: 255 255 255; /* #FFFFFF */
-    --primary-pressed: 109 40 217; /* #6D28D9 */
+    /* Primary (HEVY blue from screenshot) */
+    --primary: 0 140 255; /* #008CFF */
+    --primary-foreground: 255 255 255;
+    --primary-pressed: 0 136 238; /* #0088EE */
 
     /* UI elements */
     --divider: 42 42 53; /* #2A2A35 */
     --border: 48 48 61; /* #30303D */
     --input: 32 32 42; /* #20202A */
-    --ring: 124 58 237; /* #7C3AED */
+    --ring: 0 140 255; /* #008CFF */
 
     /* Status */
     --destructive: 239 68 68; /* #EF4444 */
-    --destructive-foreground: 255 255 255; /* #FFFFFF */
+    --destructive-foreground: 255 255 255;
 
     /* Charts / data */
-    --chart-1: 124 58 237; /* #7C3AED */
+    --chart-1: 0 140 255; /* Progress/highlights */
     --chart-2: 34 211 238; /* #22D3EE */
     --chart-3: 34 197 94; /* #22C55E */
     --chart-4: 245 158 11; /* #F59E0B */
     --chart-5: 239 68 68; /* #EF4444 */
-
-    --radius: 1rem;
-  }
-
-  /* Keep dark class supported, but identical to default (dark-first) */
-  .dark {
-    --background: 15 15 20;
-    --card: 24 24 31;
-    --popover: 24 24 31;
-
-    --secondary: 31 31 41;
-    --muted: 31 31 41;
-    --accent: 31 31 41;
-
-    --foreground: 255 255 255;
-    --card-foreground: 255 255 255;
-    --popover-foreground: 255 255 255;
-    --secondary-foreground: 179 179 194;
-    --muted-foreground: 139 139 156;
-    --disabled-foreground: 90 90 106;
-
-    --primary: 124 58 237;
-    --primary-foreground: 255 255 255;
-    --primary-pressed: 109 40 217;
-
-    --divider: 42 42 53;
-    --border: 48 48 61;
-    --input: 32 32 42;
-    --ring: 124 58 237;
-
-    --destructive: 239 68 68;
-    --destructive-foreground: 255 255 255;
-
-    --chart-1: 124 58 237;
-    --chart-2: 34 211 238;
-    --chart-3: 34 197 94;
-    --chart-4: 245 158 11;
-    --chart-5: 239 68 68;
   }
 }
 
@@ -163,8 +173,12 @@ button {
 
   body {
     @apply bg-background text-foreground;
-    color-scheme: dark;
+	  color-scheme: light;
   }
+
+	.dark body {
+	  color-scheme: dark;
+	}
 }
 
 @layer components {
