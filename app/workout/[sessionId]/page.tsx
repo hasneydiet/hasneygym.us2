@@ -8,7 +8,7 @@ import { useCoach } from '@/hooks/useCoach';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Clock, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 type WorkoutSession = any;
 type WorkoutExercise = any;
 type WorkoutSet = any;
@@ -25,6 +25,27 @@ function formatClock(totalSeconds: number) {
 function clampInt(n: number, min: number, max: number) {
   if (!Number.isFinite(n)) return min;
   return Math.min(max, Math.max(min, Math.floor(n)));
+}
+
+function ClockHandsIcon({ className }: { className?: string }) {
+  // Minimal clock (hands only), no outer circle.
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+    >
+      <path
+        d="M12 6v6l4 2"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
 }
 
 const TECHNIQUE_GUIDES: Record<
@@ -674,10 +695,10 @@ const openTechnique = (key: string) => {
     <div className="min-h-screen bg-gradient-to-b from-gray-950 via-gray-900 to-gray-950 text-white">
       <div className="max-w-5xl mx-auto px-4 py-6">
         {/* Sticky session timer: stays visible while scrolling (HEVY-style) */}
-        <div className="sticky top-0 z-40 -mx-4 px-4 pt-2 pb-3 backdrop-blur bg-black/40 border-b border-gray-800">
+        <div className="sticky top-0 z-40 -mx-4 px-4 pt-2 pb-3 backdrop-blur bg-black/40">
           <div className="flex items-center justify-end">
             <div className="inline-flex items-center gap-2 rounded-full border border-gray-700 bg-gray-900/60 px-3 py-1.5">
-              <Clock className="h-4 w-4 text-white/90" aria-hidden="true" />
+              <ClockHandsIcon className="h-4 w-4 text-white/90" />
               <span className="font-mono text-sm font-semibold tabular-nums">{formatClock(elapsedSeconds)}</span>
             </div>
           </div>
