@@ -1,12 +1,12 @@
 {
-  "name": "Dtracker",
-  "short_name": "Dtracker",
+  "name": "H-Core",
+  "short_name": "H-Core",
   "description": "Personal Workout Tracker",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "background_color": "#0b0b0b",
-  "theme_color": "#E53A9D",
+  "theme_color": "#F07000",
   "orientation": "portrait",
   "icons": [
     {

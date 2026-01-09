@@ -7,11 +7,11 @@ import PWARegister from '@/components/pwa/PWARegister';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'Dtracker - Personal Workout Tracker',
+  title: 'H-Core - Personal Workout Tracker',
   description: 'Personal Workout Tracker',
   viewport: 'width=device-width, initial-scale=1, maximum-scale=5, viewport-fit=cover',
   manifest: '/manifest.json',
-  themeColor: '#E53A9D',
+  themeColor: '#F07000',
   icons: {
     icon: [
       { url: '/icons/icon-32x32.png', sizes: '32x32', type: 'image/png' },
