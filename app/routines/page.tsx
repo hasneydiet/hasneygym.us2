@@ -53,7 +53,7 @@ export default function RoutinesPage() {
     if (isCoach && !impersonateUserId) {
       const { data, error } = await supabase
         .from('routines')
-        .select('*')
+        .select('id,user_id,name,notes,created_at')
         .order('created_at', { ascending: false });
 
       if (!error && data) {
@@ -74,7 +74,7 @@ export default function RoutinesPage() {
     // Everyone else (including coach while impersonating): user-scoped routines.
     const { data, error } = await supabase
       .from('routines')
-      .select('*')
+      .select('id,user_id,name,notes,created_at')
       .eq('user_id', uid)
       .order('created_at', { ascending: false });
 

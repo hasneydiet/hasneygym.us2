@@ -24,6 +24,20 @@ export default function Navigation() {
     };
   }, []);
 
+  // Prefetch primary routes for a snappier, app-like feel.
+  // This does not change UI/logic; it only warms Next's route cache.
+  useEffect(() => {
+    try {
+      for (const href of isCoach
+        ? ['/exercises', '/routines', '/coach']
+        : ['/workout/start', '/exercises', '/routines', '/history']) {
+        router.prefetch(href);
+      }
+    } catch {
+      // Prefetch should never break navigation.
+    }
+  }, [router, isCoach]);
+
   const handleLogout = async () => {
     await supabase.auth.signOut();
     router.push('/login');

@@ -4,3 +4,34 @@ publish = ".next"
 
 [[plugins]]
 package = "@netlify/plugin-nextjs"
+
+# Performance + PWA polish: caching for immutable assets, and no-cache for manifest/SW
+[[headers]]
+for = "/_next/static/*"
+  [headers.values]
+  Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+for = "/icons/*"
+  [headers.values]
+  Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+for = "/favicon.ico"
+  [headers.values]
+  Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+for = "/icon.png"
+  [headers.values]
+  Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+for = "/manifest.json"
+  [headers.values]
+  Cache-Control = "no-cache"
+
+[[headers]]
+for = "/service-worker.js"
+  [headers.values]
+  Cache-Control = "no-cache"
