@@ -27,8 +27,8 @@ export default function BrandLogo({
       <div className={`leading-tight ${centered ? 'text-center' : ''}`}>
         <div className={`flex items-baseline gap-0.5 ${centered ? 'justify-center' : ''}`}>
           <span className="text-2xl md:text-[26px] font-extrabold tracking-tight leading-none">
-            <span className="text-[#F07000]">H</span>
-            <span className="text-black dark:text-white">-Core</span>
+            <span className="text-[#E53A9D]">D</span>
+            <span className="text-black dark:text-white">tracker</span>
           </span>
         </div>
 

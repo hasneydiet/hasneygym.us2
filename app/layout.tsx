@@ -11,7 +11,7 @@ export const metadata: Metadata = {
   description: 'Personal Workout Tracker',
   viewport: 'width=device-width, initial-scale=1, maximum-scale=5, viewport-fit=cover',
   manifest: '/manifest.json',
-  themeColor: '#F07000',
+  themeColor: '#0F0F14',
   icons: {
     icon: [
       { url: '/icons/icon-32x32.png', sizes: '32x32', type: 'image/png' },
