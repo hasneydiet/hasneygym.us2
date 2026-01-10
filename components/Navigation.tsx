@@ -3,7 +3,6 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
 import { Dumbbell, Calendar, History, LogOut, Sun, Moon, Play, Users } from 'lucide-react';
 import { useTheme } from '@/lib/theme';
 import { useCoach } from '@/hooks/useCoach';
@@ -38,6 +37,8 @@ export default function Navigation() {
   }, [isCoach, impersonateUserId]);
 
   const handleLogout = async () => {
+    // Lazy-load Supabase client to keep the shared Navigation bundle lighter on mobile.
+    const { supabase } = await import('@/lib/supabase');
     await supabase.auth.signOut();
     router.push('/login');
   };

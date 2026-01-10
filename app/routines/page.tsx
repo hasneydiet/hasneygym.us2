@@ -1,7 +1,9 @@
+
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import dynamic from 'next/dynamic';
 import AuthGuard from '@/components/AuthGuard';
 import Navigation from '@/components/Navigation';
 import { supabase } from '@/lib/supabase';
@@ -11,20 +13,9 @@ import { Plus, Edit2, Trash2, Share2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { cacheDel, cacheGet, cacheSet } from '@/lib/perfCache';
+
+const ShareRoutineDialog = dynamic(() => import('@/components/ShareRoutineDialog'), { ssr: false });
 
 export const dynamic = 'force-dynamic';
 
@@ -37,9 +28,11 @@ export default function RoutinesPage() {
 
   const [shareOpen, setShareOpen] = useState(false);
   const [shareRoutine, setShareRoutine] = useState<Routine | null>(null);
-  const [coachUsers, setCoachUsers] = useState<Array<{ id: string; email: string | null }>>([]);
-  const [shareUserId, setShareUserId] = useState<string>('');
-  const [shareLoading, setShareLoading] = useState(false);
+
+  const routinesCacheKey = useMemo(() => {
+    if (isCoach && !impersonateUserId) return 'routines:coach:all:v1';
+    return effectiveUserId ? `routines:user:${effectiveUserId}:v1` : null;
+  }, [effectiveUserId, isCoach, impersonateUserId]);
 
   useEffect(() => {
     if (!ready) return;
@@ -49,11 +42,20 @@ export default function RoutinesPage() {
   const loadRoutines = async (uid: string) => {
     if (!uid) return;
 
+    // Fast path: use a short-lived session cache to avoid repeat fetches when navigating.
+    if (routinesCacheKey) {
+      const cached = cacheGet<Routine[]>(routinesCacheKey);
+      if (cached && Array.isArray(cached)) {
+        setRoutines(cached);
+        return;
+      }
+    }
+
     // Coach (not impersonating): show all routines across all users, deduped by name.
     if (isCoach && !impersonateUserId) {
       const { data, error } = await supabase
         .from('routines')
-        .select('*')
+        .select('id,name,notes,created_at,user_id')
         .order('created_at', { ascending: false });
 
       if (!error && data) {
@@ -67,6 +69,7 @@ export default function RoutinesPage() {
           deduped.push(r as Routine);
         }
         setRoutines(deduped);
+        if (routinesCacheKey) cacheSet(routinesCacheKey, deduped, 20 * 1000);
       }
       return;
     }
@@ -74,192 +77,20 @@ export default function RoutinesPage() {
     // Everyone else (including coach while impersonating): user-scoped routines.
     const { data, error } = await supabase
       .from('routines')
-      .select('*')
+      .select('id,name,notes,created_at,user_id')
       .eq('user_id', uid)
       .order('created_at', { ascending: false });
 
     if (!error && data) {
       setRoutines(data);
-    }
-  };
-
-  const getAccessToken = async () => {
-    const { data: sessionData } = await supabase.auth.getSession();
-    return sessionData.session?.access_token || null;
-  };
-
-  const loadCoachUsers = async () => {
-    if (!isCoach) return;
-    if (coachUsers.length > 0) return;
-
-    const token = await getAccessToken();
-    if (!token) return;
-
-    try {
-      const res = await fetch('/api/coach/users', {
-        headers: { Authorization: `Bearer ${token}` },
-        cache: 'no-store',
-      });
-      const json = await res.json().catch(() => ({}));
-      if (res.ok) {
-        setCoachUsers((json?.users || []) as Array<{ id: string; email: string | null }>);
-      }
-    } catch {
-      // Silent failure; coach page still works and Share can show alert.
+      if (routinesCacheKey) cacheSet(routinesCacheKey, data, 20 * 1000);
     }
   };
 
   const openShare = async (routine: Routine) => {
     if (!isCoach) return;
     setShareRoutine(routine);
-    setShareUserId('');
     setShareOpen(true);
-    await loadCoachUsers();
-  };
-
-  const shareRoutineToUser = async () => {
-    if (!isCoach) return;
-    if (!shareRoutine) return;
-    if (!shareUserId) return;
-
-    setShareLoading(true);
-    let newRoutineId: string | null = null;
-    let succeeded = false;
-
-    try {
-      // Load the source routine (name/notes).
-      const { data: sourceRoutine, error: sourceErr } = await supabase
-        .from('routines')
-        .select('id,name,notes')
-        .eq('id', shareRoutine.id)
-        .single();
-
-      if (sourceErr || !sourceRoutine) {
-        alert('Failed to load routine.');
-        return;
-      }
-
-      const sourceNameKey = String(sourceRoutine.name || '').trim().toLowerCase();
-
-      // Prevent duplicates by name for the target user.
-      const { data: existing, error: existingErr } = await supabase
-        .from('routines')
-        .select('id,name')
-        .eq('user_id', shareUserId);
-
-      if (existingErr) {
-        alert('Failed to validate target user routines.');
-        return;
-      }
-
-      const hasDuplicate = (existing || []).some((r: any) => String(r.name || '').trim().toLowerCase() === sourceNameKey);
-      if (hasDuplicate) {
-        alert('That user already has a routine with this name.');
-        return;
-      }
-
-      // Create the new routine for the target user.
-      const { data: createdRoutine, error: createRoutineErr } = await supabase
-        .from('routines')
-        .insert({
-          user_id: shareUserId,
-          name: sourceRoutine.name,
-          notes: sourceRoutine.notes ?? '',
-        })
-        .select('id')
-        .single();
-
-      if (createRoutineErr || !createdRoutine?.id) {
-        alert('Failed to share routine.');
-        return;
-      }
-
-      newRoutineId = createdRoutine.id;
-
-      // Clone routine days.
-      const { data: days, error: daysErr } = await supabase
-        .from('routine_days')
-        .select('*')
-        .eq('routine_id', sourceRoutine.id)
-        .order('day_index', { ascending: true });
-
-      if (daysErr) {
-        alert('Failed to share routine.');
-        return;
-      }
-
-      const dayRows = (days || []) as any[];
-      const { data: newDays, error: newDaysErr } = await supabase
-        .from('routine_days')
-        .insert(
-          dayRows.map((d) => ({
-            routine_id: newRoutineId,
-            day_index: d.day_index,
-            name: d.name,
-          }))
-        )
-        .select('id,day_index');
-
-      if (newDaysErr) {
-        alert('Failed to share routine.');
-        return;
-      }
-
-      const oldDayIds = dayRows.map((d) => d.id);
-      const dayIdByIndex = new Map<number, string>();
-      (newDays || []).forEach((d: any) => dayIdByIndex.set(d.day_index, d.id));
-
-      // Clone day exercises.
-      if (oldDayIds.length > 0) {
-        const { data: dayExercises, error: dayExErr } = await supabase
-          .from('routine_day_exercises')
-          .select('*')
-          .in('routine_day_id', oldDayIds)
-          .order('order_index', { ascending: true });
-
-        if (dayExErr) {
-          alert('Failed to share routine.');
-          return;
-        }
-
-        const insertExercises = (dayExercises || [])
-          .map((ex: any) => {
-            const oldDay = dayRows.find((d) => d.id === ex.routine_day_id);
-            const newDayId = oldDay ? dayIdByIndex.get(oldDay.day_index) : null;
-            if (!newDayId) return null;
-            return {
-              routine_day_id: newDayId,
-              exercise_id: ex.exercise_id,
-              order_index: ex.order_index,
-              superset_group_id: ex.superset_group_id,
-              default_sets: ex.default_sets ?? [],
-            };
-          })
-          .filter(Boolean) as any[];
-
-        if (insertExercises.length > 0) {
-          const { error: insertErr } = await supabase.from('routine_day_exercises').insert(insertExercises);
-          if (insertErr) {
-            alert('Failed to share routine.');
-            return;
-          }
-        }
-      }
-
-      setShareOpen(false);
-      setShareRoutine(null);
-      setShareUserId('');
-      succeeded = true;
-      alert('Routine shared.');
-    } catch {
-      alert('Failed to share routine.');
-    } finally {
-      // Best-effort rollback.
-      if (!succeeded && newRoutineId) {
-        await supabase.from('routines').delete().eq('id', newRoutineId);
-      }
-      setShareLoading(false);
-    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -275,6 +106,7 @@ export default function RoutinesPage() {
       .single();
 
     if (!error && data) {
+      if (routinesCacheKey) cacheDel(routinesCacheKey);
       router.push(`/routines/${data.id}`);
     }
   };
@@ -282,6 +114,7 @@ export default function RoutinesPage() {
   const handleDelete = async (id: string) => {
     if (confirm('Delete this routine and all its data?')) {
       await supabase.from('routines').delete().eq('id', id);
+      if (routinesCacheKey) cacheDel(routinesCacheKey);
       if (effectiveUserId) loadRoutines(effectiveUserId);
     }
   };
@@ -388,50 +221,9 @@ export default function RoutinesPage() {
         </div>
       </div>
 
-      <Dialog open={shareOpen} onOpenChange={setShareOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Share Routine</DialogTitle>
-          </DialogHeader>
-
-          <div className="space-y-2">
-            <div className="text-sm text-muted-foreground">
-              Select a user to receive: <span className="font-medium text-foreground">{shareRoutine?.name || ''}</span>
-            </div>
-
-            <Select value={shareUserId} onValueChange={setShareUserId}>
-              <SelectTrigger>
-                <SelectValue placeholder={coachUsers.length ? 'Select user' : 'Loading users...'} />
-              </SelectTrigger>
-              <SelectContent>
-                {coachUsers.map((u) => (
-                  <SelectItem key={u.id} value={u.id}>
-                    {u.email || u.id}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setShareOpen(false)}
-              disabled={shareLoading}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              onClick={shareRoutineToUser}
-              disabled={!shareUserId || shareLoading}
-            >
-              Share
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {isCoach ? (
+        <ShareRoutineDialog open={shareOpen} onOpenChange={setShareOpen} routine={shareRoutine} />
+      ) : null}
     </AuthGuard>
   );
 }
