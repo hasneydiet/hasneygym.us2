@@ -347,24 +347,6 @@ export default function ExercisesPage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-foreground/80 mb-1">
-                    Rest Timer (seconds)
-                  </label>
-                  <Input
-                    type="number"
-                    min="0"
-                    value={formData.rest_seconds}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      rest_seconds: parseInt(e.target.value) || 0,
-                    })}
-                  />
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Default rest after completing a set for this exercise. Default is 60 seconds.
-                  </p>
-                </div>
-
-                <div>
                   <label className="block text-sm font-medium text-foreground/80 mb-2">
                     Default Technique Tags
                   </label>
@@ -420,10 +402,10 @@ export default function ExercisesPage() {
                       <Input
                         type="number"
                         min="0"
-                        value={formData.default_set_scheme?.restSeconds || 0}
+                        value={formData.rest_seconds}
                         onChange={(e) => setFormData({
                           ...formData,
-                          default_set_scheme: { ...formData.default_set_scheme, restSeconds: parseInt(e.target.value) || 0 },
+                          rest_seconds: parseInt(e.target.value) || 0,
                         })}
                       />
                     </div>
