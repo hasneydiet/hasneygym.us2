@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import dynamic from 'next/dynamic';
+import nextDynamic from 'next/dynamic';
 import AuthGuard from '@/components/AuthGuard';
 import Navigation from '@/components/Navigation';
 import { supabase } from '@/lib/supabase';
@@ -15,7 +15,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { cacheDel, cacheGet, cacheSet } from '@/lib/perfCache';
 
-const ShareRoutineDialog = dynamic(() => import('@/components/ShareRoutineDialog'), { ssr: false });
+const ShareRoutineDialog = nextDynamic(() => import('@/components/ShareRoutineDialog'), { ssr: false });
 
 export const dynamic = 'force-dynamic';
 
