@@ -19,6 +19,20 @@ const ShareRoutineDialog = nextDynamic(() => import('@/components/ShareRoutineDi
 
 export const dynamic = 'force-dynamic';
 
+function normalizeRoutines(rows: any[]): Routine[] {
+  if (!Array.isArray(rows)) return [];
+  return rows.map((r) => {
+    const createdBy = (r as any).created_by ?? (r as any).user_id ?? null;
+    return {
+      id: String((r as any).id),
+      name: String((r as any).name ?? ''),
+      notes: String((r as any).notes ?? ''),
+      created_at: String((r as any).created_at ?? ''),
+      created_by: createdBy,
+    } satisfies Routine;
+  });
+}
+
 export default function RoutinesPage() {
   const router = useRouter();
   const { effectiveUserId, ready, isCoach, impersonateUserId } = useCoach();
@@ -59,14 +73,15 @@ export default function RoutinesPage() {
         .order('created_at', { ascending: false });
 
       if (!error && data) {
+        const normalized = normalizeRoutines(data as any[]);
         const seen = new Set<string>();
         const deduped: Routine[] = [];
-        for (const r of data as any[]) {
+        for (const r of normalized) {
           const key = String(r.name || '').trim().toLowerCase();
           if (!key) continue;
           if (seen.has(key)) continue;
           seen.add(key);
-          deduped.push(r as Routine);
+          deduped.push(r);
         }
         setRoutines(deduped);
         if (routinesCacheKey) cacheSet(routinesCacheKey, deduped, 20 * 1000);
@@ -82,8 +97,9 @@ export default function RoutinesPage() {
       .order('created_at', { ascending: false });
 
     if (!error && data) {
-      setRoutines(data);
-      if (routinesCacheKey) cacheSet(routinesCacheKey, data, 20 * 1000);
+      const normalized = normalizeRoutines(data as any[]);
+      setRoutines(normalized);
+      if (routinesCacheKey) cacheSet(routinesCacheKey, normalized, 20 * 1000);
     }
   };
 
