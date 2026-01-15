@@ -5,8 +5,6 @@ import { createClient } from '@supabase/supabase-js';
 // Requires SUPABASE_SERVICE_ROLE_KEY set in the environment.
 // Never expose the service role key to the browser.
 
-const COACH_EMAIL = 'hasneybravim@gmail.com';
-
 type PublicUser = { id: string; email: string | null };
 
 function getSupabaseUrl(): string | null {
@@ -50,7 +48,7 @@ export async function GET(req: Request) {
   }
 
   const email = (userData.user.email || '').toLowerCase();
-  if (email !== COACH_EMAIL.toLowerCase()) {
+  if (email !== '') {
     return NextResponse.json({ error: 'Not authorized.' }, { status: 403 });
   }
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { COACH_EMAIL, COACH_IMPERSONATE_EMAIL_KEY, COACH_IMPERSONATE_KEY } from '@/lib/coach';
+import { COACH_IMPERSONATE_EMAIL_KEY, COACH_IMPERSONATE_KEY } from '@/lib/coach';
 
 type CoachState = {
   isCoach: boolean;
@@ -48,7 +48,12 @@ export function useCoach() {
         if (!impersonateUserId) window.localStorage.removeItem(COACH_IMPERSONATE_KEY);
       }
 
-      const isCoach = !!email && email.toLowerCase() === COACH_EMAIL.toLowerCase();
+      let isCoach = false;
+
+      if (userId) {
+        const { data: coachFlag, error: coachErr } = await supabase.rpc('is_coach');
+        isCoach = !coachErr && Boolean(coachFlag);
+      }
 
       // If not coach, ensure impersonation is cleared.
       if (!isCoach && typeof window !== 'undefined') {
@@ -64,10 +69,15 @@ export function useCoach() {
 
     load();
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: sub } = supabase.auth.onAuthStateChange(async (_event, session) => {
       const email = session?.user?.email ?? null;
       const userId = session?.user?.id ?? null;
-      const isCoach = !!email && email.toLowerCase() === COACH_EMAIL.toLowerCase();
+      let isCoach = false;
+
+      if (userId) {
+        const { data: coachFlag, error: coachErr } = await supabase.rpc('is_coach');
+        isCoach = !coachErr && Boolean(coachFlag);
+      }
 
       let impersonateUserId: string | null = null;
       if (typeof window !== 'undefined') {

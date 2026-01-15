@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { COACH_EMAIL } from '@/lib/coach';
 import BrandLogo from '@/components/BrandLogo';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,8 +18,6 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
-  const isCoachEmail = (email?: string | null) =>
-    !!email && email.toLowerCase() === COACH_EMAIL.toLowerCase();
 
   useEffect(() => {
     const checkAuth = async () => {

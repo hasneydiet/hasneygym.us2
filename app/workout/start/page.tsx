@@ -9,6 +9,8 @@ import type { RoutineDay } from '@/lib/types';
 import { sortRoutineDays } from '@/lib/routineDaySort';
 import { Button } from '@/components/ui/button';
 
+export const dynamic = 'force-dynamic';
+
 type RoutineDayCard = RoutineDay & {
   routineName: string;
   preview: string;
@@ -172,10 +174,27 @@ export default function WorkoutStartPage() {
     };
 
     load();
+
+    const refreshOnReturn = () => {
+      // Reload when the tab/window regains focus to avoid stale routine lists after coach updates.
+      if (!mounted) return;
+      load();
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') refreshOnReturn();
+    };
+
+    window.addEventListener('focus', refreshOnReturn);
+    document.addEventListener('visibilitychange', onVisibility);
+
     return () => {
       mounted = false;
+      window.removeEventListener('focus', refreshOnReturn);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [router]);
+
+  }, [router, effectiveUserId]);
 
   const startRoutineDay = async (day: RoutineDayCard) => {
     try {
