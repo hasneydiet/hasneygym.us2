@@ -47,7 +47,21 @@ export async function GET(req: Request) {
   }
 
   const email = (userData.user.email || '').toLowerCase();
-  if (email !== '') {
+  if (!email) {
+    return NextResponse.json({ error: 'Not authorized.' }, { status: 403 });
+  }
+
+  // DB-driven coach allowlist (service role bypasses RLS).
+  const { data: coachRow, error: coachErr } = await supabase
+    .from('coach_emails')
+    .select('email')
+    .eq('email', email)
+    .maybeSingle();
+
+  if (coachErr) {
+    return NextResponse.json({ error: coachErr.message }, { status: 500 });
+  }
+  if (!coachRow) {
     return NextResponse.json({ error: 'Not authorized.' }, { status: 403 });
   }
 
