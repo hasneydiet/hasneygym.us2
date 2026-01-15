@@ -21,6 +21,32 @@ const WEEKDAY_ORDER: Record<string, number> = {
   sunday: 7, sun: 7,
 };
 
+/**
+ * Build a sort key from a single label.
+ * Returns null if the label contains no recognizable ordering signal.
+ */
+function computeKeyFromLabel(label: unknown, dayIndexFallback: unknown): number | null {
+  const week = parseWeekLabelNumber(label) ?? 0;
+
+  const dayNum = parseDayLabelNumber(label);
+  if (dayNum !== null) return week * 1000 + 1 * 100 + dayNum;
+
+  const weekday = parseWeekday(label);
+  if (weekday !== null) return week * 1000 + 2 * 100 + weekday;
+
+  const alpha = parseAlphaLabel(label);
+  if (alpha !== null) return week * 1000 + 3 * 100 + alpha;
+
+  // If the label at least contains a week number, keep week grouping and fall
+  // back to day_index within that week.
+  if (week > 0) {
+    const idx = Number(dayIndexFallback);
+    if (Number.isFinite(idx)) return week * 1000 + 4 * 100 + (Math.floor(idx) + 1);
+  }
+
+  return null;
+}
+
 export function parseDayLabelNumber(label: unknown): number | null {
   if (typeof label !== 'string') return null;
   const trimmed = label.trim();
@@ -69,36 +95,27 @@ export function parseAlphaLabel(label: unknown): number | null {
   return code - 64; // A=1..Z=26
 }
 
-/**
- * Returns a numeric sort key where lower values come first.
- *
- * Strategy:
- * - If label contains "Week N", use that as a primary bucket (Week 1 before Week 2).
- * - Within a week (or when week is absent), prefer:
- *   1) Day N numbers
- *   2) Weekdays (Mon..Sun)
- *   3) Letters (A..Z)
- *   4) DB day_index (as a last resort)
- * - Unknown labels sort last.
- */
 export function getRoutineDaySortKey(day: { name?: unknown; day_index?: unknown }): number {
-  const name = (day as any)?.name;
+  // IMPORTANT:
+  // In this project, some screens display the *routine name* as the "day" label
+  // (e.g. routines named "Monday", "Tuesday" with routine_days named "Upper A").
+  // Other screens use routine_day.name directly (e.g. "Day 1", "Day 2").
+  // To keep ordering correct in both cases, we choose the first label that yields
+  // a meaningful sort key.
+  const candidates: unknown[] = [
+    (day as any)?.routineName,
+    (day as any)?.routines?.name,
+    (day as any)?.name,
+  ];
 
-  const week = parseWeekLabelNumber(name) ?? 0;
+  for (const label of candidates) {
+    const key = computeKeyFromLabel(label, (day as any)?.day_index);
+    if (key !== null) return key;
+  }
 
-  const dayNum = parseDayLabelNumber(name);
-  if (dayNum !== null) return week * 1000 + 1 * 100 + dayNum;
-
-  const weekday = parseWeekday(name);
-  if (weekday !== null) return week * 1000 + 2 * 100 + weekday;
-
-  const alpha = parseAlphaLabel(name);
-  if (alpha !== null) return week * 1000 + 3 * 100 + alpha;
-
-  // day_index in DB is an int. In this project it is treated as 0-based in
-  // places, so convert to 1-based when used as a fallback ordering.
+  // Absolute fallback: day_index only (no label signals).
   const idx = Number((day as any)?.day_index);
-  if (Number.isFinite(idx)) return week * 1000 + 4 * 100 + (Math.floor(idx) + 1);
+  if (Number.isFinite(idx)) return 4 * 100 + (Math.floor(idx) + 1);
 
   return Number.MAX_SAFE_INTEGER;
 }
