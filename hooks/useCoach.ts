@@ -44,9 +44,11 @@ export function useCoach() {
   useEffect(() => {
     let cancelled = false;
 
-    const withTimeout = async <T,>(p: Promise<T>, ms: number): Promise<T> => {
+    // supabase-js query builders are PromiseLike (thenable) rather than native Promises.
+    // Accept PromiseLike here so TypeScript doesn't fail builds when we wrap supabase calls.
+    const withTimeout = async <T,>(p: PromiseLike<T>, ms: number): Promise<T> => {
       return await Promise.race([
-        p,
+        Promise.resolve(p),
         new Promise<T>((_resolve, reject) => {
           const id = setTimeout(() => {
             clearTimeout(id);
