@@ -32,11 +32,15 @@ export default function LoginPage() {
 
   useEffect(() => {
     const checkAuth = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (session) {
-        await redirectAfterLogin(supabase, router);
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        if (session) {
+          await redirectAfterLogin(supabase, router);
+        }
+      } catch {
+        // If supabase client is misconfigured, just stay on login.
       }
     };
     checkAuth();

@@ -37,9 +37,21 @@ export function useCoach() {
   useEffect(() => {
     let cancelled = false;
 
+    const withTimeout = async <T,>(p: Promise<T>, ms: number): Promise<T> => {
+      return await Promise.race([
+        p,
+        new Promise<T>((_resolve, reject) => {
+          const id = setTimeout(() => {
+            clearTimeout(id);
+            reject(new Error('timeout'));
+          }, ms);
+        }),
+      ]);
+    };
+
     const load = async () => {
       try {
-        const { data: { user }, error: userErr } = await supabase.auth.getUser();
+        const { data: { user }, error: userErr } = await withTimeout(supabase.auth.getUser(), 7000);
         // If the client is misconfigured (missing env vars) or network fails,
         // ensure we still mark the hook as ready to avoid infinite "Loading..." screens.
         if (userErr) {
@@ -67,7 +79,7 @@ export function useCoach() {
         let isCoach = false;
 
         if (userId) {
-          const { data: coachFlag, error: coachErr } = await supabase.rpc('is_coach');
+          const { data: coachFlag, error: coachErr } = await withTimeout(supabase.rpc('is_coach'), 7000);
           isCoach = !coachErr && Boolean(coachFlag);
         }
 
@@ -104,7 +116,7 @@ export function useCoach() {
         let isCoach = false;
 
         if (userId) {
-          const { data: coachFlag, error: coachErr } = await supabase.rpc('is_coach');
+          const { data: coachFlag, error: coachErr } = await withTimeout(supabase.rpc('is_coach'), 7000);
           isCoach = !coachErr && Boolean(coachFlag);
         }
 

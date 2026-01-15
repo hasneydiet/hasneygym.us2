@@ -13,20 +13,27 @@ export default function Home() {
 
   useEffect(() => {
     const checkAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
+      try {
+        // If Supabase env vars are missing/misconfigured, this call can throw.
+        // Never allow the app to get stuck on an infinite Loading screen.
+        const { data: { session } } = await supabase.auth.getSession();
 
-      if (!session) {
+        if (!session) {
+          router.replace('/login');
+          return;
+        }
+
+        // Wait until coach detection is ready to avoid briefly routing coaches into workout.
+        if (!ready) return;
+
+        if (isCoach) {
+          router.replace('/coach');
+        } else {
+          router.replace('/workout/start');
+        }
+      } catch {
+        // Fail-safe: route to login if anything unexpected happens.
         router.replace('/login');
-        return;
-      }
-
-      // Wait until coach detection is ready to avoid briefly routing coaches into workout.
-      if (!ready) return;
-
-      if (isCoach) {
-        router.replace('/coach');
-      } else {
-        router.replace('/workout/start');
       }
     };
 
