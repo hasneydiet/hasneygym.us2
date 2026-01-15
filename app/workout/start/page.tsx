@@ -8,6 +8,7 @@ import { useCoach } from '@/hooks/useCoach';
 import type { RoutineDay } from '@/lib/types';
 import { sortRoutineDays } from '@/lib/routineDaySort';
 import { Button } from '@/components/ui/button';
+import { cacheGet, cacheSet } from '@/lib/perfCache';
 
 export const dynamic = 'force-dynamic';
 
@@ -66,12 +67,18 @@ export default function WorkoutStartPage() {
   const [days, setDays] = useState<RoutineDayCard[]>([]);
   const [startingId, setStartingId] = useState<string | null>(null);
 
+  // Mobile performance: cache the assembled cards for a short time so switching
+  // tabs doesn't re-run 3 network queries every time.
+  const daysCacheKey = useMemo(() => {
+    return effectiveUserId ? `workout:start:days:${effectiveUserId}:v2` : null;
+  }, [effectiveUserId]);
+
   const dayIds = useMemo(() => days.map((d) => d.id), [days]);
 
   useEffect(() => {
     let mounted = true;
 
-    const load = async () => {
+    const loadFresh = async () => {
       setLoading(true);
       setError(null);
 
@@ -80,7 +87,9 @@ export default function WorkoutStartPage() {
         if (!user) {
           router.push('/login');
           return;
-        }        const uid = effectiveUserId ?? user.id;
+        }
+
+        const uid = effectiveUserId ?? user.id;
 
         // Load routine days + routine name (scoped to the effective user)
         const { data: dayRows, error: daysErr } = await supabase
@@ -163,6 +172,7 @@ export default function WorkoutStartPage() {
 
         if (!mounted) return;
         setDays(baseDays);
+        if (daysCacheKey) cacheSet(daysCacheKey, baseDays, 30 * 1000);
       } catch (e: any) {
         console.error(e);
         if (!mounted) return;
@@ -173,12 +183,34 @@ export default function WorkoutStartPage() {
       }
     };
 
-    load();
+    // Fast path: show cached cards immediately (if present), then revalidate in background.
+    if (daysCacheKey) {
+      const cached = cacheGet<RoutineDayCard[]>(daysCacheKey);
+      if (cached && Array.isArray(cached) && cached.length) {
+        setDays(cached);
+        setLoading(false);
+        // Background refresh (best-effort) so the list stays current.
+        const w = typeof window !== 'undefined' ? (window as any) : null;
+        if (w && typeof w.requestIdleCallback === 'function') {
+          w.requestIdleCallback(() => {
+            if (mounted) loadFresh();
+          }, { timeout: 1200 });
+        } else {
+          setTimeout(() => {
+            if (mounted) loadFresh();
+          }, 250);
+        }
+      } else {
+        loadFresh();
+      }
+    } else {
+      loadFresh();
+    }
 
     const refreshOnReturn = () => {
       // Reload when the tab/window regains focus to avoid stale routine lists after coach updates.
       if (!mounted) return;
-      load();
+      loadFresh();
     };
 
     const onVisibility = () => {
@@ -194,7 +226,7 @@ export default function WorkoutStartPage() {
       document.removeEventListener('visibilitychange', onVisibility);
     };
 
-  }, [router, effectiveUserId]);
+  }, [router, effectiveUserId, daysCacheKey]);
 
   const startRoutineDay = async (day: RoutineDayCard) => {
     try {

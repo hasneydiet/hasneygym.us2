@@ -6,6 +6,7 @@ import AuthGuard from '@/components/AuthGuard';
 import Navigation from '@/components/Navigation';
 import { supabase } from '@/lib/supabase';
 import { Exercise, TECHNIQUE_TAGS } from '@/lib/types';
+import { cacheGet, cacheSet } from '@/lib/perfCache';
 import { Plus, Search, Edit2, Trash2, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -147,10 +148,27 @@ export default function ExercisesPage() {
   });
 
   useEffect(() => {
-    loadExercises();
+    // Mobile performance: render the cached exercise list immediately (if present)
+    // so switching tabs doesn't feel like a full reload. Then revalidate in background.
+    const cacheKey = 'exercises:all:v1';
+    const cached = cacheGet<Exercise[]>(cacheKey);
+    if (cached && Array.isArray(cached) && cached.length) {
+      setExercises(cached);
+      const w = typeof window !== 'undefined' ? (window as any) : null;
+      const refresh = () => loadExercises({ cacheKey, silent: true });
+      if (w && typeof w.requestIdleCallback === 'function') {
+        w.requestIdleCallback(refresh, { timeout: 1200 });
+      } else {
+        setTimeout(refresh, 250);
+      }
+      return;
+    }
+
+    loadExercises({ cacheKey });
   }, []);
 
-  const loadExercises = async () => {
+  const loadExercises = async (opts?: { cacheKey?: string; silent?: boolean }) => {
+    const cacheKey = opts?.cacheKey || 'exercises:all:v1';
     const { data, error } = await supabase
       .from('exercises')
       .select('*')
@@ -158,6 +176,8 @@ export default function ExercisesPage() {
 
     if (!error && data) {
       setExercises(data);
+      // Short-lived cache (2 minutes) to speed up back-and-forth navigation.
+      cacheSet(cacheKey, data as any, 2 * 60 * 1000);
     }
   };
 

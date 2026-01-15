@@ -10,6 +10,7 @@ import { WorkoutSession } from '@/lib/types';
 import { format } from 'date-fns';
 import { Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { cacheGet, cacheSet } from '@/lib/perfCache';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,11 +21,30 @@ export default function HistoryPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadSessions();
+    // Fast path: show cached history immediately when switching tabs.
+    if (!effectiveUserId) return;
+    const cacheKey = `history:sessions:${effectiveUserId}:v1`;
+    const cached = cacheGet<WorkoutSession[]>(cacheKey);
+    if (cached && Array.isArray(cached) && cached.length) {
+      setSessions(cached);
+      setLoading(false);
+      const w = typeof window !== 'undefined' ? (window as any) : null;
+      const refresh = () => loadSessions({ cacheKey, silent: true });
+      if (w && typeof w.requestIdleCallback === 'function') {
+        w.requestIdleCallback(refresh, { timeout: 1200 });
+      } else {
+        setTimeout(refresh, 250);
+      }
+      return;
+    }
+
+    loadSessions({ cacheKey });
   }, [effectiveUserId]);
 
-  const loadSessions = async () => {
+  const loadSessions = async (opts?: { cacheKey?: string; silent?: boolean }) => {
     if (!effectiveUserId) return;
+    const cacheKey = opts?.cacheKey || `history:sessions:${effectiveUserId}:v1`;
+    if (!opts?.silent) setLoading(true);
     try {
       const { data, error } = await supabase
         .from('workout_sessions')
@@ -34,6 +54,7 @@ export default function HistoryPage() {
 
       if (error) throw error;
       setSessions(data || []);
+      cacheSet(cacheKey, (data || []) as any, 20 * 1000);
     } catch (err) {
       console.error(err);
     } finally {

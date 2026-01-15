@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabase';
 import { useCoach } from '@/hooks/useCoach';
 import { Button } from '@/components/ui/button';
 import { COACH_IMPERSONATE_EMAIL_KEY } from '@/lib/coach';
+import { cacheGet, cacheSet } from '@/lib/perfCache';
 
 export const dynamic = 'force-dynamic';
 
@@ -282,16 +283,27 @@ export default function CoachPage() {
 
   useEffect(() => {
     if (!isCoach) return;
-    const load = async () => {
-      setLoading(true);
-      setError(null);
+
+    const cacheKey = 'coach:users:v1';
+    // Fast path: show cached users immediately for faster tab switching.
+    const cached = cacheGet<CoachUserRow[]>(cacheKey);
+    if (cached && Array.isArray(cached) && cached.length) {
+      setUsers(cached);
+      setLoading(false);
+    }
+
+    const load = async (silent?: boolean) => {
+      if (!silent) {
+        setLoading(true);
+        setError(null);
+      }
 
       // Fetch via server-side endpoint (uses service role key on the server).
       const token = await getAccessToken();
       if (!token) {
         setError('No session token found.');
         setUsers([]);
-        setLoading(false);
+        if (!silent) setLoading(false);
         return;
       }
 
@@ -306,16 +318,29 @@ export default function CoachPage() {
           setError(json?.error || 'Failed to load users.');
           setUsers([]);
         } else {
-          setUsers((json?.users || []) as CoachUserRow[]);
+          const rows = (json?.users || []) as CoachUserRow[];
+          setUsers(rows);
+          cacheSet(cacheKey, rows, 30 * 1000);
         }
       } catch (e: any) {
         setError(e?.message || 'Failed to load users.');
         setUsers([]);
       }
-      setLoading(false);
+      if (!silent) setLoading(false);
     };
 
-    load();
+    // If we had cached data, refresh in the background.
+    if (cached && Array.isArray(cached) && cached.length) {
+      const w = typeof window !== 'undefined' ? (window as any) : null;
+      const refresh = () => load(true);
+      if (w && typeof w.requestIdleCallback === 'function') {
+        w.requestIdleCallback(refresh, { timeout: 1200 });
+      } else {
+        setTimeout(refresh, 250);
+      }
+    } else {
+      load(false);
+    }
   }, [isCoach]);
 
   useEffect(() => {
