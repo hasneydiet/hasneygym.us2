@@ -69,6 +69,34 @@ export default function Navigation() {
         { href: '/history', icon: History, label: 'History' },
       ];
 
+  // Mobile performance: aggressively prefetch tab routes so switching tabs
+  // doesn't wait on route chunk downloads over slower connections.
+  useEffect(() => {
+    const hrefs = navItems.map((n) => n.href);
+
+    const doPrefetch = () => {
+      try {
+        hrefs.forEach((h) => router.prefetch(h));
+      } catch {
+        // Prefetch is a best-effort optimization; ignore failures.
+      }
+    };
+
+    // Prefer idle time so we don't compete with initial rendering.
+    const w = typeof window !== 'undefined' ? (window as any) : null;
+    if (w && typeof w.requestIdleCallback === 'function') {
+      const id = w.requestIdleCallback(doPrefetch, { timeout: 1500 });
+      return () => {
+        try {
+          w.cancelIdleCallback?.(id);
+        } catch {}
+      };
+    }
+
+    const t = setTimeout(doPrefetch, 400);
+    return () => clearTimeout(t);
+  }, [router, isCoach, impersonateUserId]);
+
 
   const isActive = (href: string) => {
     if (href === '/workout/start') return pathname === '/' || pathname.startsWith('/workout');

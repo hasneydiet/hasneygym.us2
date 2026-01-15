@@ -11,6 +11,52 @@ import { COACH_IMPERSONATE_EMAIL_KEY, COACH_IMPERSONATE_KEY } from '@/lib/coach'
 type UserGetResponse = { data: { user: { id: string; email?: string | null } | null }; error: unknown | null };
 type RpcBoolResponse = { data: boolean | null; error: unknown | null };
 
+// Cross-route/mobile performance: Navigation is mounted per-page in this app,
+// so `useCoach` can be re-run on every tab switch. Cache the coach result for
+// a short TTL to avoid repeating an extra RPC call on each navigation.
+const COACH_CACHE_KEY = 'HCORE_COACH_CACHE_V1';
+const COACH_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+type CoachCache = {
+  userId: string;
+  isCoach: boolean;
+  ts: number;
+};
+
+let memCoachCache: CoachCache | null = null;
+
+function readCoachCache(userId: string): boolean | null {
+  const now = Date.now();
+
+  if (memCoachCache && memCoachCache.userId === userId && now - memCoachCache.ts < COACH_CACHE_TTL_MS) {
+    return memCoachCache.isCoach;
+  }
+
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(COACH_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as CoachCache;
+    if (!parsed || parsed.userId !== userId) return null;
+    if (now - parsed.ts >= COACH_CACHE_TTL_MS) return null;
+    memCoachCache = parsed;
+    return parsed.isCoach;
+  } catch {
+    return null;
+  }
+}
+
+function writeCoachCache(userId: string, isCoach: boolean) {
+  const entry: CoachCache = { userId, isCoach, ts: Date.now() };
+  memCoachCache = entry;
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(COACH_CACHE_KEY, JSON.stringify(entry));
+  } catch {
+    // ignore
+  }
+}
+
 type CoachState = {
   isCoach: boolean;
   userId: string | null;
@@ -90,8 +136,14 @@ export function useCoach() {
         let isCoach = false;
 
         if (userId) {
-          const coachRes = (await withTimeout(supabase.rpc('is_coach'), 7000)) as unknown as RpcBoolResponse;
-          isCoach = !coachRes.error && Boolean(coachRes.data);
+          const cached = readCoachCache(userId);
+          if (cached !== null) {
+            isCoach = cached;
+          } else {
+            const coachRes = (await withTimeout(supabase.rpc('is_coach'), 7000)) as unknown as RpcBoolResponse;
+            isCoach = !coachRes.error && Boolean(coachRes.data);
+            writeCoachCache(userId, isCoach);
+          }
         }
 
         // If not coach, ensure impersonation is cleared.
@@ -127,8 +179,14 @@ export function useCoach() {
         let isCoach = false;
 
         if (userId) {
-          const coachRes = (await withTimeout(supabase.rpc('is_coach'), 7000)) as unknown as RpcBoolResponse;
-          isCoach = !coachRes.error && Boolean(coachRes.data);
+          const cached = readCoachCache(userId);
+          if (cached !== null) {
+            isCoach = cached;
+          } else {
+            const coachRes = (await withTimeout(supabase.rpc('is_coach'), 7000)) as unknown as RpcBoolResponse;
+            isCoach = !coachRes.error && Boolean(coachRes.data);
+            writeCoachCache(userId, isCoach);
+          }
         }
 
         let impersonateUserId: string | null = null;
