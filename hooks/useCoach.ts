@@ -38,59 +38,97 @@ export function useCoach() {
     let cancelled = false;
 
     const load = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      const email = user?.email ?? null;
-      const userId = user?.id ?? null;
+      try {
+        const { data: { user }, error: userErr } = await supabase.auth.getUser();
+        // If the client is misconfigured (missing env vars) or network fails,
+        // ensure we still mark the hook as ready to avoid infinite "Loading..." screens.
+        if (userErr) {
+          if (!cancelled) {
+            setState({
+              isCoach: false,
+              userId: null,
+              email: null,
+              impersonateUserId: null,
+              ready: true,
+            });
+          }
+          return;
+        }
 
-      let impersonateUserId: string | null = null;
-      if (typeof window !== 'undefined') {
-        impersonateUserId = sanitizeImpersonation(window.localStorage.getItem(COACH_IMPERSONATE_KEY));
-        if (!impersonateUserId) window.localStorage.removeItem(COACH_IMPERSONATE_KEY);
-      }
+        const email = user?.email ?? null;
+        const userId = user?.id ?? null;
 
-      let isCoach = false;
+        let impersonateUserId: string | null = null;
+        if (typeof window !== 'undefined') {
+          impersonateUserId = sanitizeImpersonation(window.localStorage.getItem(COACH_IMPERSONATE_KEY));
+          if (!impersonateUserId) window.localStorage.removeItem(COACH_IMPERSONATE_KEY);
+        }
 
-      if (userId) {
-        const { data: coachFlag, error: coachErr } = await supabase.rpc('is_coach');
-        isCoach = !coachErr && Boolean(coachFlag);
-      }
+        let isCoach = false;
 
-      // If not coach, ensure impersonation is cleared.
-      if (!isCoach && typeof window !== 'undefined') {
-        window.localStorage.removeItem(COACH_IMPERSONATE_KEY);
-        window.localStorage.removeItem(COACH_IMPERSONATE_EMAIL_KEY);
-        impersonateUserId = null;
-      }
+        if (userId) {
+          const { data: coachFlag, error: coachErr } = await supabase.rpc('is_coach');
+          isCoach = !coachErr && Boolean(coachFlag);
+        }
 
-      if (!cancelled) {
-        setState({ isCoach, userId, email, impersonateUserId, ready: true });
+        // If not coach, ensure impersonation is cleared.
+        if (!isCoach && typeof window !== 'undefined') {
+          window.localStorage.removeItem(COACH_IMPERSONATE_KEY);
+          window.localStorage.removeItem(COACH_IMPERSONATE_EMAIL_KEY);
+          impersonateUserId = null;
+        }
+
+        if (!cancelled) {
+          setState({ isCoach, userId, email, impersonateUserId, ready: true });
+        }
+      } catch (e) {
+        // Defensive: avoid infinite loading if anything unexpected happens.
+        if (!cancelled) {
+          setState({
+            isCoach: false,
+            userId: null,
+            email: null,
+            impersonateUserId: null,
+            ready: true,
+          });
+        }
       }
     };
 
     load();
 
     const { data: sub } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      const email = session?.user?.email ?? null;
-      const userId = session?.user?.id ?? null;
-      let isCoach = false;
+      try {
+        const email = session?.user?.email ?? null;
+        const userId = session?.user?.id ?? null;
+        let isCoach = false;
 
-      if (userId) {
-        const { data: coachFlag, error: coachErr } = await supabase.rpc('is_coach');
-        isCoach = !coachErr && Boolean(coachFlag);
-      }
-
-      let impersonateUserId: string | null = null;
-      if (typeof window !== 'undefined') {
-        impersonateUserId = sanitizeImpersonation(window.localStorage.getItem(COACH_IMPERSONATE_KEY));
-        if (!impersonateUserId) window.localStorage.removeItem(COACH_IMPERSONATE_KEY);
-        if (!isCoach) {
-          window.localStorage.removeItem(COACH_IMPERSONATE_KEY);
-          window.localStorage.removeItem(COACH_IMPERSONATE_EMAIL_KEY);
-          impersonateUserId = null;
+        if (userId) {
+          const { data: coachFlag, error: coachErr } = await supabase.rpc('is_coach');
+          isCoach = !coachErr && Boolean(coachFlag);
         }
-      }
 
-      setState({ isCoach, userId, email, impersonateUserId, ready: true });
+        let impersonateUserId: string | null = null;
+        if (typeof window !== 'undefined') {
+          impersonateUserId = sanitizeImpersonation(window.localStorage.getItem(COACH_IMPERSONATE_KEY));
+          if (!impersonateUserId) window.localStorage.removeItem(COACH_IMPERSONATE_KEY);
+          if (!isCoach) {
+            window.localStorage.removeItem(COACH_IMPERSONATE_KEY);
+            window.localStorage.removeItem(COACH_IMPERSONATE_EMAIL_KEY);
+            impersonateUserId = null;
+          }
+        }
+
+        setState({ isCoach, userId, email, impersonateUserId, ready: true });
+      } catch {
+        setState({
+          isCoach: false,
+          userId: null,
+          email: null,
+          impersonateUserId: null,
+          ready: true,
+        });
+      }
     });
 
     return () => {
