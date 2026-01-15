@@ -8,6 +8,17 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 
+// Redirect helper using Supabase RPC (DB-driven coach allowlist)
+// Uses auth context (JWT) so no email parsing is needed.
+const redirectAfterLogin = async (
+  supabase: any,
+  router: { push: (path: string) => void }
+) => {
+  const { data, error } = await supabase.rpc('is_coach');
+  const isCoach = !error && data === true;
+  router.push(isCoach ? '/coach' : '/dashboard');
+};
+
 export const dynamic = 'force-dynamic';
 
 export default function LoginPage() {
@@ -25,7 +36,7 @@ export default function LoginPage() {
         data: { session },
       } = await supabase.auth.getSession();
       if (session) {
-        router.push(isCoachEmail(session.user.email) ? '/coach' : '/workout/start');
+        await redirectAfterLogin(supabase, router);
       }
     };
     checkAuth();
@@ -50,7 +61,7 @@ export default function LoginPage() {
             id: data.user.id,
           });
           // signUp returns the created user; use it (or fallback to entered email)
-          router.push(isCoachEmail(data.user.email ?? email) ? '/coach' : '/workout/start');
+          await redirectAfterLogin(supabase, router);
         }
       } else {
         const { data, error } = await supabase.auth.signInWithPassword({
@@ -61,7 +72,7 @@ export default function LoginPage() {
         if (error) throw error;
         // signIn returns session/user depending on settings; fall back to entered email
         const signedInEmail = data.user?.email ?? data.session?.user.email ?? email;
-        router.push(isCoachEmail(signedInEmail) ? '/coach' : '/workout/start');
+        await redirectAfterLogin(supabase, router);
       }
     } catch (err: any) {
       setError(err.message);
