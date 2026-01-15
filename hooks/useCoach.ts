@@ -4,6 +4,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { COACH_IMPERSONATE_EMAIL_KEY, COACH_IMPERSONATE_KEY } from '@/lib/coach';
 
+// In some TS build setups, the inferred return type from supabase-js methods
+// can degrade to `unknown`, which makes destructuring `{ data, error }` fail
+// compilation. We use small local structural typings to keep builds stable
+// without changing runtime behavior.
+type UserGetResponse = { data: { user: { id: string; email?: string | null } | null }; error: unknown | null };
+type RpcBoolResponse = { data: boolean | null; error: unknown | null };
+
 type CoachState = {
   isCoach: boolean;
   userId: string | null;
@@ -51,7 +58,9 @@ export function useCoach() {
 
     const load = async () => {
       try {
-        const { data: { user }, error: userErr } = await withTimeout(supabase.auth.getUser(), 7000);
+        const userRes = (await withTimeout(supabase.auth.getUser(), 7000)) as unknown as UserGetResponse;
+        const user = userRes.data.user;
+        const userErr = userRes.error;
         // If the client is misconfigured (missing env vars) or network fails,
         // ensure we still mark the hook as ready to avoid infinite "Loading..." screens.
         if (userErr) {
@@ -79,8 +88,8 @@ export function useCoach() {
         let isCoach = false;
 
         if (userId) {
-          const { data: coachFlag, error: coachErr } = await withTimeout(supabase.rpc('is_coach'), 7000);
-          isCoach = !coachErr && Boolean(coachFlag);
+          const coachRes = (await withTimeout(supabase.rpc('is_coach'), 7000)) as unknown as RpcBoolResponse;
+          isCoach = !coachRes.error && Boolean(coachRes.data);
         }
 
         // If not coach, ensure impersonation is cleared.
@@ -116,8 +125,8 @@ export function useCoach() {
         let isCoach = false;
 
         if (userId) {
-          const { data: coachFlag, error: coachErr } = await withTimeout(supabase.rpc('is_coach'), 7000);
-          isCoach = !coachErr && Boolean(coachFlag);
+          const coachRes = (await withTimeout(supabase.rpc('is_coach'), 7000)) as unknown as RpcBoolResponse;
+          isCoach = !coachRes.error && Boolean(coachRes.data);
         }
 
         let impersonateUserId: string | null = null;
