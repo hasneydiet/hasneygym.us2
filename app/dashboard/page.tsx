@@ -11,7 +11,18 @@ import { cacheGet, cacheSet } from '@/lib/perfCache';
 import { startWorkoutForDay } from '@/lib/startWorkout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Play, History, Dumbbell, Calendar } from 'lucide-react';
+import { History } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,10 +44,46 @@ type LastWorkout = {
   dayName: string | null;
 };
 
+type ProfileGoal = 'maintenance' | 'recomposition' | 'cut' | 'bulking';
+
+type UserProfile = {
+  id: string;
+  full_name: string | null;
+  goal: ProfileGoal | null;
+  goal_start: string | null; // YYYY-MM-DD
+  goal_end: string | null; // YYYY-MM-DD
+  avatar_url: string | null;
+};
+
 function formatDateTime(iso: string) {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
   return d.toLocaleString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+function addMonthsISO(dateISO: string, months: number) {
+  const d = new Date(dateISO + 'T00:00:00');
+  if (Number.isNaN(d.getTime())) return '';
+  const day = d.getDate();
+  d.setMonth(d.getMonth() + months);
+  // Handle month rollover (e.g., Jan 31 + 1 month)
+  if (d.getDate() !== day) d.setDate(0);
+  return d.toISOString().slice(0, 10);
+}
+
+function goalLabel(goal: ProfileGoal) {
+  switch (goal) {
+    case 'maintenance':
+      return 'Maintenance';
+    case 'recomposition':
+      return 'Recomposition';
+    case 'cut':
+      return 'Cut';
+    case 'bulking':
+      return 'Bulking';
+    default:
+      return goal;
+  }
 }
 
 async function getAuthedUser() {
@@ -63,8 +110,19 @@ export default function DashboardPage() {
   const [lastWorkout, setLastWorkout] = useState<LastWorkout | null>(null);
   const [starting, setStarting] = useState(false);
 
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [editingProfile, setEditingProfile] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
+
+  const [draftName, setDraftName] = useState('');
+  const [draftGoal, setDraftGoal] = useState<ProfileGoal | 'none'>('none');
+  const [draftStart, setDraftStart] = useState('');
+  const [draftEnd, setDraftEnd] = useState('');
+  const [draftAvatarUrl, setDraftAvatarUrl] = useState<string | null>(null);
+  const [draftAvatarFile, setDraftAvatarFile] = useState<File | null>(null);
+
   const cacheKey = useMemo(() => {
-    return effectiveUserId ? `dashboard:${effectiveUserId}:v1` : null;
+    return effectiveUserId ? `dashboard:${effectiveUserId}:v2` : null;
   }, [effectiveUserId]);
 
   useEffect(() => {
@@ -81,6 +139,26 @@ export default function DashboardPage() {
           return;
         }
         const uid = effectiveUserId ?? user.id;
+
+        // 0) Load profile for dashboard card.
+        const { data: profRow, error: profErr } = await supabase
+          .from('profiles')
+          .select('id, full_name, goal, goal_start, goal_end, avatar_url')
+          .eq('id', uid)
+          .maybeSingle();
+
+        if (profErr) throw profErr;
+
+        const prof: UserProfile | null = profRow
+          ? {
+              id: (profRow as any).id,
+              full_name: (profRow as any).full_name ?? null,
+              goal: ((profRow as any).goal as ProfileGoal | null) ?? null,
+              goal_start: (profRow as any).goal_start ?? null,
+              goal_end: (profRow as any).goal_end ?? null,
+              avatar_url: (profRow as any).avatar_url ?? null,
+            }
+          : null;
 
         // 1) Load ordered routine days (lightweight) so we can suggest the next workout.
         const { data: dayRows, error: daysErr } = await supabase
@@ -128,13 +206,15 @@ export default function DashboardPage() {
         if (!mounted) return;
         setDays(baseDays);
         setLastWorkout(last);
-        if (cacheKey) cacheSet(cacheKey, { days: baseDays, lastWorkout: last }, 60 * 1000);
+        setProfile(prof);
+        if (cacheKey) cacheSet(cacheKey, { days: baseDays, lastWorkout: last, profile: prof }, 60 * 1000);
       } catch (e: any) {
         console.error(e);
         if (!mounted) return;
         setError(e?.message || 'Failed to load dashboard.');
         setDays([]);
         setLastWorkout(null);
+        setProfile(null);
       } finally {
         if (mounted) setLoading(false);
       }
@@ -142,10 +222,11 @@ export default function DashboardPage() {
 
     // Fast path: show cached data immediately, then revalidate.
     if (cacheKey) {
-      const cached = cacheGet<{ days: DashboardDay[]; lastWorkout: LastWorkout | null }>(cacheKey);
+      const cached = cacheGet<{ days: DashboardDay[]; lastWorkout: LastWorkout | null; profile: UserProfile | null }>(cacheKey);
       if (cached && cached.days) {
         setDays(cached.days || []);
         setLastWorkout(cached.lastWorkout ?? null);
+        setProfile(cached.profile ?? null);
         setLoading(false);
         setTimeout(() => mounted && load(), 200);
       } else {
@@ -194,6 +275,88 @@ export default function DashboardPage() {
     }
   };
 
+  const openProfileEditor = () => {
+    const p = profile;
+    setDraftName(p?.full_name ?? '');
+    setDraftGoal((p?.goal ?? 'none') as any);
+    setDraftStart(p?.goal_start ?? '');
+    setDraftEnd(p?.goal_end ?? (p?.goal_start ? addMonthsISO(p.goal_start, 3) : ''));
+    setDraftAvatarUrl(p?.avatar_url ?? null);
+    setDraftAvatarFile(null);
+    setEditingProfile(true);
+  };
+
+  const onDraftStartChange = (v: string) => {
+    setDraftStart(v);
+    if (v) setDraftEnd(addMonthsISO(v, 3));
+    else setDraftEnd('');
+  };
+
+  const saveProfile = async () => {
+    try {
+      setSavingProfile(true);
+      setError(null);
+
+      const user = await getAuthedUser();
+      if (!user) {
+        router.replace('/login');
+        return;
+      }
+      const uid = effectiveUserId ?? user.id;
+
+      let avatarUrlToSave: string | null = draftAvatarUrl;
+      if (draftAvatarFile) {
+        const ext = (draftAvatarFile.name.split('.').pop() || 'png').toLowerCase();
+        const path = `${uid}/badge-${Date.now()}.${ext}`;
+
+        const { error: upErr } = await supabase.storage
+          .from('avatars')
+          .upload(path, draftAvatarFile, { upsert: true, contentType: draftAvatarFile.type || 'image/png' });
+
+        if (upErr) throw upErr;
+
+        const { data: pub } = supabase.storage.from('avatars').getPublicUrl(path);
+        avatarUrlToSave = pub?.publicUrl ?? null;
+      }
+
+      const goalToSave: ProfileGoal | null = draftGoal === 'none' ? null : (draftGoal as ProfileGoal);
+
+      const payload: any = {
+        full_name: draftName.trim() || null,
+        goal: goalToSave,
+        goal_start: draftStart || null,
+        goal_end: draftEnd || null,
+        avatar_url: avatarUrlToSave,
+      };
+
+      const { data: updated, error: updErr } = await supabase
+        .from('profiles')
+        .update(payload)
+        .eq('id', uid)
+        .select('id, full_name, goal, goal_start, goal_end, avatar_url')
+        .maybeSingle();
+
+      if (updErr) throw updErr;
+
+      const newProfile: UserProfile = {
+        id: (updated as any)?.id || uid,
+        full_name: (updated as any)?.full_name ?? null,
+        goal: ((updated as any)?.goal as ProfileGoal | null) ?? null,
+        goal_start: (updated as any)?.goal_start ?? null,
+        goal_end: (updated as any)?.goal_end ?? null,
+        avatar_url: (updated as any)?.avatar_url ?? null,
+      };
+
+      setProfile(newProfile);
+      setEditingProfile(false);
+    } catch (e: any) {
+      console.error(e);
+      setError(e?.message || 'Failed to save profile.');
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
   return (
     <AuthGuard>
       <div className="app-shell pb-24">
@@ -202,6 +365,53 @@ export default function DashboardPage() {
         <div className="page max-w-3xl">
           <h1 className="page-title mb-2">Dashboard</h1>
           <p className="page-subtitle mb-6">Your last workout and the next suggested day.</p>
+
+          <Card className="shadow-lg shadow-black/5">
+            <CardContent className="p-6">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <h2 className="text-lg font-semibold tracking-tight mb-2">Profile</h2>
+                  <div className="space-y-1 text-sm">
+                    <div>
+                      <span className="text-muted-foreground">Name: </span>
+                      <span className="font-medium">{profile?.full_name || 'Not set'}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Goal: </span>
+                      <span className="font-medium">{profile?.goal ? goalLabel(profile.goal) : 'Not set'}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Start: </span>
+                      <span className="font-medium">{profile?.goal_start || 'Not set'}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">End: </span>
+                      <span className="font-medium">{profile?.goal_end || 'Not set'}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="shrink-0">
+                  {profile?.avatar_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={profile.avatar_url}
+                      alt="Badge"
+                      className="h-16 w-16 rounded-full object-cover border border-border"
+                    />
+                  ) : (
+                    <div className="h-16 w-16 rounded-full border border-border bg-muted flex items-center justify-center text-muted-foreground text-sm">
+                      Badge
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <Button variant="outline" className="mt-4 w-full h-11" onClick={openProfileEditor}>
+                Edit
+              </Button>
+            </CardContent>
+          </Card>
 
           {error && (
             <div className="mb-4 rounded-2xl border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-destructive" role="alert">
@@ -260,21 +470,74 @@ export default function DashboardPage() {
                   </Button>
                 </div>
               </div>
-
-              <div className="grid grid-cols-3 gap-3">
-                <Button variant="outline" onClick={() => router.push('/workout/start')} className="h-12">
-                  <Play className="w-4 h-4 mr-2" /> Workout
-                </Button>
-                <Button variant="outline" onClick={() => router.push('/exercises')} className="h-12">
-                  <Dumbbell className="w-4 h-4 mr-2" /> Exercises
-                </Button>
-                <Button variant="outline" onClick={() => router.push('/routines')} className="h-12">
-                  <Calendar className="w-4 h-4 mr-2" /> Routines
-                </Button>
-              </div>
             </div>
           )}
         </div>
+
+        <Dialog open={editingProfile} onOpenChange={setEditingProfile}>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Edit profile</DialogTitle>
+              <DialogDescription>Update your badge and goal details.</DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Badge picture</Label>
+                <Input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0] || null;
+                    setDraftAvatarFile(f);
+                    if (f) setDraftAvatarUrl(URL.createObjectURL(f));
+                  }}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="full_name">Name</Label>
+                <Input id="full_name" value={draftName} onChange={(e) => setDraftName(e.target.value)} placeholder="Your name" />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Goal</Label>
+                <Select value={draftGoal} onValueChange={(v) => setDraftGoal(v as any)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select goal" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Not set</SelectItem>
+                    <SelectItem value="maintenance">Maintenance</SelectItem>
+                    <SelectItem value="recomposition">Recomposition</SelectItem>
+                    <SelectItem value="cut">Cut</SelectItem>
+                    <SelectItem value="bulking">Bulking</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label htmlFor="goal_start">Start date</Label>
+                  <Input id="goal_start" type="date" value={draftStart} onChange={(e) => onDraftStartChange(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="goal_end">End date</Label>
+                  <Input id="goal_end" type="date" value={draftEnd} readOnly />
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setEditingProfile(false)} disabled={savingProfile}>
+                Cancel
+              </Button>
+              <Button onClick={saveProfile} disabled={savingProfile}>
+                {savingProfile ? 'Saving…' : 'Done'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </AuthGuard>
   );
