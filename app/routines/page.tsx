@@ -69,7 +69,7 @@ export default function RoutinesPage() {
     if (isCoach && !impersonateUserId) {
       const { data, error } = await supabase
         .from('routines')
-        .select('id,name,notes,created_at,created_by')
+        .select('id,name,notes,created_at,user_id,created_by')
         .order('created_at', { ascending: false });
 
       if (!error && data) {
@@ -92,8 +92,8 @@ export default function RoutinesPage() {
     // Everyone else (including coach while impersonating): user-scoped routines.
     const { data, error } = await supabase
       .from('routines')
-      .select('id,name,notes,created_at,created_by')
-      .eq('created_by', uid)
+      .select('id,name,notes,created_at,user_id,created_by')
+      .eq('user_id', uid)
       .order('created_at', { ascending: false });
 
     if (!error && data) {
@@ -117,7 +117,7 @@ export default function RoutinesPage() {
 
     const { data, error } = await supabase
       .from('routines')
-      .insert({ ...formData, created_by: uid })
+      .insert({ ...formData, user_id: uid })
       .select()
       .single();
 

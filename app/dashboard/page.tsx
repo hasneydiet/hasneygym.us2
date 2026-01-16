@@ -140,15 +140,33 @@ export default function DashboardPage() {
         }
         const uid = effectiveUserId ?? user.id;
 
-        // 0) Load profile for dashboard card.
-        const { data: profRow, error: profErr } = await supabase
-          .from('profiles')
-          .select('id, full_name, goal, goal_start, goal_end, avatar_url')
-          .eq('id', uid)
-          .maybeSingle();
+        // Parallelize independent dashboard queries to reduce first-load latency on mobile.
+        const [profRes, daysRes, lastRes] = await Promise.all([
+          supabase
+            .from('profiles')
+            .select('id, full_name, goal, goal_start, goal_end, avatar_url')
+            .eq('id', uid)
+            .maybeSingle(),
+          supabase
+            .from('routine_days')
+            .select('id, routine_id, day_index, name, created_at, routines!inner(name, user_id)')
+            .eq('routines.user_id', uid)
+            .order('day_index', { ascending: true })
+            .order('created_at', { ascending: true }),
+          supabase
+            .from('workout_sessions')
+            .select('id, started_at, routine_day_id, routine_id, routines(name), routine_days(name)')
+            .eq('user_id', uid)
+            .order('started_at', { ascending: false })
+            .limit(1)
+            .maybeSingle(),
+        ]);
 
-        if (profErr) throw profErr;
+        if (profRes.error) throw profRes.error;
+        if (daysRes.error) throw daysRes.error;
+        if (lastRes.error) throw lastRes.error;
 
+        const profRow = profRes.data;
         const prof: UserProfile | null = profRow
           ? {
               id: (profRow as any).id,
@@ -160,16 +178,7 @@ export default function DashboardPage() {
             }
           : null;
 
-        // 1) Load ordered routine days (lightweight) so we can suggest the next workout.
-        const { data: dayRows, error: daysErr } = await supabase
-          .from('routine_days')
-          .select('id, routine_id, day_index, name, created_at, routines!inner(name, user_id)')
-          .eq('routines.user_id', uid)
-          .order('day_index', { ascending: true })
-          .order('created_at', { ascending: true });
-
-        if (daysErr) throw daysErr;
-
+        const dayRows = daysRes.data;
         const baseDays = sortRoutineDays(
           (dayRows || []).map((r: any) => ({
             id: r.id,
@@ -181,16 +190,7 @@ export default function DashboardPage() {
           }))
         ) as DashboardDay[];
 
-        // 2) Load last workout (single row) to show history + determine next day.
-        const { data: lastRow, error: lastErr } = await supabase
-          .from('workout_sessions')
-          .select('id, started_at, routine_day_id, routine_id, routines(name), routine_days(name)')
-          .eq('user_id', uid)
-          .order('started_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        if (lastErr) throw lastErr;
+        const lastRow = lastRes.data;
 
         const last: LastWorkout | null = lastRow
           ? {

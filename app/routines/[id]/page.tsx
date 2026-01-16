@@ -101,7 +101,8 @@ export default function RoutineEditorPage() {
       `
       )
       .eq('id', routineId)
-      .eq('created_by', uid)
+      // Production schema uses user_id; keep user-scoped fetch.
+      .eq('user_id', uid)
       .single();
 
     if (!routineRow) return;
