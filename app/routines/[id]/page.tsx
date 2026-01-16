@@ -34,35 +34,37 @@ export default function RoutineEditorPage() {
   const [exerciseEquipmentFilter, setExerciseEquipmentFilter] = useState<string>('all');
   const [exerciseNameFilter, setExerciseNameFilter] = useState<string>('');
 
-  const muscleIcon = (group?: string | null) => {
-    const g = (group || '').toLowerCase();
-    if (g.includes('chest')) return '🫁';
-    if (g.includes('back') || g.includes('lat')) return '🦴';
-    if (g.includes('shoulder') || g.includes('delt')) return '🏋️';
-    if (g.includes('bicep')) return '💪';
-    if (g.includes('tricep')) return '💪';
-    if (g.includes('quad') || g.includes('hamstring') || g.includes('leg')) return '🦵';
-    if (g.includes('glute')) return '🍑';
-    if (g.includes('calf')) return '🦵';
-    if (g.includes('abs') || g.includes('core')) return '🧱';
-    return '🏷️';
-  };
-
   const muscleGroupOptions = useMemo(() => {
     const groups = exercises.map((e) => e.muscle_group).filter(Boolean);
     return ['all', ...Array.from(new Set(groups)).sort()];
   }, [exercises]);
 
+  const ALLOWED_EQUIPMENT = ['barbell','body weight','cable','dumbbell','kettlebell','machine','smith machine'] as const;
+  const normalizeEquipment = (v?: string | null) => {
+    if (!v) return null;
+    const s = String(v).trim().toLowerCase();
+    if (!s) return null;
+    if (s in {'bodyweight':1,'body-weight':1,'body_weight':1}) return 'body weight';
+    if (s in {'cables':1,'cable(s)':1}) return 'cable';
+    return s;
+  };
+
   const equipmentOptions = useMemo(() => {
-    const eq = exercises.map((e) => e.equipment).filter(Boolean);
-    return ['all', ...Array.from(new Set(eq)).sort()];
+    const seen = new Set<string>();
+    for (const e of exercises) {
+      const norm = normalizeEquipment((e as any).equipment);
+      if (!norm) continue;
+      if (ALLOWED_EQUIPMENT.includes(norm as any)) seen.add(norm);
+    }
+    return ['all', ...Array.from(seen).sort()];
   }, [exercises]);
 
   const filteredExercises = useMemo(() => {
     const q = exerciseNameFilter.trim().toLowerCase();
     return exercises.filter((e) => {
       if (exerciseMuscleGroupFilter !== 'all' && e.muscle_group !== exerciseMuscleGroupFilter) return false;
-      if (exerciseEquipmentFilter !== 'all' && e.equipment !== exerciseEquipmentFilter) return false;
+      const eqNorm = normalizeEquipment((e as any).equipment);
+      if (exerciseEquipmentFilter !== 'all' && eqNorm !== exerciseEquipmentFilter) return false;
       if (q && !e.name.toLowerCase().includes(q)) return false;
       return true;
     });
@@ -531,7 +533,7 @@ export default function RoutineEditorPage() {
                           >
                             {muscleGroupOptions.map((g) => (
                               <option key={g} value={g}>
-                                {g === 'all' ? 'All muscle groups' : `${muscleIcon(g)} ${g}`}
+                                {g === 'all' ? 'All muscle groups' : g}
                               </option>
                             ))}
                           </select>
@@ -564,7 +566,7 @@ export default function RoutineEditorPage() {
                         <option value="">Select Exercise</option>
                         {filteredExercises.map((ex) => (
                           <option key={ex.id} value={ex.id}>
-                            {muscleIcon(ex.muscle_group)} {ex.name}
+                            {ex.name}
                           </option>
                         ))}
                       </select>

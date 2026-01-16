@@ -124,51 +124,60 @@ export default function WorkoutStartPage() {
         // Build preview with ONE query
         const ids = baseDays.map((d) => d.id);
         if (ids.length > 0) {
-          const { data: exRows, error: exErr } = await supabase
-            .from('routine_day_exercises')
-            .select('routine_day_id, order_index, exercises(name)')
-            .in('routine_day_id', ids)
-            .order('routine_day_id', { ascending: true })
-            .order('order_index', { ascending: true });
+          // Run preview + last-performed queries in parallel for faster mobile loads
+          const [exRes, sessRes] = await Promise.all([
+            supabase
+              .from('routine_day_exercises')
+              .select('routine_day_id, order_index, exercises(name)')
+              .in('routine_day_id', ids)
+              .order('routine_day_id', { ascending: true })
+              .order('order_index', { ascending: true }),
+            supabase
+              .from('workout_sessions')
+              .select('routine_day_id, started_at')
+              .in('routine_day_id', ids)
+              .order('started_at', { ascending: false })
+              .limit(500),
+          ]);
 
+          const { data: exRows, error: exErr } = exRes as any;
           if (exErr) throw exErr;
+
+          const { data: sessRows, error: sessErr } = sessRes as any;
+          if (sessErr) throw sessErr;
 
           const byDay: Record<string, string[]> = {};
           for (const row of exRows || []) {
             const did = (row as any).routine_day_id as string;
             const nm = (row as any).exercises?.name as string | undefined;
             if (!did) continue;
-            if (!byDay[did]) byDay[did] = [];
+            (byDay[did] ||= []);
             if (nm) byDay[did].push(nm);
           }
-
-          for (const d of baseDays) {
-            const list = byDay[d.id] || [];
-            d.exerciseCount = list.length;
-            d.preview = list.length ? list.slice(0, 6).join(' • ') : 'No exercises added yet';
-          }
-
-          // Last performed date per day (use latest started_at)
-          const { data: sessRows, error: sessErr } = await supabase
-            .from('workout_sessions')
-            .select('routine_day_id, started_at')
-            .in('routine_day_id', ids)
-            .order('started_at', { ascending: false })
-            .limit(500);
-
-          if (sessErr) throw sessErr;
 
           const lastByDay: Record<string, string> = {};
           for (const s of sessRows || []) {
             const did = (s as any).routine_day_id as string | null;
             const started = (s as any).started_at as string | null;
             if (!did || !started) continue;
-            if (!lastByDay[did]) lastByDay[did] = started; // already newest due to order desc
+            if (!lastByDay[did]) lastByDay[did] = started; // newest first due to order desc
           }
 
-          for (const d of baseDays) {
-            d.lastPerformed = lastByDay[d.id] || null;
-          }
+          // IMPORTANT: create a NEW array/object references so React rerenders (avoid mutating baseDays)
+          const hydratedDays: RoutineDayCard[] = baseDays.map((d) => {
+            const list = byDay[d.id] || [];
+            return {
+              ...d,
+              exerciseCount: list.length,
+              preview: list.length ? list.slice(0, 6).join(' • ') : 'No exercises added yet',
+              lastPerformed: lastByDay[d.id] || null,
+            };
+          });
+
+          if (!mounted) return;
+          setDays(hydratedDays);
+          setLoading(false);
+          return;
         }
 
         if (!mounted) return;
