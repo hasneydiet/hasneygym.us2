@@ -10,7 +10,6 @@ import { sortRoutineDays } from '@/lib/routineDaySort';
 import { Button } from '@/components/ui/button';
 import { cacheGet, cacheSet } from '@/lib/perfCache';
 import { startWorkoutForDay } from '@/lib/startWorkout';
-import { startWorkoutForDay } from '@/lib/startWorkout';
 
 export const dynamic = 'force-dynamic';
 
