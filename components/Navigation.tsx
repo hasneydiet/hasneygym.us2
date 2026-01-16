@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Dumbbell, Calendar, History, LogOut, Sun, Moon, Play, Users } from 'lucide-react';
+import { Dumbbell, Calendar, History, LogOut, Sun, Moon, Play, Users, LayoutDashboard } from 'lucide-react';
 import { useTheme } from '@/lib/theme';
 import { useCoach } from '@/hooks/useCoach';
 import BrandLogo from '@/components/BrandLogo';
@@ -51,6 +51,7 @@ export default function Navigation() {
   const navItems = isCoach
     ? isImpersonating
       ? [
+          { href: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
           { href: '/workout/start', icon: Play, label: 'Workout' },
           { href: '/exercises', icon: Dumbbell, label: 'Exercises' },
           { href: '/routines', icon: Calendar, label: 'Routines' },
@@ -63,6 +64,7 @@ export default function Navigation() {
           { href: '/coach', icon: Users, label: 'Users' },
         ]
     : [
+        { href: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
         { href: '/workout/start', icon: Play, label: 'Workout' },
         { href: '/exercises', icon: Dumbbell, label: 'Exercises' },
         { href: '/routines', icon: Calendar, label: 'Routines' },
@@ -99,7 +101,8 @@ export default function Navigation() {
 
 
   const isActive = (href: string) => {
-    if (href === '/workout/start') return pathname === '/' || pathname.startsWith('/workout');
+    if (href === '/dashboard') return pathname === '/' || pathname.startsWith('/dashboard');
+    if (href === '/workout/start') return pathname.startsWith('/workout');
     return pathname === href || pathname.startsWith(href + '/');
   };
 
@@ -110,7 +113,7 @@ export default function Navigation() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-14 md:h-16">
             {/* Logo (no square background) */}
-            <BrandLogo href="/workout/start" iconSize={28} showTagline={true} taglineOnMobile={false} />
+            <BrandLogo href="/dashboard" iconSize={28} showTagline={true} taglineOnMobile={false} />
 
             {/* Desktop nav links ONLY */}
             <div className="hidden md:flex items-center gap-1 rounded-2xl border border-border/60 bg-card/60 p-1 backdrop-blur">

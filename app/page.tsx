@@ -29,7 +29,7 @@ export default function Home() {
         if (isCoach) {
           router.replace('/coach');
         } else {
-          router.replace('/workout/start');
+          router.replace('/dashboard');
         }
       } catch {
         // Fail-safe: route to login if anything unexpected happens.
