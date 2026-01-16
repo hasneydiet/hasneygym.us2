@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import AuthGuard from '@/components/AuthGuard';
 import Navigation from '@/components/Navigation';
@@ -28,6 +28,45 @@ export default function RoutineEditorPage() {
   const [showAddExercise, setShowAddExercise] = useState<string | null>(null);
   const [newDayName, setNewDayName] = useState('');
   const [selectedExerciseId, setSelectedExerciseId] = useState('');
+
+  // Add-exercise filters (improves mobile UX for large libraries)
+  const [exerciseMuscleGroupFilter, setExerciseMuscleGroupFilter] = useState<string>('all');
+  const [exerciseEquipmentFilter, setExerciseEquipmentFilter] = useState<string>('all');
+  const [exerciseNameFilter, setExerciseNameFilter] = useState<string>('');
+
+  const muscleIcon = (group?: string | null) => {
+    const g = (group || '').toLowerCase();
+    if (g.includes('chest')) return '🫁';
+    if (g.includes('back') || g.includes('lat')) return '🦴';
+    if (g.includes('shoulder') || g.includes('delt')) return '🏋️';
+    if (g.includes('bicep')) return '💪';
+    if (g.includes('tricep')) return '💪';
+    if (g.includes('quad') || g.includes('hamstring') || g.includes('leg')) return '🦵';
+    if (g.includes('glute')) return '🍑';
+    if (g.includes('calf')) return '🦵';
+    if (g.includes('abs') || g.includes('core')) return '🧱';
+    return '🏷️';
+  };
+
+  const muscleGroupOptions = useMemo(() => {
+    const groups = exercises.map((e) => e.muscle_group).filter(Boolean);
+    return ['all', ...Array.from(new Set(groups)).sort()];
+  }, [exercises]);
+
+  const equipmentOptions = useMemo(() => {
+    const eq = exercises.map((e) => e.equipment).filter(Boolean);
+    return ['all', ...Array.from(new Set(eq)).sort()];
+  }, [exercises]);
+
+  const filteredExercises = useMemo(() => {
+    const q = exerciseNameFilter.trim().toLowerCase();
+    return exercises.filter((e) => {
+      if (exerciseMuscleGroupFilter !== 'all' && e.muscle_group !== exerciseMuscleGroupFilter) return false;
+      if (exerciseEquipmentFilter !== 'all' && e.equipment !== exerciseEquipmentFilter) return false;
+      if (q && !e.name.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [exercises, exerciseMuscleGroupFilter, exerciseEquipmentFilter, exerciseNameFilter]);
 
   // Inline rename (minimal behavior change: updates existing fields only)
   const [isEditingRoutineName, setIsEditingRoutineName] = useState(false);
@@ -483,15 +522,49 @@ export default function RoutineEditorPage() {
 
                   {showAddExercise === day.id ? (
                     <div className="border-t border-border/60 pt-4">
+                      <div className="flex flex-col gap-2 mb-2">
+                        <div className="grid grid-cols-2 gap-2">
+                          <select
+                            value={exerciseMuscleGroupFilter}
+                            onChange={(e) => setExerciseMuscleGroupFilter(e.target.value)}
+                            className="w-full h-11 rounded-xl border border-input bg-background bg-opacity-70 backdrop-blur px-3 text-sm text-foreground"
+                          >
+                            {muscleGroupOptions.map((g) => (
+                              <option key={g} value={g}>
+                                {g === 'all' ? 'All muscle groups' : `${muscleIcon(g)} ${g}`}
+                              </option>
+                            ))}
+                          </select>
+
+                          <select
+                            value={exerciseEquipmentFilter}
+                            onChange={(e) => setExerciseEquipmentFilter(e.target.value)}
+                            className="w-full h-11 rounded-xl border border-input bg-background bg-opacity-70 backdrop-blur px-3 text-sm text-foreground"
+                          >
+                            {equipmentOptions.map((eq) => (
+                              <option key={eq} value={eq}>
+                                {eq === 'all' ? 'All equipment' : eq}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <Input
+                          value={exerciseNameFilter}
+                          onChange={(e) => setExerciseNameFilter(e.target.value)}
+                          placeholder="Search exercise name…"
+                        />
+                      </div>
+
                       <select
                         value={selectedExerciseId}
                         onChange={(e) => setSelectedExerciseId(e.target.value)}
                         className="w-full h-11 rounded-xl border border-input bg-background bg-opacity-70 backdrop-blur px-3 text-sm text-foreground mb-2"
                       >
                         <option value="">Select Exercise</option>
-                        {exercises.map((ex) => (
+                        {filteredExercises.map((ex) => (
                           <option key={ex.id} value={ex.id}>
-                            {ex.name}
+                            {muscleIcon(ex.muscle_group)} {ex.name}
                           </option>
                         ))}
                       </select>
