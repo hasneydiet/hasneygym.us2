@@ -329,12 +329,18 @@ export default function DashboardPage() {
         avatar_url: avatarUrlToSave,
       };
 
+      // Use upsert so saving works even if the profile row doesn't exist yet.
       const { data: updated, error: updErr } = await supabase
         .from('profiles')
-        .update(payload)
-        .eq('id', uid)
+        .upsert(
+          {
+            id: uid,
+            ...payload,
+          },
+          { onConflict: 'id' }
+        )
         .select('id, full_name, goal, goal_start, goal_end, avatar_url')
-        .maybeSingle();
+        .single();
 
       if (updErr) throw updErr;
 
@@ -348,6 +354,7 @@ export default function DashboardPage() {
       };
 
       setProfile(newProfile);
+      if (cacheKey) cacheSet(cacheKey, { days, lastWorkout, profile: newProfile }, 60 * 1000);
       setEditingProfile(false);
     } catch (e: any) {
       console.error(e);

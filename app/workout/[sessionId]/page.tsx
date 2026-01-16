@@ -386,7 +386,6 @@ const openTechnique = (key: string) => {
   }, [pendingFocusKey, sets]);
 
   const loadWorkout = async () => {
-    if (!effectiveUserId) return;
     const { data: sessionData } = await supabase
       .from('workout_sessions')
       .select('*, routines(name), routine_days(name)')
@@ -659,7 +658,7 @@ const openTechnique = (key: string) => {
     const currentSets = sets[exerciseId] || [];
     const lastSet = currentSets[currentSets.length - 1];
 
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('workout_sets')
       .insert({
         workout_exercise_id: exerciseId,
@@ -671,10 +670,26 @@ const openTechnique = (key: string) => {
       .select()
       .single();
 
+    if (error) {
+      console.error('Add set failed:', error);
+      alert(error.message || 'Failed to add set.');
+      return;
+    }
+
     if (data) {
+      // Optimistic UI update so the new set appears immediately on mobile even
+      // if the session/user context briefly flickers.
+      setSets((prev) => {
+        const next = { ...prev };
+        const list = next[exerciseId] ? [...next[exerciseId]] : [];
+        list.push(data as any);
+        next[exerciseId] = list;
+        return next;
+      });
+
       vibrate(15);
-      setHighlightSetId(data.id);
-      window.setTimeout(() => setHighlightSetId((prev) => (prev === data.id ? null : prev)), 700);
+      setHighlightSetId((data as any).id);
+      window.setTimeout(() => setHighlightSetId((prev) => (prev === (data as any).id ? null : prev)), 700);
       loadWorkout();
     }
   };
