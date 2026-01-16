@@ -1,5 +1,5 @@
 /*
-  # Workout Tracker Schema
+  # Workout Tracker Schema (Reference)
 
   1. New Tables
     - profiles (user profile data)
@@ -14,9 +14,10 @@
   2. Indexes
     - Performance indexes on foreign keys and common queries
 
-  3. Security
-    - RLS enabled on all tables
-    - Policies in separate rls.sql file
+  IMPORTANT
+    - This file is kept as a *reference* only.
+    - The source of truth for production is supabase/migrations/*.sql.
+    - If you provision a new project, run the migrations rather than applying this file directly.
 */
 
 CREATE TABLE IF NOT EXISTS profiles (
@@ -26,17 +27,21 @@ CREATE TABLE IF NOT EXISTS profiles (
 
 CREATE TABLE IF NOT EXISTS exercises (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  created_by uuid REFERENCES auth.users(id) ON DELETE SET NULL,
   name text NOT NULL,
   muscle_group text DEFAULT '',
+  muscle_section text DEFAULT '',
   equipment text DEFAULT '',
   notes text DEFAULT '',
+  rest_seconds integer NOT NULL DEFAULT 60,
+  default_technique_tags text[] NOT NULL DEFAULT '{}',
+  default_set_scheme jsonb NULL,
   created_at timestamptz DEFAULT now() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS routines (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  created_by uuid REFERENCES auth.users(id) ON DELETE SET NULL,
   name text NOT NULL,
   notes text DEFAULT '',
   created_at timestamptz DEFAULT now() NOT NULL
@@ -90,8 +95,8 @@ CREATE TABLE IF NOT EXISTS workout_sets (
   notes text DEFAULT ''
 );
 
-CREATE INDEX IF NOT EXISTS idx_exercises_user_id ON exercises(user_id);
-CREATE INDEX IF NOT EXISTS idx_routines_user_id ON routines(user_id);
+CREATE INDEX IF NOT EXISTS idx_exercises_created_by ON exercises(created_by);
+CREATE INDEX IF NOT EXISTS idx_routines_created_by ON routines(created_by);
 CREATE INDEX IF NOT EXISTS idx_routine_days_routine_id ON routine_days(routine_id);
 CREATE INDEX IF NOT EXISTS idx_routine_day_exercises_routine_day_id ON routine_day_exercises(routine_day_id);
 CREATE INDEX IF NOT EXISTS idx_workout_sessions_user_id ON workout_sessions(user_id);

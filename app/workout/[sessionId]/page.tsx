@@ -762,8 +762,10 @@ const openTechnique = (key: string) => {
     await supabase.from('workout_sets').delete().eq('id', setId);
 
     const remaining = (sets[exerciseId] || []).filter((s: any) => s.id !== setId);
-    for (let i = 0; i < remaining.length; i++) {
-      await supabase.from('workout_sets').update({ set_index: i }).eq('id', remaining[i].id);
+    // Re-index remaining sets in a single request (avoids sequential UPDATE loop).
+    const updates = remaining.map((s: any, i: number) => ({ id: s.id, set_index: i }));
+    if (updates.length) {
+      await supabase.from('workout_sets').upsert(updates, { onConflict: 'id' });
     }
 
     loadWorkout();

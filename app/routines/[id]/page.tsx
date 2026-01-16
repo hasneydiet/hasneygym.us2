@@ -85,59 +85,65 @@ export default function RoutineEditorPage() {
   const loadRoutine = async (uid: string) => {
     if (!uid) return;
 
-    const { data: routineData } = await supabase
+    // Fetch routine + days + day exercises in a single request to avoid N+1 queries.
+    const { data: routineRow } = await supabase
       .from('routines')
-      .select('*')
+      .select(
+        `
+        *,
+        routine_days(
+          *,
+          routine_day_exercises(
+            *,
+            exercises(*)
+          )
+        )
+      `
+      )
       .eq('id', routineId)
-      .eq('user_id', uid)
+      .eq('created_by', uid)
       .single();
 
-    if (routineData) {
-      setRoutine(routineData);
-      setRoutineNameDraft(routineData.name || '');
+    if (!routineRow) return;
 
-      const { data: daysData } = await supabase
-        .from('routine_days')
-        .select('*')
-        .eq('routine_id', routineId)
-        .order('day_index');
+    setRoutine(routineRow as any);
+    setRoutineNameDraft((routineRow as any).name || '');
 
-      if (daysData) {
-        setDays(daysData);
+    const daysData: RoutineDay[] = Array.isArray((routineRow as any).routine_days)
+      ? [...(routineRow as any).routine_days]
+      : [];
+    daysData.sort((a, b) => (a.day_index ?? 0) - (b.day_index ?? 0));
+    setDays(daysData);
 
-        // initialize day name drafts (keeps inputs stable)
-        const drafts: Record<string, string> = {};
-        for (const d of daysData) drafts[d.id] = d.name || '';
-        setDayNameDraft(drafts);
+    // initialize day name drafts (keeps inputs stable)
+    const drafts: Record<string, string> = {};
+    for (const d of daysData) drafts[d.id] = d.name || '';
+    setDayNameDraft(drafts);
 
-        // Keep drafts in sync (without stomping active edits)
-        setDayNameDraft((prev) => {
-          const next = { ...prev };
-          for (const d of daysData) {
-            if (typeof next[d.id] !== 'string') next[d.id] = d.name || '';
-          }
-          return next;
-        });
-
-        const exMap: { [dayId: string]: RoutineDayExercise[] } = {};
-        for (const day of daysData) {
-          const { data: exData } = await supabase
-            .from('routine_day_exercises')
-            .select('*, exercises(*)')
-            .eq('routine_day_id', day.id)
-            .order('order_index');
-
-          exMap[day.id] = exData || [];
-        }
-        setDayExercises(exMap);
+    // Keep drafts in sync (without stomping active edits)
+    setDayNameDraft((prev) => {
+      const next = { ...prev };
+      for (const d of daysData) {
+        if (typeof next[d.id] !== 'string') next[d.id] = d.name || '';
       }
+      return next;
+    });
+
+    const exMap: { [dayId: string]: RoutineDayExercise[] } = {};
+    for (const day of daysData as any[]) {
+      const list: RoutineDayExercise[] = Array.isArray(day.routine_day_exercises)
+        ? [...day.routine_day_exercises]
+        : [];
+      list.sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
+      exMap[day.id] = list;
     }
+    setDayExercises(exMap);
   };
 
   const loadExercises = async () => {
     const { data } = await supabase
       .from('exercises')
-      .select('*')
+      .select('id,created_by,name,muscle_group,muscle_section,equipment,notes,created_at,rest_seconds,default_technique_tags,default_set_scheme')
       .order('name');
 
     if (data) setExercises(data);
@@ -275,12 +281,11 @@ export default function RoutineEditorPage() {
     const newIdx = direction === 'up' ? idx - 1 : idx + 1;
     [exs[idx], exs[newIdx]] = [exs[newIdx], exs[idx]];
 
-    for (let i = 0; i < exs.length; i++) {
-      await supabase
-        .from('routine_day_exercises')
-        .update({ order_index: i })
-        .eq('id', exs[i].id);
-    }
+    // Batch update order indexes in one request (avoids sequential UPDATE loop).
+    const updates = exs.map((e, i) => ({ id: e.id, order_index: i }));
+    await supabase
+      .from('routine_day_exercises')
+      .upsert(updates, { onConflict: 'id' });
 
     if (effectiveUserId) loadRoutine(effectiveUserId);
   };
