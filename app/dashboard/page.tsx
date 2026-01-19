@@ -52,6 +52,8 @@ type UserProfile = {
   goal: ProfileGoal | null;
   goal_start: string | null; // YYYY-MM-DD
   goal_end: string | null; // YYYY-MM-DD
+  weight_lbs: number | null;
+  body_fat_percent: number | null;
   avatar_url: string | null;
 };
 
@@ -118,6 +120,8 @@ export default function DashboardPage() {
   const [draftGoal, setDraftGoal] = useState<ProfileGoal | 'none'>('none');
   const [draftStart, setDraftStart] = useState('');
   const [draftEnd, setDraftEnd] = useState('');
+  const [draftWeight, setDraftWeight] = useState('');
+  const [draftBodyFat, setDraftBodyFat] = useState('');
   const [draftAvatarUrl, setDraftAvatarUrl] = useState<string | null>(null);
   const [draftAvatarFile, setDraftAvatarFile] = useState<File | null>(null);
 
@@ -144,7 +148,7 @@ export default function DashboardPage() {
         const [profRes, daysRes, lastRes] = await Promise.all([
           supabase
             .from('profiles')
-            .select('id, full_name, goal, goal_start, goal_end, avatar_url')
+            .select('id, full_name, goal, goal_start, goal_end, weight_lbs, body_fat_percent, avatar_url')
             .eq('id', uid)
             .maybeSingle(),
           supabase
@@ -174,6 +178,8 @@ export default function DashboardPage() {
               goal: ((profRow as any).goal as ProfileGoal | null) ?? null,
               goal_start: (profRow as any).goal_start ?? null,
               goal_end: (profRow as any).goal_end ?? null,
+              weight_lbs: (profRow as any).weight_lbs ?? null,
+              body_fat_percent: (profRow as any).body_fat_percent ?? null,
               avatar_url: (profRow as any).avatar_url ?? null,
             }
           : null;
@@ -207,7 +213,8 @@ export default function DashboardPage() {
         setDays(baseDays);
         setLastWorkout(last);
         setProfile(prof);
-        if (cacheKey) cacheSet(cacheKey, { days: baseDays, lastWorkout: last, profile: prof }, 60 * 1000);
+        // Cache for a few minutes so reopening the app doesn't feel slow on mobile.
+        if (cacheKey) cacheSet(cacheKey, { days: baseDays, lastWorkout: last, profile: prof }, 5 * 60 * 1000);
       } catch (e: any) {
         console.error(e);
         if (!mounted) return;
@@ -281,7 +288,9 @@ export default function DashboardPage() {
     setDraftGoal((p?.goal ?? 'none') as any);
     setDraftStart(p?.goal_start ?? '');
     setDraftEnd(p?.goal_end ?? (p?.goal_start ? addMonthsISO(p.goal_start, 3) : ''));
-    setDraftAvatarUrl(p?.avatar_url ?? null);
+        setDraftWeight(p?.weight_lbs != null ? String(p.weight_lbs) : '');
+        setDraftBodyFat(p?.body_fat_percent != null ? String(p.body_fat_percent) : '');
+        setDraftAvatarUrl(p?.avatar_url ?? null);
     setDraftAvatarFile(null);
     setEditingProfile(true);
   };
@@ -326,6 +335,8 @@ export default function DashboardPage() {
         goal: goalToSave,
         goal_start: draftStart || null,
         goal_end: draftEnd || null,
+        weight_lbs: draftWeight.trim() ? Number(draftWeight) : null,
+        body_fat_percent: draftBodyFat.trim() ? Number(draftBodyFat) : null,
         avatar_url: avatarUrlToSave,
       };
 
@@ -339,7 +350,7 @@ export default function DashboardPage() {
           },
           { onConflict: 'id' }
         )
-        .select('id, full_name, goal, goal_start, goal_end, avatar_url')
+        .select('id, full_name, goal, goal_start, goal_end, weight_lbs, body_fat_percent, avatar_url')
         .single();
 
       if (updErr) throw updErr;
@@ -350,11 +361,13 @@ export default function DashboardPage() {
         goal: ((updated as any)?.goal as ProfileGoal | null) ?? null,
         goal_start: (updated as any)?.goal_start ?? null,
         goal_end: (updated as any)?.goal_end ?? null,
+        weight_lbs: (updated as any)?.weight_lbs ?? null,
+        body_fat_percent: (updated as any)?.body_fat_percent ?? null,
         avatar_url: (updated as any)?.avatar_url ?? null,
       };
 
       setProfile(newProfile);
-      if (cacheKey) cacheSet(cacheKey, { days, lastWorkout, profile: newProfile }, 60 * 1000);
+      if (cacheKey) cacheSet(cacheKey, { days, lastWorkout, profile: newProfile }, 5 * 60 * 1000);
       setEditingProfile(false);
     } catch (e: any) {
       console.error(e);
@@ -394,6 +407,14 @@ export default function DashboardPage() {
                     <div>
                       <span className="text-muted-foreground">End: </span>
                       <span className="font-medium">{profile?.goal_end || 'Not set'}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Weight: </span>
+                      <span className="font-medium">{profile?.weight_lbs != null ? `${profile.weight_lbs} lb` : 'Not set'}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Body fat: </span>
+                      <span className="font-medium">{profile?.body_fat_percent != null ? `${profile.body_fat_percent}%` : 'Not set'}</span>
                     </div>
                   </div>
                 </div>
@@ -531,6 +552,29 @@ export default function DashboardPage() {
                 <div className="space-y-2">
                   <Label htmlFor="goal_end">End date</Label>
                   <Input id="goal_end" type="date" value={draftEnd} readOnly />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label htmlFor="weight_lbs">Weight (lb)</Label>
+                  <Input
+                    id="weight_lbs"
+                    inputMode="decimal"
+                    value={draftWeight}
+                    onChange={(e) => setDraftWeight(e.target.value)}
+                    placeholder="e.g. 219"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="body_fat_percent">Body fat (%)</Label>
+                  <Input
+                    id="body_fat_percent"
+                    inputMode="decimal"
+                    value={draftBodyFat}
+                    onChange={(e) => setDraftBodyFat(e.target.value)}
+                    placeholder="e.g. 12.5"
+                  />
                 </div>
               </div>
             </div>

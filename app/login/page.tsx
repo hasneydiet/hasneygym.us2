@@ -61,9 +61,13 @@ export default function LoginPage() {
         if (error) throw error;
 
         if (data.user) {
-          await supabase.from('profiles').insert({
-            id: data.user.id,
-          });
+          // Best-effort: profile row may be blocked if email confirmation is enabled.
+          // Dashboard uses an upsert so profile data can still be created on first save.
+          try {
+            await supabase.from('profiles').insert({ id: data.user.id });
+          } catch {
+            // ignore
+          }
           // signUp returns the created user; use it (or fallback to entered email)
           await redirectAfterLogin(supabase, router);
         }
