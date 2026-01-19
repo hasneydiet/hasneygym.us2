@@ -8,7 +8,7 @@ import { useCoach } from '@/hooks/useCoach';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Plus, Clock } from 'lucide-react';
+import { Plus, Clock, Trash2, GripVertical } from 'lucide-react';
 type WorkoutSession = any;
 type WorkoutExercise = any;
 type WorkoutSet = any;
@@ -152,6 +152,185 @@ const openTechnique = (key: string) => {
   // Input focus map for fast logging (mobile + keyboard)
   const inputRefs = useRef<Map<string, HTMLInputElement>>(new Map());
   const [pendingFocusKey, setPendingFocusKey] = useState<string | null>(null);
+
+  // Session-only exercise reorder (mobile-friendly pointer drag)
+  const exerciseNodeRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const [draggingExerciseId, setDraggingExerciseId] = useState<string | null>(null);
+  const dragPointerYRef = useRef<number>(0);
+  const dragStartYRef = useRef<number>(0);
+  const dragStartIndexRef = useRef<number>(-1);
+  const dragOffsetYRef = useRef<number>(0);
+  const [dragOverIndex, setDragOverIndex] = useState<number>(-1);
+  const [dragTranslateY, setDragTranslateY] = useState<number>(0);
+  const dragRafRef = useRef<number | null>(null);
+  const [isPersistingOrder, setIsPersistingOrder] = useState(false);
+  const exercisesRef = useRef<WorkoutExercise[]>([]);
+
+  useEffect(() => {
+    exercisesRef.current = exercises;
+  }, [exercises]);
+
+  const arrayMove = <T,>(arr: T[], from: number, to: number) => {
+    const next = arr.slice();
+    const [item] = next.splice(from, 1);
+    next.splice(to, 0, item);
+    return next;
+  };
+
+  const persistExerciseOrder = async (ordered: WorkoutExercise[]) => {
+    // Keep order stable for this session only via workout_exercises.order_index.
+    // Avoid uniqueness conflicts by writing a temporary index space first.
+    if (isPersistingOrder) return;
+    setIsPersistingOrder(true);
+    try {
+      for (let i = 0; i < ordered.length; i++) {
+        const id = (ordered[i] as any)?.id;
+        if (!id) continue;
+        await supabase.from('workout_exercises').update({ order_index: 1000 + i }).eq('id', id);
+      }
+      for (let i = 0; i < ordered.length; i++) {
+        const id = (ordered[i] as any)?.id;
+        if (!id) continue;
+        await supabase.from('workout_exercises').update({ order_index: i }).eq('id', id);
+      }
+    } finally {
+      setIsPersistingOrder(false);
+    }
+  };
+
+  const startExerciseDrag = (exerciseId: string, e: React.PointerEvent) => {
+    if (session?.ended_at) return; // no edits once completed
+    const idx = exercises.findIndex((x: any) => x.id === exerciseId);
+    if (idx < 0) return;
+
+    const node = exerciseNodeRefs.current.get(exerciseId);
+    if (!node) return;
+
+    try {
+      (e.currentTarget as any)?.setPointerCapture?.(e.pointerId);
+    } catch {}
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    const rect = node.getBoundingClientRect();
+    dragStartYRef.current = e.clientY;
+    dragPointerYRef.current = e.clientY;
+    dragStartIndexRef.current = idx;
+    dragOffsetYRef.current = e.clientY - rect.top;
+    setDraggingExerciseId(exerciseId);
+    setDragOverIndex(idx);
+    vibrate(8);
+  };
+
+  const stopExerciseDrag = async () => {
+    setDraggingExerciseId(null);
+    setDragOverIndex(-1);
+    dragStartIndexRef.current = -1;
+    setDragTranslateY(0);
+    if (dragRafRef.current != null) {
+      cancelAnimationFrame(dragRafRef.current);
+      dragRafRef.current = null;
+    }
+    // Persist the current in-memory order for this session only.
+    try {
+      await persistExerciseOrder(exercisesRef.current);
+    } catch (err) {
+      console.error(err);
+      await loadWorkout();
+    }
+  };
+
+  useEffect(() => {
+    if (!draggingExerciseId) return;
+
+    const onMove = (ev: PointerEvent) => {
+      dragPointerYRef.current = ev.clientY;
+      // Follow the finger (throttled via rAF to keep it smooth on mobile)
+      if (dragRafRef.current == null) {
+        dragRafRef.current = requestAnimationFrame(() => {
+          dragRafRef.current = null;
+          setDragTranslateY(dragPointerYRef.current - dragStartYRef.current);
+        });
+      }
+      // Determine which index we're currently over by comparing to card midpoints.
+      const entries = exercises
+        .map((ex: any, i: number) => {
+          const n = exerciseNodeRefs.current.get(ex.id);
+          if (!n) return null;
+          const r = n.getBoundingClientRect();
+          return { id: ex.id, i, top: r.top, mid: r.top + r.height / 2, bottom: r.bottom };
+        })
+        .filter(Boolean) as { id: string; i: number; top: number; mid: number; bottom: number }[];
+      if (entries.length === 0) return;
+
+      // Use the pointer position, not the element rect, for a more natural mobile feel.
+      const y = ev.clientY;
+      let over = dragOverIndex;
+      for (const it of entries) {
+        if (y < it.mid) {
+          over = it.i;
+          break;
+        }
+        over = it.i;
+      }
+      if (over !== dragOverIndex) {
+        // Reset the visual translate baseline when the list reorders, reducing perceived "jump".
+        dragStartYRef.current = ev.clientY;
+        setDragTranslateY(0);
+        // Live reorder for HEVY-like feel
+        setExercises((prev) => {
+          const from = dragStartIndexRef.current;
+          if (from < 0 || from >= prev.length) return prev;
+          const to = over;
+          if (to < 0 || to >= prev.length) return prev;
+          if (from === to) return prev;
+          const next = arrayMove(prev, from, to);
+          dragStartIndexRef.current = to;
+          return next;
+        });
+        setDragOverIndex(over);
+        vibrate(4);
+      }
+      ev.preventDefault();
+    };
+
+    const onUp = () => {
+      stopExerciseDrag();
+    };
+
+    window.addEventListener('pointermove', onMove, { passive: false });
+    window.addEventListener('pointerup', onUp, { passive: true });
+    window.addEventListener('pointercancel', onUp, { passive: true });
+    return () => {
+      window.removeEventListener('pointermove', onMove as any);
+      window.removeEventListener('pointerup', onUp as any);
+      window.removeEventListener('pointercancel', onUp as any);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draggingExerciseId, exercises, dragOverIndex, session?.ended_at]);
+
+  // Session-only reordering + removal should not be allowed once a session is completed.
+  const sessionIsCompleted = Boolean(session?.ended_at);
+
+  const removeExerciseFromSession = async (workoutExerciseId: string) => {
+    if (sessionIsCompleted) return;
+    if (!confirm('Remove this exercise from this workout session?')) return;
+
+    try {
+      // Delete the workout_exercises row; workout_sets cascade delete via FK.
+      await supabase.from('workout_exercises').delete().eq('id', workoutExerciseId);
+
+      // Reindex remaining order_index values to keep ordering constraints clean.
+      const remaining = exercises.filter((x: any) => x.id !== workoutExerciseId);
+      await persistExerciseOrder(remaining);
+      await loadWorkout();
+    } catch (err) {
+      console.error(err);
+      alert('Failed to remove exercise from session.');
+      await loadWorkout();
+    }
+  };
 
   const focusByKey = (key: string) => {
     const el = inputRefs.current.get(key);
@@ -808,9 +987,50 @@ const openTechnique = (key: string) => {
             const prevSets = prevSetsByExercise[exercise.id] || [];
 
             return (
-              <div key={exercise.id} className="bg-gray-900/40 border border-gray-800 rounded-2xl p-4 sm:p-5 shadow-lg shadow-black/20">
+              <div
+                key={exercise.id}
+                ref={(el) => {
+                  if (el) exerciseNodeRefs.current.set(exercise.id, el);
+                  else exerciseNodeRefs.current.delete(exercise.id);
+                }}
+                className="bg-gray-900/40 border border-gray-800 rounded-2xl p-4 sm:p-5 shadow-lg shadow-black/20 relative"
+                style={
+                  draggingExerciseId === exercise.id
+                    ? {
+                        transform: `translateY(${dragTranslateY}px)`,
+                        zIndex: 50,
+                      }
+                    : undefined
+                }
+              >
+                {/* Session-only delete (does not modify routine) */}
+                <button
+                  type="button"
+                  onClick={() => removeExerciseFromSession(exercise.id)}
+                  disabled={sessionIsCompleted}
+                  title={sessionIsCompleted ? 'Workout completed' : 'Remove exercise from this session'}
+                  aria-label="Remove exercise from this session"
+                  className="absolute top-3 right-3 inline-flex items-center justify-center rounded-lg p-1.5 text-gray-300/80 hover:text-white disabled:opacity-40 disabled:pointer-events-none"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
                 <div className="mb-3">
-                  <h3 className="section-title text-white">{exercise.exercises?.name || 'Exercise'}</h3>
+                  <div className="flex items-center gap-2">
+                    {/* Drag handle (session-only reorder) */}
+                    <button
+                      type="button"
+                      onPointerDown={(e) => startExerciseDrag(exercise.id, e)}
+                      disabled={sessionIsCompleted}
+                      aria-label="Reorder exercise"
+                      title={sessionIsCompleted ? 'Workout completed' : 'Drag to reorder'}
+                      className="inline-flex items-center justify-center rounded-lg p-1 text-gray-300/80 hover:text-white disabled:opacity-40 disabled:pointer-events-none"
+                      style={{ touchAction: 'none' }}
+                    >
+                      <GripVertical className="h-4 w-4" />
+                    </button>
+
+                    <h3 className="section-title text-white">{exercise.exercises?.name || 'Exercise'}</h3>
+                  </div>
 
                   <div className="mt-2 flex items-center justify-between gap-3">
                     {/* Technique on the left (no pill border) */}
