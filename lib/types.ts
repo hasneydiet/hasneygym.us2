@@ -46,8 +46,6 @@ export interface RoutineDayExercise {
   order_index: number;
   superset_group_id: string | null;
   default_sets: any[];
-  /** Default per-exercise technique used for this routine day entry (e.g., Normal-Sets, Rest-Pause). */
-  technique_tags?: string[];
   created_at: string;
   exercises?: Exercise;
 }
@@ -67,8 +65,6 @@ export interface WorkoutSession {
 export interface WorkoutExercise {
   id: string;
   workout_session_id: string;
-  /** Origin template row (if this workout was started from a routine day). */
-  routine_day_exercise_id?: string | null;
   exercise_id: string;
   order_index: number;
   superset_group_id: string | null;

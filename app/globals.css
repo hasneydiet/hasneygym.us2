@@ -11,7 +11,7 @@
 */
 
 html {
-  min-height: 100%;
+  height: 100%;
   width: 100%;
   overflow-x: hidden;
   text-size-adjust: 100%;
@@ -23,12 +23,10 @@ body {
   min-height: 100%;
   width: 100%;
   overflow-x: hidden;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
-  overscroll-behavior-y: auto;
+  overscroll-behavior-y: contain;
   -webkit-tap-highlight-color: transparent;
 }
 

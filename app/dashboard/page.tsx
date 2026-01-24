@@ -38,7 +38,6 @@ type DashboardDay = {
 type LastWorkout = {
   id: string;
   started_at: string;
-  ended_at: string | null;
   routine_day_id: string | null;
   routine_id: string | null;
   routineName: string;
@@ -62,16 +61,6 @@ function formatDateTime(iso: string) {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
   return d.toLocaleString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-}
-
-
-function formatDateYMD(dateISO: string | null | undefined) {
-  if (!dateISO) return '-';
-  const d = new Date(dateISO);
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  const yy = String(d.getFullYear()).slice(-2);
-  return `${mm}/${dd}/${yy}`;
 }
 
 function addMonthsISO(dateISO: string, months: number) {
@@ -122,14 +111,6 @@ export default function DashboardPage() {
   const [days, setDays] = useState<DashboardDay[]>([]);
   const [lastWorkout, setLastWorkout] = useState<LastWorkout | null>(null);
   const [starting, setStarting] = useState(false);
-  const [lastWorkoutAnalytics, setLastWorkoutAnalytics] = useState<null | {
-    volume: number;
-    setsCompleted: number;
-    setsTotal: number;
-    exercises: number;
-    durationMin: number | null;
-  }>(null);
-  const [loadingAnalytics, setLoadingAnalytics] = useState(false);
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [editingProfile, setEditingProfile] = useState(false);
@@ -221,7 +202,6 @@ export default function DashboardPage() {
           ? {
               id: (lastRow as any).id,
               started_at: (lastRow as any).started_at,
-              ended_at: (lastRow as any).ended_at ?? null,
               routine_day_id: (lastRow as any).routine_day_id ?? null,
               routine_id: (lastRow as any).routine_id ?? null,
               routineName: (lastRow as any).routines?.name || 'Workout',
@@ -267,74 +247,6 @@ export default function DashboardPage() {
       mounted = false;
     };
   }, [router, effectiveUserId, cacheKey]);
-
-  useEffect(() => {
-    let mounted = true;
-    const run = async () => {
-      if (!lastWorkout?.id || !effectiveUserId) {
-        setLastWorkoutAnalytics(null);
-        return;
-      }
-      const aKey = `dashboard:${effectiveUserId}:lastAnalytics:${lastWorkout.id}`;
-      const cached = cacheGet<any>(aKey);
-      if (cached) {
-        setLastWorkoutAnalytics(cached);
-      }
-      setLoadingAnalytics(true);
-      try {
-        // Fetch exercises + sets for last session
-        const [sessRes, exRes] = await Promise.all([
-          supabase.from('workout_sessions').select('started_at, ended_at').eq('id', lastWorkout.id).maybeSingle(),
-          supabase
-            .from('workout_exercises')
-            .select('id, workout_sets(weight, reps, is_completed)')
-            .eq('workout_session_id', lastWorkout.id),
-        ]);
-        if (sessRes.error) throw sessRes.error;
-        if (exRes.error) throw exRes.error;
-        const exercisesRows: any[] = exRes.data || [];
-        const allSets: any[] = exercisesRows.flatMap((e) => e.workout_sets || []);
-        const anyCompleted = allSets.some((s) => s.is_completed === true);
-        const setsToUse = anyCompleted ? allSets.filter((s) => s.is_completed === true) : allSets;
-
-        let volume = 0;
-        let setsCompleted = 0;
-        let setsTotal = allSets.length;
-        for (const s of setsToUse) {
-          if (s.weight != null && s.reps != null) {
-            volume += Number(s.weight) * Number(s.reps);
-          }
-          if (s.is_completed === true) setsCompleted += 1;
-        }
-        // If we used all sets (no completed flags), consider all as completed for display.
-        if (!anyCompleted) setsCompleted = setsTotal;
-
-        const startedAt = (sessRes.data as any)?.started_at ? new Date((sessRes.data as any).started_at).getTime() : null;
-        const endedAt = (sessRes.data as any)?.ended_at ? new Date((sessRes.data as any).ended_at).getTime() : null;
-        const durationMin = startedAt && endedAt && endedAt > startedAt ? Math.round((endedAt - startedAt) / 60000) : null;
-
-        const analytics = {
-          volume: Math.round(volume),
-          setsCompleted,
-          setsTotal,
-          exercises: exercisesRows.length,
-          durationMin,
-        };
-        if (!mounted) return;
-        setLastWorkoutAnalytics(analytics);
-        cacheSet(aKey, analytics, 5 * 60 * 1000);
-      } catch (e) {
-        // Don't fail dashboard if analytics fails
-        console.warn('Failed to load last workout analytics', e);
-      } finally {
-        if (mounted) setLoadingAnalytics(false);
-      }
-    };
-    run();
-    return () => {
-      mounted = false;
-    };
-  }, [lastWorkout?.id, effectiveUserId]);
 
   const nextDay = useMemo(() => {
     if (!days.length) return null;
@@ -474,75 +386,58 @@ export default function DashboardPage() {
           <h1 className="page-title mb-2">Dashboard</h1>
           <p className="page-subtitle mb-6">Your last workout and the next suggested day.</p>
 
-          <Card className="shadow-lg shadow-black/5 overflow-hidden mb-6">
-            <CardContent className="relative p-6">
-              {/* soft accent */}
-              <div className="pointer-events-none absolute inset-0 opacity-60 [mask-image:radial-gradient(60%_70%_at_20%_0%,black,transparent)]">
-                <div className="absolute -left-24 -top-24 h-72 w-72 rounded-full bg-primary/20 blur-3xl" />
-                <div className="absolute -right-24 -bottom-24 h-72 w-72 rounded-full bg-sky-500/15 blur-3xl" />
-              </div>
-
-              <div className="relative flex items-start justify-between gap-4">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-3">
-                    <div className="shrink-0">
-                      {profile?.avatar_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={profile.avatar_url}
-                          alt="Badge"
-                          className="h-14 w-14 rounded-full object-cover border border-border shadow-sm"
-                        />
-                      ) : (
-                        <div className="h-14 w-14 rounded-full border border-border bg-muted flex items-center justify-center text-muted-foreground text-sm shadow-sm">
-                          Badge
-                        </div>
-                      )}
+          <Card className="shadow-lg shadow-black/5">
+            <CardContent className="p-6">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <h2 className="text-lg font-semibold tracking-tight mb-2">Profile</h2>
+                  <div className="space-y-1 text-sm">
+                    <div>
+                      <span className="text-muted-foreground">Name: </span>
+                      <span className="font-medium">{profile?.full_name || 'Not set'}</span>
                     </div>
-
-                    <div className="min-w-0">
-                      <div className="text-lg font-semibold tracking-tight text-foreground">Profile</div>
-                      <div className="mt-0.5 text-sm font-medium text-primary truncate">
-                        {profile?.full_name || 'Not set'}
-                      </div>
-
-	                      <div className="mt-2 space-y-1">
-	                        <div className="text-sm font-medium text-muted-foreground whitespace-nowrap truncate">
-                          Goal: {profile?.goal ? goalLabel(profile.goal) : 'Not set'}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          Routine Start Date: {formatDateYMD(profile?.goal_start)}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          Routine End Date: {formatDateYMD(profile?.goal_end)}
-                        </div>
-                      </div>
+                    <div>
+                      <span className="text-muted-foreground">Goal: </span>
+                      <span className="font-medium">{profile?.goal ? goalLabel(profile.goal) : 'Not set'}</span>
                     </div>
-                  </div>
-
-                  <div className="mt-5 grid grid-cols-2 gap-3">
-	                    <div className="rounded-xl border border-border/60 bg-background/60 p-3 backdrop-blur text-center">
-	                      <div className="text-[11px] font-medium text-muted-foreground">Start Weight</div>
-                      <div className="mt-1 text-sm font-semibold">
-                        {profile?.weight_lbs != null ? `${profile.weight_lbs} lb` : 'Not set'}
-                      </div>
+                    <div>
+                      <span className="text-muted-foreground">Start: </span>
+                      <span className="font-medium">{profile?.goal_start || 'Not set'}</span>
                     </div>
-
-	                    <div className="rounded-xl border border-border/60 bg-background/60 p-3 backdrop-blur text-center">
-	                      <div className="text-[11px] font-medium text-muted-foreground">Start Body Fat</div>
-                      <div className="mt-1 text-sm font-semibold">
-                        {profile?.body_fat_percent != null ? `${profile.body_fat_percent}%` : 'Not set'}
-                      </div>
+                    <div>
+                      <span className="text-muted-foreground">End: </span>
+                      <span className="font-medium">{profile?.goal_end || 'Not set'}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Weight: </span>
+                      <span className="font-medium">{profile?.weight_lbs != null ? `${profile.weight_lbs} lb` : 'Not set'}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Body fat: </span>
+                      <span className="font-medium">{profile?.body_fat_percent != null ? `${profile.body_fat_percent}%` : 'Not set'}</span>
                     </div>
                   </div>
                 </div>
 
                 <div className="shrink-0">
-                  <Button variant="outline" className="h-10 px-4" onClick={openProfileEditor}>
-                    Edit
-                  </Button>
+                  {profile?.avatar_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={profile.avatar_url}
+                      alt="Badge"
+                      className="h-16 w-16 rounded-full object-cover border border-border"
+                    />
+                  ) : (
+                    <div className="h-16 w-16 rounded-full border border-border bg-muted flex items-center justify-center text-muted-foreground text-sm">
+                      Badge
+                    </div>
+                  )}
                 </div>
               </div>
+
+              <Button variant="outline" className="mt-4 w-full h-11" onClick={openProfileEditor}>
+                Edit
+              </Button>
             </CardContent>
           </Card>
 
@@ -576,42 +471,6 @@ export default function DashboardPage() {
                   )}
                 </CardContent>
               </Card>
-              {lastWorkout ? (
-                <Card className="shadow-lg shadow-black/5">
-                  <CardContent className="p-6">
-                    <h2 className="text-lg font-semibold tracking-tight mb-3">Session analytics</h2>
-                    <div className="text-sm text-muted-foreground -mt-2 mb-3">
-                      {lastWorkout.routineName}
-                      {lastWorkout.dayName ? <span> — {lastWorkout.dayName}</span> : null}
-                    </div>
-                    {loadingAnalytics && !lastWorkoutAnalytics ? (
-                      <div className="text-muted-foreground">Loading analytics…</div>
-                    ) : lastWorkoutAnalytics ? (
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="rounded-xl border border-border/60 bg-background/60 p-3 backdrop-blur">
-                          <div className="text-[11px] font-medium text-muted-foreground">Total volume</div>
-                          <div className="mt-1 text-sm font-semibold">{lastWorkoutAnalytics.volume.toLocaleString()}</div>
-                        </div>
-                        <div className="rounded-xl border border-border/60 bg-background/60 p-3 backdrop-blur">
-                          <div className="text-[11px] font-medium text-muted-foreground">Sets</div>
-                          <div className="mt-1 text-sm font-semibold">{lastWorkoutAnalytics.setsCompleted}/{lastWorkoutAnalytics.setsTotal}</div>
-                        </div>
-                        <div className="rounded-xl border border-border/60 bg-background/60 p-3 backdrop-blur">
-                          <div className="text-[11px] font-medium text-muted-foreground">Exercises</div>
-                          <div className="mt-1 text-sm font-semibold">{lastWorkoutAnalytics.exercises}</div>
-                        </div>
-                        <div className="rounded-xl border border-border/60 bg-background/60 p-3 backdrop-blur">
-                          <div className="text-[11px] font-medium text-muted-foreground">Duration</div>
-                          <div className="mt-1 text-sm font-semibold">{lastWorkoutAnalytics.durationMin != null ? `${lastWorkoutAnalytics.durationMin} min` : '—'}</div>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="text-muted-foreground">Complete a workout to see analytics.</div>
-                    )}
-                  </CardContent>
-                </Card>
-              ) : null}
-
 
               <div className="tile relative overflow-hidden p-5 sm:p-6">
                 <div className="pointer-events-none absolute inset-0 opacity-60 [mask-image:radial-gradient(50%_60%_at_20%_10%,black,transparent)]">
