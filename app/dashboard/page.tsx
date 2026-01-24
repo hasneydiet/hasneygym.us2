@@ -63,6 +63,14 @@ function formatDateTime(iso: string) {
   return d.toLocaleString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
+
+function formatDateYMD(dateISO: string | null | undefined) {
+  if (!dateISO) return 'Not set';
+  const d = new Date(dateISO + 'T00:00:00');
+  if (Number.isNaN(d.getTime())) return 'Not set';
+  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+}
+
 function addMonthsISO(dateISO: string, months: number) {
   const d = new Date(dateISO + 'T00:00:00');
   if (Number.isNaN(d.getTime())) return '';
@@ -422,15 +430,14 @@ export default function DashboardPage() {
                         <span className="inline-flex items-center rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium backdrop-blur">
                           Goal: {profile?.goal ? goalLabel(profile.goal) : 'Not set'}
                         </span>
-                        {profile?.goal_start ? (
-                          <span className="inline-flex items-center rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium text-muted-foreground backdrop-blur">
-                            {profile.goal_start} → {profile?.goal_end || '—'}
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium text-muted-foreground backdrop-blur">
-                            Dates: Not set
-                          </span>
-                        )}
+                        <div className="mt-2 space-y-0.5 text-xs text-muted-foreground">
+                        <div>
+                          Routine Start Date: {formatDateYMD(profile?.goal_start)}
+                        </div>
+                        <div>
+                          Routine End Date: {formatDateYMD(profile?.goal_end)}
+                        </div>
+                      </div>
                       </div>
                     </div>
                   </div>
