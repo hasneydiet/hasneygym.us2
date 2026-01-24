@@ -132,27 +132,27 @@ export default function WorkoutPage() {
   const [draft, setDraft] = useState<Record<string, Record<string, string>>>({});
 
 // Technique guide sheet
-const [techniqueOpen, setTechniqueOpen] = useState(false);
+const [techniqueGuideOpen, setTechniqueGuideOpen] = useState(false);
 const [techniqueKey, setTechniqueKey] = useState<string | null>(null);
 
 // Set-technique (Normal-Sets / Rest-Pause, etc) picker for the active session.
 const [setTechniqueOpen, setSetTechniqueOpen] = useState(false);
-const [setTechniqueExerciseId, setSetTechniqueExerciseId] = useState<string | null>(null);
+const [techniqueExerciseId, setTechniqueExerciseId] = useState<string | null>(null);
 
 const openTechnique = (key: string) => {
   setTechniqueKey(key);
-  setTechniqueOpen(true);
+  setTechniqueGuideOpen(true);
 };
 
 const SET_TECHNIQUES = ['Normal-Sets', 'Drop-Sets', 'Rest-Pause', 'GVT', 'Myo-Reps', 'Super-Sets', 'Failure'];
 
 const openSetTechnique = (workoutExerciseId: string) => {
-  setSetTechniqueExerciseId(workoutExerciseId);
+  setTechniqueExerciseId(workoutExerciseId);
   setSetTechniqueOpen(true);
 };
 
 const applySetTechnique = async (newTechnique: string) => {
-  const workoutExerciseId = setTechniqueExerciseId;
+  const workoutExerciseId = techniqueExerciseId;
   if (!workoutExerciseId) return;
 
   // Find the row so we can (optionally) persist the selection back to the routine template.
@@ -1390,7 +1390,7 @@ const applySetTechnique = async (newTechnique: string) => {
   </SheetContent>
 </Sheet>
 
-<Sheet open={techniqueOpen} onOpenChange={setTechniqueOpen}>
+<Sheet open={techniqueGuideOpen} onOpenChange={setTechniqueGuideOpen}>
   <SheetContent
     side="bottom"
     className="border-t border-white/10 bg-[hsl(var(--surface))] text-white shadow-2xl"
