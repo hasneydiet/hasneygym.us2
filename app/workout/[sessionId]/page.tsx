@@ -8,7 +8,7 @@ import { useCoach } from '@/hooks/useCoach';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Plus, Clock, Trash2, GripVertical } from 'lucide-react';
+import { Plus, Clock, Trash2, GripVertical, Info } from 'lucide-react';
 type WorkoutSession = any;
 type WorkoutExercise = any;
 type WorkoutSet = any;
@@ -131,24 +131,24 @@ export default function WorkoutPage() {
   // Draft typed values: used only while editing; after blur it gets cleared.
   const [draft, setDraft] = useState<Record<string, Record<string, string>>>({});
 
-// Technique guide sheet
+// Technique guide sheet (shows instructions for the CURRENT selected technique)
 const [techniqueGuideOpen, setTechniqueGuideOpen] = useState(false);
-const [techniqueKey, setTechniqueKey] = useState<string | null>(null);
+const [techniqueGuideExerciseId, setTechniqueGuideExerciseId] = useState<string | null>(null);
 
 // Set-technique (Normal-Sets / Rest-Pause, etc) picker for the active session.
 const [setTechniqueOpen, setSetTechniqueOpen] = useState(false);
 const [techniqueExerciseId, setTechniqueExerciseId] = useState<string | null>(null);
-
-const openTechnique = (key: string) => {
-  setTechniqueKey(key);
-  setTechniqueGuideOpen(true);
-};
 
 const SET_TECHNIQUES = ['Normal-Sets', 'Drop-Sets', 'Rest-Pause', 'GVT', 'Myo-Reps', 'Super-Sets', 'Failure'];
 
 const openSetTechnique = (workoutExerciseId: string) => {
   setTechniqueExerciseId(workoutExerciseId);
   setSetTechniqueOpen(true);
+};
+
+const openTechniqueGuide = (workoutExerciseId: string) => {
+  setTechniqueGuideExerciseId(workoutExerciseId);
+  setTechniqueGuideOpen(true);
 };
 
 const applySetTechnique = async (newTechnique: string) => {
@@ -1116,19 +1116,17 @@ const applySetTechnique = async (newTechnique: string) => {
                           {(Array.isArray(exercise.technique_tags) && exercise.technique_tags[0]) || 'Normal-Sets'}
                         </button>
 
-                        {/* Form/How-to technique guide (non-persistent info) */}
-                        {exercise.exercises?.default_technique_tags?.[0] ? (
-                          <button
-                            type="button"
-                            onClick={() => openTechnique(exercise.exercises!.default_technique_tags![0])}
-                            className="tap-target text-sm font-semibold text-gray-300/80 hover:text-white truncate"
-                            aria-label={`How to perform ${exercise.exercises!.default_technique_tags![0]}`}
-                            title="How-to guide"
-                          >
-                            {exercise.exercises!.default_technique_tags![0]}
-                          </button>
-                        ) : null}
-                      </div>
+                        {/* Technique instructions (for the currently selected technique) */}
+                        <button
+                          type="button"
+                          onClick={() => openTechniqueGuide(exercise.id)}
+                          className="tap-target inline-flex items-center justify-center rounded-lg p-1 text-gray-300/80 hover:text-white"
+                          aria-label="Technique instructions"
+                          title="Technique instructions"
+                        >
+                          <Info className="h-4 w-4" />
+                        </button>
+</div>
 
                       {/* Rest timer on the right */}
                       <div className="flex items-center gap-2 text-sm text-gray-300 shrink-0">
@@ -1387,45 +1385,55 @@ const applySetTechnique = async (newTechnique: string) => {
   </SheetContent>
 </Sheet>
 
-<Sheet open={techniqueGuideOpen} onOpenChange={setTechniqueGuideOpen}>
+<Sheet open={techniqueGuideOpen} onOpenChange={(open) => {
+  setTechniqueGuideOpen(open);
+  if (!open) setTechniqueGuideExerciseId(null);
+}}>
   <SheetContent
     side="bottom"
     className="border-t border-white/10 bg-[hsl(var(--surface))] text-white shadow-2xl"
   >
-    {techniqueKey && TECHNIQUE_GUIDES[techniqueKey] ? (
-      <div className="space-y-4">
-        <SheetHeader>
-          <SheetTitle className="text-white">{TECHNIQUE_GUIDES[techniqueKey].title}</SheetTitle>
-          <SheetDescription className="text-gray-300">
-            {TECHNIQUE_GUIDES[techniqueKey].summary}
-          </SheetDescription>
-        </SheetHeader>
+    {(() => {
+      const ex = techniqueGuideExerciseId
+        ? exercises.find((e: any) => e.id === techniqueGuideExerciseId)
+        : null;
+      const key =
+        (ex && Array.isArray((ex as any).technique_tags) && (ex as any).technique_tags[0]) || 'Normal-Sets';
+      const guide = TECHNIQUE_GUIDES[key] || TECHNIQUE_GUIDES['Normal-Sets'];
+      if (!guide) return null;
+      return (
+        <div className="space-y-4">
+          <SheetHeader>
+            <SheetTitle className="text-white">{guide.title}</SheetTitle>
+            <SheetDescription className="text-gray-300">{guide.summary}</SheetDescription>
+          </SheetHeader>
 
-        <div className="space-y-3">
-          <div>
-            <div className="mb-2 text-sm font-semibold text-gray-200">How To</div>
-            <ol className="list-decimal space-y-2 pl-5 text-sm text-gray-200">
-              {TECHNIQUE_GUIDES[techniqueKey].steps.map((s) => (
-                <li key={s}>{s}</li>
-              ))}
-            </ol>
-          </div>
-
-          {TECHNIQUE_GUIDES[techniqueKey].tips?.length ? (
+          <div className="space-y-3">
             <div>
-              <div className="mb-2 text-sm font-semibold text-gray-200">Tips</div>
-              <ul className="list-disc space-y-2 pl-5 text-sm text-gray-200">
-                {TECHNIQUE_GUIDES[techniqueKey].tips!.map((t) => (
-                  <li key={t}>{t}</li>
+              <div className="mb-2 text-sm font-semibold text-gray-200">How To</div>
+              <ol className="list-decimal space-y-2 pl-5 text-sm text-gray-200">
+                {guide.steps.map((s) => (
+                  <li key={s}>{s}</li>
                 ))}
-              </ul>
+              </ol>
             </div>
-          ) : null}
+
+            {guide.tips?.length ? (
+              <div>
+                <div className="mb-2 text-sm font-semibold text-gray-200">Tips</div>
+                <ul className="list-disc space-y-2 pl-5 text-sm text-gray-200">
+                  {guide.tips.map((t) => (
+                    <li key={t}>{t}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
         </div>
-      </div>
-    ) : null}
+      );
+    })()}
   </SheetContent>
 </Sheet>
-    </div>
+</div>
   );
 }
