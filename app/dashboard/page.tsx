@@ -386,58 +386,78 @@ export default function DashboardPage() {
           <h1 className="page-title mb-2">Dashboard</h1>
           <p className="page-subtitle mb-6">Your last workout and the next suggested day.</p>
 
-          <Card className="shadow-lg shadow-black/5">
-            <CardContent className="p-6">
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <h2 className="text-lg font-semibold tracking-tight mb-2">Profile</h2>
-                  <div className="space-y-1 text-sm">
-                    <div>
-                      <span className="text-muted-foreground">Name: </span>
-                      <span className="font-medium">{profile?.full_name || 'Not set'}</span>
+          <Card className="shadow-lg shadow-black/5 overflow-hidden">
+            <CardContent className="relative p-6">
+              {/* soft accent */}
+              <div className="pointer-events-none absolute inset-0 opacity-60 [mask-image:radial-gradient(60%_70%_at_20%_0%,black,transparent)]">
+                <div className="absolute -left-24 -top-24 h-72 w-72 rounded-full bg-primary/20 blur-3xl" />
+                <div className="absolute -right-24 -bottom-24 h-72 w-72 rounded-full bg-sky-500/15 blur-3xl" />
+              </div>
+
+              <div className="relative flex items-start justify-between gap-4">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-3">
+                    <div className="shrink-0">
+                      {profile?.avatar_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={profile.avatar_url}
+                          alt="Badge"
+                          className="h-14 w-14 rounded-full object-cover border border-border shadow-sm"
+                        />
+                      ) : (
+                        <div className="h-14 w-14 rounded-full border border-border bg-muted flex items-center justify-center text-muted-foreground text-sm shadow-sm">
+                          Badge
+                        </div>
+                      )}
                     </div>
-                    <div>
-                      <span className="text-muted-foreground">Goal: </span>
-                      <span className="font-medium">{profile?.goal ? goalLabel(profile.goal) : 'Not set'}</span>
+
+                    <div className="min-w-0">
+                      <div className="text-xs font-medium text-muted-foreground">Profile</div>
+                      <div className="text-lg font-semibold tracking-tight truncate">
+                        {profile?.full_name || 'Not set'}
+                      </div>
+
+                      <div className="mt-1 flex flex-wrap items-center gap-2">
+                        <span className="inline-flex items-center rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium backdrop-blur">
+                          Goal: {profile?.goal ? goalLabel(profile.goal) : 'Not set'}
+                        </span>
+                        {profile?.goal_start ? (
+                          <span className="inline-flex items-center rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium text-muted-foreground backdrop-blur">
+                            {profile.goal_start} → {profile?.goal_end || '—'}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium text-muted-foreground backdrop-blur">
+                            Dates: Not set
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <div>
-                      <span className="text-muted-foreground">Start: </span>
-                      <span className="font-medium">{profile?.goal_start || 'Not set'}</span>
+                  </div>
+
+                  <div className="mt-5 grid grid-cols-2 gap-3">
+                    <div className="rounded-xl border border-border/60 bg-background/60 p-3 backdrop-blur">
+                      <div className="text-[11px] font-medium text-muted-foreground">Weight</div>
+                      <div className="mt-1 text-sm font-semibold">
+                        {profile?.weight_lbs != null ? `${profile.weight_lbs} lb` : 'Not set'}
+                      </div>
                     </div>
-                    <div>
-                      <span className="text-muted-foreground">End: </span>
-                      <span className="font-medium">{profile?.goal_end || 'Not set'}</span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Weight: </span>
-                      <span className="font-medium">{profile?.weight_lbs != null ? `${profile.weight_lbs} lb` : 'Not set'}</span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Body fat: </span>
-                      <span className="font-medium">{profile?.body_fat_percent != null ? `${profile.body_fat_percent}%` : 'Not set'}</span>
+
+                    <div className="rounded-xl border border-border/60 bg-background/60 p-3 backdrop-blur">
+                      <div className="text-[11px] font-medium text-muted-foreground">Body fat</div>
+                      <div className="mt-1 text-sm font-semibold">
+                        {profile?.body_fat_percent != null ? `${profile.body_fat_percent}%` : 'Not set'}
+                      </div>
                     </div>
                   </div>
                 </div>
 
                 <div className="shrink-0">
-                  {profile?.avatar_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={profile.avatar_url}
-                      alt="Badge"
-                      className="h-16 w-16 rounded-full object-cover border border-border"
-                    />
-                  ) : (
-                    <div className="h-16 w-16 rounded-full border border-border bg-muted flex items-center justify-center text-muted-foreground text-sm">
-                      Badge
-                    </div>
-                  )}
+                  <Button variant="outline" className="h-10 px-4" onClick={openProfileEditor}>
+                    Edit
+                  </Button>
                 </div>
               </div>
-
-              <Button variant="outline" className="mt-4 w-full h-11" onClick={openProfileEditor}>
-                Edit
-              </Button>
             </CardContent>
           </Card>
 
