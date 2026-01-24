@@ -23,12 +23,6 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-} from '@/components/ui/chart';
-import { Line, LineChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 
 export const dynamic = 'force-dynamic';
 
