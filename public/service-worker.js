@@ -1,7 +1,8 @@
 /* Dtracker PWA Service Worker (safe defaults for Next.js) */
-const CACHE_NAME = 'spartanx-pwa-v1';
+const CACHE_NAME = 'spartanx-pwa-v2';
 const CORE_ASSETS = [
   '/',
+  '/offline',
   '/manifest.json',
   '/icons/icon-192x192.png',
   '/icons/icon-512x512.png',
@@ -41,7 +42,7 @@ self.addEventListener('fetch', (event) => {
         return fresh;
       } catch (e) {
         const cached = await caches.match(req);
-        return cached || caches.match('/');
+        return cached || caches.match('/offline') || caches.match('/');
       }
     })());
     return;

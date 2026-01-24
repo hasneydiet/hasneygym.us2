@@ -2,12 +2,15 @@
   "name": "H-Core",
   "short_name": "H-Core",
   "description": "Personal Workout Tracker",
+  "id": "/",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui", "browser"],
   "background_color": "#0F0F14",
   "theme_color": "#0F0F14",
   "orientation": "portrait",
+  "categories": ["fitness", "health"],
   "icons": [
     {
       "src": "/icons/icon-32x32.png",
