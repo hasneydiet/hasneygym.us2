@@ -267,38 +267,6 @@ export default function RoutinesPage() {
     }
   };
 
-      for (const d of originalDays) {
-        const newDayId = dayIdMap.get(String(d.id));
-        if (!newDayId) continue;
-        const exs = Array.isArray((d as any).routine_day_exercises) ? (d as any).routine_day_exercises : [];
-        for (const ex of exs) {
-          exercisesToInsert.push({
-            routine_day_id: newDayId,
-            exercise_id: ex.exercise_id,
-            order_index: ex.order_index ?? 0,
-            superset_group_id: ex.superset_group_id ?? null,
-            default_sets: ex.default_sets ?? [],
-          });
-        }
-      }
-
-      if (exercisesToInsert.length > 0) {
-        const { error: exErr } = await supabase
-          .from('routine_day_exercises')
-          .insert(exercisesToInsert);
-        if (exErr) {
-          alert('Could not clone routine exercises. Please try again.');
-          return;
-        }
-      }
-
-      if (routinesCacheKey) cacheDel(routinesCacheKey);
-      router.push(`/routines/${newRoutine.id}`);
-    } finally {
-      setCloningRoutineId(null);
-    }
-  };
-
   return (
     <AuthGuard>
       <div className="app-shell">
