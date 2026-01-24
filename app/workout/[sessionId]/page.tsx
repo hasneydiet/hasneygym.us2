@@ -246,6 +246,19 @@ const openTechnique = (key: string) => {
 
     const onMove = (ev: PointerEvent) => {
       dragPointerYRef.current = ev.clientY;
+
+      // Auto-scroll while dragging near viewport edges (mobile-friendly, HEVY-like)
+      const edge = 80;
+      const y = ev.clientY;
+      const vh = window.innerHeight;
+      if (y < edge) {
+        const strength = (edge - y) / edge;
+        window.scrollBy({ top: -Math.round(18 * strength), left: 0, behavior: 'auto' });
+      } else if (y > vh - edge) {
+        const strength = (y - (vh - edge)) / edge;
+        window.scrollBy({ top: Math.round(18 * strength), left: 0, behavior: 'auto' });
+      }
+
       // Follow the finger (throttled via rAF to keep it smooth on mobile)
       if (dragRafRef.current == null) {
         dragRafRef.current = requestAnimationFrame(() => {
@@ -265,7 +278,6 @@ const openTechnique = (key: string) => {
       if (entries.length === 0) return;
 
       // Use the pointer position, not the element rect, for a more natural mobile feel.
-      const y = ev.clientY;
       let over = dragOverIndex;
       for (const it of entries) {
         if (y < it.mid) {
@@ -985,6 +997,8 @@ const openTechnique = (key: string) => {
         <div className="space-y-6">
           {exercises.map((exercise: any) => {
             const prevSets = prevSetsByExercise[exercise.id] || [];
+            // While reordering, collapse cards to just the exercise name for easier dragging (HEVY-like)
+            const isReorderMode = Boolean(draggingExerciseId);
 
             return (
               <div
@@ -1032,67 +1046,69 @@ const openTechnique = (key: string) => {
                     <h3 className="section-title text-white">{exercise.exercises?.name || 'Exercise'}</h3>
                   </div>
 
-                  <div className="mt-2 flex items-center justify-between gap-3">
-                    {/* Technique on the left (no pill border) */}
-                    <div className="min-w-0">
-                      {exercise.exercises?.default_technique_tags?.[0] ? (
-                        <button
-                          type="button"
-                          onClick={() => openTechnique(exercise.exercises!.default_technique_tags![0])}
-                          className="tap-target text-sm font-semibold text-primary truncate"
-                          aria-label={`How to perform ${exercise.exercises!.default_technique_tags![0]}`}
-                        >
-                          {exercise.exercises!.default_technique_tags![0]}
-                        </button>
-                      ) : (
-                        <span className="text-sm text-gray-400">&nbsp;</span>
-                      )}
-                    </div>
-
-                    {/* Rest timer on the right */}
-                    <div className="flex items-center gap-2 text-sm text-gray-300 shrink-0">
-                      <Clock className="h-4 w-4 text-gray-300" />
-                      {restSecondsRemaining !== null && restExerciseId === exercise.id ? (
-                        <span className="font-medium">{formatClock(restSecondsRemaining)}</span>
-                      ) : (
-                        <span className="font-medium">{formatClock(getExerciseRestSeconds(exercise))}</span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-[11px] uppercase tracking-wide text-gray-300/80 border-b border-gray-800">
-                        <th className="px-2 py-2 w-12">Set</th>
-                        <th className="px-2 py-2">Reps</th>
-                        <th className="px-2 py-2">Weight</th>
-                        <th className="px-2 py-2 text-center">Done</th>
-                        <th className="px-2 py-2 w-12 text-center">Del</th>
-                      </tr>
-                    </thead>
-
-                    <tbody>
-                      {(sets[exercise.id] || []).map((set: any, idx: number) => {
-                        const prev = prevSets[idx];
-                        const prevReps = prev?.reps ?? null;
-                        const prevWeight = prev?.weight ?? null;
-
-                        const repsPlaceholder =
-                          prevReps !== null && prevReps !== undefined && prevReps !== '' ? String(prevReps) : '';
-                        const weightPlaceholder =
-                          prevWeight !== null && prevWeight !== undefined && prevWeight !== '' ? String(prevWeight) : '';
-
-                        return (
-                          <tr
-                            key={set.id}
-                            className={
-                              "set-row " +
-                              (set.id === highlightSetId ? "set-row--new " : "") +
-                              (removingSetIds.has(set.id) ? "set-row--removing " : "")
-                            }
+                  {!isReorderMode && (
+                    <div className="mt-2 flex items-center justify-between gap-3">
+                      {/* Technique on the left (no pill border) */}
+                      <div className="min-w-0">
+                        {exercise.exercises?.default_technique_tags?.[0] ? (
+                          <button
+                            type="button"
+                            onClick={() => openTechnique(exercise.exercises!.default_technique_tags![0])}
+                            className="tap-target text-sm font-semibold text-primary truncate"
+                            aria-label={`How to perform ${exercise.exercises!.default_technique_tags![0]}`}
                           >
+                            {exercise.exercises!.default_technique_tags![0]}
+                          </button>
+                        ) : (
+                          <span className="text-sm text-gray-400">&nbsp;</span>
+                        )}
+                      </div>
+
+                      {/* Rest timer on the right */}
+                      <div className="flex items-center gap-2 text-sm text-gray-300 shrink-0">
+                        <Clock className="h-4 w-4 text-gray-300" />
+                        {restSecondsRemaining !== null && restExerciseId === exercise.id ? (
+                          <span className="font-medium">{formatClock(restSecondsRemaining)}</span>
+                        ) : (
+                          <span className="font-medium">{formatClock(getExerciseRestSeconds(exercise))}</span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                {!isReorderMode && (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left text-[11px] uppercase tracking-wide text-gray-300/80 border-b border-gray-800">
+                          <th className="px-2 py-2 w-12">Set</th>
+                          <th className="px-2 py-2">Reps</th>
+                          <th className="px-2 py-2">Weight</th>
+                          <th className="px-2 py-2 text-center">Done</th>
+                          <th className="px-2 py-2 w-12 text-center">Del</th>
+                        </tr>
+                      </thead>
+
+                      <tbody>
+                        {(sets[exercise.id] || []).map((set: any, idx: number) => {
+                          const prev = prevSets[idx];
+                          const prevReps = prev?.reps ?? null;
+                          const prevWeight = prev?.weight ?? null;
+
+                          const repsPlaceholder =
+                            prevReps !== null && prevReps !== undefined && prevReps !== '' ? String(prevReps) : '';
+                          const weightPlaceholder =
+                            prevWeight !== null && prevWeight !== undefined && prevWeight !== '' ? String(prevWeight) : '';
+
+                          return (
+                            <tr
+                              key={set.id}
+                              className={
+                                "set-row " +
+                                (set.id === highlightSetId ? "set-row--new " : "") +
+                                (removingSetIds.has(set.id) ? "set-row--removing " : "")
+                              }
+                            >
                             <td className="px-2 py-2 font-semibold text-gray-200 tabular-nums">{idx + 1}</td>
 
                             <td className="px-2 py-2">
@@ -1200,6 +1216,7 @@ const openTechnique = (key: string) => {
                     </button>
                   </div>
                 </div>
+                )}
               </div>
             );
           })}
