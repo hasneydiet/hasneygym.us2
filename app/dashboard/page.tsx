@@ -423,13 +423,13 @@ export default function DashboardPage() {
                     </div>
 
                     <div className="min-w-0">
-                      <div className="text-lg font-semibold tracking-tight">Profile</div>
-                      <div className="text-lg font-semibold tracking-tight truncate">
+                      <div className="text-lg font-semibold tracking-tight text-foreground">Profile</div>
+                      <div className="mt-0.5 text-sm font-medium text-primary truncate">
                         {profile?.full_name || 'Not set'}
                       </div>
 
 	                      <div className="mt-2 space-y-1">
-                        <div className="text-lg font-semibold tracking-tight">
+	                        <div className="text-sm font-medium text-muted-foreground whitespace-nowrap truncate">
                           Goal: {profile?.goal ? goalLabel(profile.goal) : 'Not set'}
                         </div>
                         <div className="text-xs text-muted-foreground">
@@ -443,14 +443,14 @@ export default function DashboardPage() {
                   </div>
 
                   <div className="mt-5 grid grid-cols-2 gap-3">
-	                    <div className="rounded-xl border border-border/60 bg-background/60 p-3 backdrop-blur">
+	                    <div className="rounded-xl border border-border/60 bg-background/60 p-3 backdrop-blur text-center">
 	                      <div className="text-[11px] font-medium text-muted-foreground">Start Weight</div>
                       <div className="mt-1 text-sm font-semibold">
                         {profile?.weight_lbs != null ? `${profile.weight_lbs} lb` : 'Not set'}
                       </div>
                     </div>
 
-	                    <div className="rounded-xl border border-border/60 bg-background/60 p-3 backdrop-blur">
+	                    <div className="rounded-xl border border-border/60 bg-background/60 p-3 backdrop-blur text-center">
 	                      <div className="text-[11px] font-medium text-muted-foreground">Start Body Fat</div>
                       <div className="mt-1 text-sm font-semibold">
                         {profile?.body_fat_percent != null ? `${profile.body_fat_percent}%` : 'Not set'}
