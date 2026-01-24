@@ -11,7 +11,8 @@
 */
 
 html {
-  height: 100%;
+  /* Use min-height instead of height to avoid trapping scroll on mobile/PWA */
+  min-height: 100%;
   width: 100%;
   overflow-x: hidden;
   text-size-adjust: 100%;
@@ -22,11 +23,15 @@ html {
 body {
   min-height: 100%;
   width: 100%;
+  /* Ensure vertical scrolling works reliably on mobile/PWA */
+  overflow-y: auto;
   overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
-  overscroll-behavior-y: contain;
+  /* Allow natural overscroll; contain can cause scroll-lock in some WebViews */
+  overscroll-behavior-y: auto;
   -webkit-tap-highlight-color: transparent;
 }
 
