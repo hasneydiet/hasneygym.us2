@@ -9,7 +9,7 @@ import Navigation from '@/components/Navigation';
 import { supabase } from '@/lib/supabase';
 import { useCoach } from '@/hooks/useCoach';
 import { Routine } from '@/lib/types';
-import { Plus, Edit2, Trash2, Share2 } from 'lucide-react';
+import { Plus, Edit2, Trash2, Share2, Copy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -135,6 +135,114 @@ export default function RoutinesPage() {
     }
   };
 
+  const handleClone = async (routine: Routine) => {
+    // Only allow cloning into a concrete user context.
+    if (!effectiveUserId) return;
+    // Coach (not impersonating) sees all routines, but cloning would be ambiguous.
+    if (isCoach && !impersonateUserId) return;
+
+    try {
+      // 1) Create cloned routine
+      const { data: newRoutine, error: routineErr } = await supabase
+        .from('routines')
+        .insert({
+          user_id: effectiveUserId,
+          name: `${routine.name} (Copy)`,
+          notes: routine.notes ?? '',
+        })
+        .select('id')
+        .single();
+
+      if (routineErr || !newRoutine?.id) {
+        console.error('Clone routine failed (routine):', routineErr);
+        alert('Failed to clone routine. Please try again.');
+        return;
+      }
+
+      const newRoutineId = String(newRoutine.id);
+
+      // 2) Load source routine days
+      const { data: srcDays, error: daysErr } = await supabase
+        .from('routine_days')
+        .select('id,day_index,name')
+        .eq('routine_id', routine.id)
+        .order('day_index', { ascending: true });
+
+      if (daysErr) {
+        console.error('Clone routine failed (days):', daysErr);
+        alert('Failed to clone routine days.');
+        return;
+      }
+
+      // 3) Insert cloned days (capture mapping oldDayId -> newDayId)
+      const daysToInsert = (srcDays || []).map((d: any) => ({
+        routine_id: newRoutineId,
+        day_index: d.day_index,
+        name: d.name,
+      }));
+
+      const { data: newDays, error: newDaysErr } = await supabase
+        .from('routine_days')
+        .insert(daysToInsert)
+        .select('id,day_index');
+
+      if (newDaysErr) {
+        console.error('Clone routine failed (insert days):', newDaysErr);
+        alert('Failed to create cloned routine days.');
+        return;
+      }
+
+      const newDayByIndex = new Map<number, string>();
+      (newDays || []).forEach((d: any) => newDayByIndex.set(Number(d.day_index), String(d.id)));
+
+      // 4) Load and clone day exercises per day
+      for (const srcDay of srcDays || []) {
+        const newDayId = newDayByIndex.get(Number((srcDay as any).day_index));
+        if (!newDayId) continue;
+
+        const { data: srcDayExercises, error: exLoadErr } = await supabase
+          .from('routine_day_exercises')
+          .select('exercise_id,order_index,superset_group_id,default_sets,technique_tags')
+          .eq('routine_day_id', (srcDay as any).id)
+          .order('order_index', { ascending: true });
+
+        if (exLoadErr) {
+          console.error('Clone routine failed (load day exercises):', exLoadErr);
+          alert('Failed to clone routine exercises.');
+          return;
+        }
+
+        const exercisesToInsert = (srcDayExercises || []).map((r: any) => ({
+          routine_day_id: newDayId,
+          exercise_id: r.exercise_id,
+          order_index: r.order_index,
+          superset_group_id: r.superset_group_id,
+          default_sets: r.default_sets,
+          technique_tags: r.technique_tags,
+        }));
+
+        if (exercisesToInsert.length > 0) {
+          const { error: exInsertErr } = await supabase
+            .from('routine_day_exercises')
+            .insert(exercisesToInsert);
+
+          if (exInsertErr) {
+            console.error('Clone routine failed (insert day exercises):', exInsertErr);
+            alert('Failed to create cloned routine exercises.');
+            return;
+          }
+        }
+      }
+
+      if (routinesCacheKey) cacheDel(routinesCacheKey);
+      router.push(`/routines/${newRoutineId}`);
+    } catch (err) {
+      console.error('Clone routine failed:', err);
+      alert('Failed to clone routine. Please try again.');
+    }
+  };
+
+
   return (
     <AuthGuard>
       <div className="app-shell">
@@ -213,6 +321,17 @@ export default function RoutinesPage() {
                       title="Share"
                     >
                       <Share2 className="w-4 h-4" />
+                    </Button>
+                  )}
+                  {!(isCoach && !impersonateUserId) && (
+                    <Button
+                      onClick={() => handleClone(routine)}
+                      variant="outline"
+                      className="tap-target px-3"
+                      aria-label="Clone routine"
+                      title="Clone"
+                    >
+                      <Copy className="w-4 h-4" />
                     </Button>
                   )}
                   <Button
