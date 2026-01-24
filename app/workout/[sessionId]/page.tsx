@@ -165,26 +165,23 @@ const applySetTechnique = async (newTechnique: string) => {
   );
 
   try {
-    const updates: Promise<any>[] = [];
+		// NOTE: Supabase update builders are "thenable" but not typed as Promise.
+		// Await them explicitly to satisfy TypeScript and keep behavior clear.
+		const res1 = await supabase
+			.from('workout_exercises')
+			.update({ technique_tags: [newTechnique] })
+			.eq('id', workoutExerciseId);
+		if (res1?.error) throw res1.error;
 
-    updates.push(
-      supabase.from('workout_exercises').update({ technique_tags: [newTechnique] }).eq('id', workoutExerciseId)
-    );
-
-    // If the workout was started from a routine day and this exercise was seeded from a specific template row,
-    // persist the selection so future workouts inherit it.
-    if (originRoutineDayExerciseId) {
-      updates.push(
-        supabase
-          .from('routine_day_exercises')
-          .update({ technique_tags: [newTechnique] })
-          .eq('id', originRoutineDayExerciseId)
-      );
-    }
-
-    const results = await Promise.all(updates);
-    const firstErr = results.find((r: any) => r?.error)?.error;
-    if (firstErr) throw firstErr;
+		// If the workout was started from a routine day and this exercise was seeded from a specific template row,
+		// persist the selection so future workouts inherit it.
+		if (originRoutineDayExerciseId) {
+			const res2 = await supabase
+				.from('routine_day_exercises')
+				.update({ technique_tags: [newTechnique] })
+				.eq('id', originRoutineDayExerciseId);
+			if (res2?.error) throw res2.error;
+		}
   } catch (e: any) {
     console.error(e);
     alert(e?.message || 'Failed to update technique.');
