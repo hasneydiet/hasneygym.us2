@@ -580,6 +580,10 @@ export default function DashboardPage() {
                 <Card className="shadow-lg shadow-black/5">
                   <CardContent className="p-6">
                     <h2 className="text-lg font-semibold tracking-tight mb-3">Session analytics</h2>
+                    <div className="text-sm text-muted-foreground -mt-2 mb-3">
+                      {lastWorkout.routineName}
+                      {lastWorkout.dayName ? <span> — {lastWorkout.dayName}</span> : null}
+                    </div>
                     {loadingAnalytics && !lastWorkoutAnalytics ? (
                       <div className="text-muted-foreground">Loading analytics…</div>
                     ) : lastWorkoutAnalytics ? (
