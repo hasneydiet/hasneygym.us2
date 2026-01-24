@@ -108,6 +108,15 @@ const TECHNIQUE_GUIDES: Record<
 
 // Techniques that should display a reminder label on the LAST set row.
 const TECHNIQUE_LAST_SET_REMINDER = new Set(['Rest-Pause', 'Drop-Sets', 'Myo-Reps', 'Failure']);
+
+// Technique-aware rest timer presets (seconds). Only used when the selected technique benefits from a specific rest window.
+const TECHNIQUE_REST_TIMER_SECONDS: Record<string, number> = {
+  'Rest-Pause': 15,
+  'Myo-Reps': 15,
+  'Drop-Sets': 10,
+  Failure: 90,
+};
+
 export default function WorkoutPage() {
   const params = useParams();
   const router = useRouter();
@@ -185,6 +194,23 @@ const applySetTechnique = async (newTechnique: string) => {
 				.eq('id', originRoutineDayExerciseId);
 			if (res2?.error) throw res2.error;
 		}
+
+		// Smart default: remember the last selected technique for this exercise (used when adding the exercise again).
+		if (effectiveUserId && row?.exercise_id) {
+			const res3 = await supabase
+				.from('user_exercise_preferences')
+				.upsert(
+					{
+						user_id: effectiveUserId,
+						exercise_id: row.exercise_id,
+						technique: newTechnique,
+						updated_at: new Date().toISOString(),
+					},
+					{ onConflict: 'user_id,exercise_id' }
+				);
+			if (res3?.error) throw res3.error;
+		}
+
   } catch (e: any) {
     console.error(e);
     alert(e?.message || 'Failed to update technique.');
@@ -698,6 +724,19 @@ const applySetTechnique = async (newTechnique: string) => {
       const setsCount = Number.isFinite(schemeSets) ? Math.max(1, Math.floor(schemeSets)) : 1;
       const defaultReps = Number.isFinite(schemeReps) ? Math.max(0, Math.floor(schemeReps)) : 0;
 
+      // Smart default: use the last technique the user chose for this exercise (across sessions).
+      let defaultTechnique = 'Normal-Sets';
+      if (effectiveUserId) {
+        const { data: prefRow } = await supabase
+          .from('user_exercise_preferences')
+          .select('technique')
+          .eq('user_id', effectiveUserId)
+          .eq('exercise_id', selectedExerciseId)
+          .maybeSingle();
+        if (prefRow?.technique) defaultTechnique = String(prefRow.technique);
+      }
+
+
       const { data: newWorkoutExercise, error: weErr } = await supabase
         .from('workout_exercises')
         .insert({
@@ -705,7 +744,7 @@ const applySetTechnique = async (newTechnique: string) => {
           exercise_id: selectedExerciseId,
           order_index: nextOrder,
           routine_day_exercise_id: null,
-          technique_tags: ['Normal-Sets'],
+          technique_tags: [defaultTechnique],
         })
         .select('id')
         .single();
@@ -811,10 +850,18 @@ const applySetTechnique = async (newTechnique: string) => {
   };
 
   const getExerciseRestSeconds = (ex: any): number => {
+    // Base rest from exercise defaults (if present).
     const v = ex?.exercises?.rest_seconds ?? ex?.exercises?.default_set_scheme?.restSeconds;
     const n = Number(v);
-    if (!Number.isFinite(n) || n <= 0) return 60;
-    return Math.floor(n);
+    const base = Number.isFinite(n) && n > 0 ? Math.floor(n) : 60;
+
+    // Technique-aware presets (Hevy-like): short rests for cluster-style techniques.
+    const technique =
+      (ex && Array.isArray((ex as any).technique_tags) && (ex as any).technique_tags[0]) || 'Normal-Sets';
+    const preset = TECHNIQUE_REST_TIMER_SECONDS[technique];
+    if (Number.isFinite(preset) && preset > 0) return preset;
+
+    return base;
   };
 
   const handleToggleCompleted = async (workoutExerciseRow: any, setRow: any) => {

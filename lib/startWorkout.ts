@@ -46,6 +46,23 @@ export async function startWorkoutForDay(input: StartWorkoutInput): Promise<stri
 
   if (rdeErr) throw rdeErr;
 
+
+  // Smart defaults: if the routine template doesn't specify a technique, fall back to the user's last used technique for that exercise.
+  const exerciseIds = (rdeRows || []).map((r: any) => r.exercise_id).filter(Boolean) as string[];
+  const prefByExerciseId: Record<string, string> = {};
+  if (exerciseIds.length > 0) {
+    const { data: prefs } = await supabase
+      .from('user_exercise_preferences')
+      .select('exercise_id, technique')
+      .eq('user_id', userId)
+      .in('exercise_id', exerciseIds);
+    for (const p of prefs || []) {
+      const exId = (p as any).exercise_id as string | undefined;
+      const t = (p as any).technique as string | undefined;
+      if (exId && t) prefByExerciseId[exId] = String(t);
+    }
+  }
+
   const exercisesToInsert =
     (rdeRows || [])
       .filter((r: any) => r.exercise_id)
@@ -55,9 +72,9 @@ export async function startWorkoutForDay(input: StartWorkoutInput): Promise<stri
         exercise_id: r.exercise_id,
         order_index: r.order_index ?? 0,
         technique_tags:
-          Array.isArray(r.technique_tags) && r.technique_tags.length > 0 ? r.technique_tags : ['Normal-Sets'],
-      })) || [];
-
+          Array.isArray(r.technique_tags) && r.technique_tags.length > 0
+            ? r.technique_tags
+            : [prefByExerciseId[String(r.exercise_id)] ?? 'Normal-Sets'],
   if (exercisesToInsert.length > 0) {
     // 3) Insert workout_exercises (return id + exercise_id)
     const { data: weRows, error: weErr } = await supabase
