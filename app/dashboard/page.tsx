@@ -65,10 +65,12 @@ function formatDateTime(iso: string) {
 
 
 function formatDateYMD(dateISO: string | null | undefined) {
-  if (!dateISO) return 'Not set';
-  const d = new Date(dateISO + 'T00:00:00');
-  if (Number.isNaN(d.getTime())) return 'Not set';
-  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+  if (!dateISO) return '-';
+  const d = new Date(dateISO);
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const yy = String(d.getFullYear()).slice(-2);
+  return `${mm}/${dd}/${yy}`;
 }
 
 function addMonthsISO(dateISO: string, months: number) {
@@ -394,7 +396,7 @@ export default function DashboardPage() {
           <h1 className="page-title mb-2">Dashboard</h1>
           <p className="page-subtitle mb-6">Your last workout and the next suggested day.</p>
 
-          <Card className="shadow-lg shadow-black/5 overflow-hidden">
+          <Card className="shadow-lg shadow-black/5 overflow-hidden mb-6">
             <CardContent className="relative p-6">
               {/* soft accent */}
               <div className="pointer-events-none absolute inset-0 opacity-60 [mask-image:radial-gradient(60%_70%_at_20%_0%,black,transparent)]">
