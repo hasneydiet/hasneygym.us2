@@ -109,13 +109,6 @@ const TECHNIQUE_GUIDES: Record<
 // Techniques that should display a reminder label on the LAST set row.
 const TECHNIQUE_LAST_SET_REMINDER = new Set(['Rest-Pause', 'Drop-Sets', 'Myo-Reps', 'Failure']);
 
-// Technique-aware rest timer presets (seconds). Only used when the selected technique benefits from a specific rest window.
-const TECHNIQUE_REST_TIMER_SECONDS: Record<string, number> = {
-  'Rest-Pause': 15,
-  'Myo-Reps': 15,
-  'Drop-Sets': 10,
-  Failure: 90,
-};
 
 export default function WorkoutPage() {
   const params = useParams();
@@ -850,19 +843,11 @@ const applySetTechnique = async (newTechnique: string) => {
   };
 
   const getExerciseRestSeconds = (ex: any): number => {
-    // Base rest from exercise defaults (if present).
-    const v = ex?.exercises?.rest_seconds ?? ex?.exercises?.default_set_scheme?.restSeconds;
-    const n = Number(v);
-    const base = Number.isFinite(n) && n > 0 ? Math.floor(n) : 60;
-
-    // Technique-aware presets (Hevy-like): short rests for cluster-style techniques.
-    const technique =
-      (ex && Array.isArray((ex as any).technique_tags) && (ex as any).technique_tags[0]) || 'Normal-Sets';
-    const preset = TECHNIQUE_REST_TIMER_SECONDS[technique];
-    if (Number.isFinite(preset) && preset > 0) return preset;
-
-    return base;
-  };
+  // Rest time is set per exercise; default is 60 seconds.
+  const v = ex?.exercises?.rest_seconds ?? ex?.exercises?.default_set_scheme?.restSeconds;
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 60;
+};
 
   const handleToggleCompleted = async (workoutExerciseRow: any, setRow: any) => {
     const willComplete = !setRow.is_completed;
