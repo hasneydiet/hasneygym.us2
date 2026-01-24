@@ -423,16 +423,22 @@ export default function DashboardPage() {
                     </div>
 
                     <div className="min-w-0">
-                      <div className="text-xs font-medium text-muted-foreground">Profile</div>
+                      <div className="text-lg font-semibold tracking-tight">Profile</div>
                       <div className="text-lg font-semibold tracking-tight truncate">
                         {profile?.full_name || 'Not set'}
                       </div>
 
-	                      <div className="mt-2 space-y-0.5 text-xs text-muted-foreground">
-	                        <div>Goal: {profile?.goal ? goalLabel(profile.goal) : 'Not set'}</div>
-	                        <div>Routine Start Date: {formatDateYMD(profile?.goal_start)}</div>
-	                        <div>Routine End Date: {formatDateYMD(profile?.goal_end)}</div>
-	                      </div>
+	                      <div className="mt-2 space-y-1">
+                        <div className="text-lg font-semibold tracking-tight">
+                          Goal: {profile?.goal ? goalLabel(profile.goal) : 'Not set'}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          Routine Start Date: {formatDateYMD(profile?.goal_start)}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          Routine End Date: {formatDateYMD(profile?.goal_end)}
+                        </div>
+                      </div>
                     </div>
                   </div>
 
