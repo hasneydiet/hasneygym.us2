@@ -135,9 +135,65 @@ export default function WorkoutPage() {
 const [techniqueOpen, setTechniqueOpen] = useState(false);
 const [techniqueKey, setTechniqueKey] = useState<string | null>(null);
 
+// Set-technique (Normal-Sets / Rest-Pause, etc) picker for the active session.
+const [setTechniqueOpen, setSetTechniqueOpen] = useState(false);
+const [setTechniqueExerciseId, setSetTechniqueExerciseId] = useState<string | null>(null);
+
 const openTechnique = (key: string) => {
   setTechniqueKey(key);
   setTechniqueOpen(true);
+};
+
+const SET_TECHNIQUES = ['Normal-Sets', 'Drop-Sets', 'Rest-Pause', 'GVT', 'Myo-Reps', 'Super-Sets', 'Failure'];
+
+const openSetTechnique = (workoutExerciseId: string) => {
+  setSetTechniqueExerciseId(workoutExerciseId);
+  setSetTechniqueOpen(true);
+};
+
+const applySetTechnique = async (newTechnique: string) => {
+  const workoutExerciseId = setTechniqueExerciseId;
+  if (!workoutExerciseId) return;
+
+  // Find the row so we can (optionally) persist the selection back to the routine template.
+  const row = exercises.find((e: any) => e.id === workoutExerciseId) as any;
+  const originRoutineDayExerciseId = row?.routine_day_exercise_id as string | null | undefined;
+
+  // Optimistic UI: update immediately.
+  setExercises((prev: any[]) =>
+    prev.map((e: any) => (e.id === workoutExerciseId ? { ...e, technique_tags: [newTechnique] } : e))
+  );
+
+  try {
+    const updates: Promise<any>[] = [];
+
+    updates.push(
+      supabase.from('workout_exercises').update({ technique_tags: [newTechnique] }).eq('id', workoutExerciseId)
+    );
+
+    // If the workout was started from a routine day and this exercise was seeded from a specific template row,
+    // persist the selection so future workouts inherit it.
+    if (originRoutineDayExerciseId) {
+      updates.push(
+        supabase
+          .from('routine_day_exercises')
+          .update({ technique_tags: [newTechnique] })
+          .eq('id', originRoutineDayExerciseId)
+      );
+    }
+
+    const results = await Promise.all(updates);
+    const firstErr = results.find((r: any) => r?.error)?.error;
+    if (firstErr) throw firstErr;
+  } catch (e: any) {
+    console.error(e);
+    alert(e?.message || 'Failed to update technique.');
+    // Re-sync from server in case optimistic update diverged.
+    await loadWorkout();
+  } finally {
+    setSetTechniqueOpen(false);
+    setSetTechniqueExerciseId(null);
+  }
 };
 
   // Session clock
@@ -648,7 +704,8 @@ const openTechnique = (key: string) => {
           workout_session_id: sessionId,
           exercise_id: selectedExerciseId,
           order_index: nextOrder,
-          technique_tags: [],
+          routine_day_exercise_id: null,
+          technique_tags: ['Normal-Sets'],
         })
         .select('id')
         .single();
@@ -1049,19 +1106,31 @@ const openTechnique = (key: string) => {
                   {!isReorderMode && (
                     <div className="mt-2 flex items-center justify-between gap-3">
                       {/* Technique on the left (no pill border) */}
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex items-center gap-2">
+                        {/* Set technique (session + routine default) */}
+                        <button
+                          type="button"
+                          onClick={() => openSetTechnique(exercise.id)}
+                          disabled={sessionIsCompleted}
+                          className="tap-target text-sm font-semibold text-primary truncate disabled:opacity-40 disabled:pointer-events-none"
+                          aria-label="Change set technique"
+                          title={sessionIsCompleted ? 'Workout completed' : 'Change set technique'}
+                        >
+                          {(Array.isArray(exercise.technique_tags) && exercise.technique_tags[0]) || 'Normal-Sets'}
+                        </button>
+
+                        {/* Form/How-to technique guide (non-persistent info) */}
                         {exercise.exercises?.default_technique_tags?.[0] ? (
                           <button
                             type="button"
                             onClick={() => openTechnique(exercise.exercises!.default_technique_tags![0])}
-                            className="tap-target text-sm font-semibold text-primary truncate"
+                            className="tap-target text-sm font-semibold text-gray-300/80 hover:text-white truncate"
                             aria-label={`How to perform ${exercise.exercises!.default_technique_tags![0]}`}
+                            title="How-to guide"
                           >
                             {exercise.exercises!.default_technique_tags![0]}
                           </button>
-                        ) : (
-                          <span className="text-sm text-gray-400">&nbsp;</span>
-                        )}
+                        ) : null}
                       </div>
 
                       {/* Rest timer on the right */}
@@ -1289,6 +1358,37 @@ const openTechnique = (key: string) => {
           {exercises.length === 0 && <div className="text-gray-400">No exercises found for this session.</div>}
         </div>
       </div>
+
+{/* Set-technique picker (persist to session; and to routine template when applicable) */}
+<Sheet open={setTechniqueOpen} onOpenChange={setSetTechniqueOpen}>
+  <SheetContent
+    side="bottom"
+    className="border-t border-white/10 bg-[hsl(var(--surface))] text-white shadow-2xl"
+  >
+    <div className="space-y-4">
+      <SheetHeader>
+        <SheetTitle className="text-white">Set Technique</SheetTitle>
+        <SheetDescription className="text-gray-300">
+          This updates the current workout in real time. If this workout was started from a routine day, it also becomes
+          the default for future workouts until you change it again.
+        </SheetDescription>
+      </SheetHeader>
+
+      <div className="grid grid-cols-2 gap-2">
+        {SET_TECHNIQUES.map((t) => (
+          <button
+            key={t}
+            type="button"
+            onClick={() => applySetTechnique(t)}
+            className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-left text-sm font-semibold text-white hover:bg-white/10"
+          >
+            {t}
+          </button>
+        ))}
+      </div>
+    </div>
+  </SheetContent>
+</Sheet>
 
 <Sheet open={techniqueOpen} onOpenChange={setTechniqueOpen}>
   <SheetContent

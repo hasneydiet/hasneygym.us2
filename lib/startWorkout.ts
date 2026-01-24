@@ -40,7 +40,7 @@ export async function startWorkoutForDay(input: StartWorkoutInput): Promise<stri
   // 2) Pull routine_day_exercises + exercise default scheme
   const { data: rdeRows, error: rdeErr } = await supabase
     .from('routine_day_exercises')
-    .select('exercise_id, order_index, default_sets, exercises(default_set_scheme)')
+    .select('id, exercise_id, order_index, default_sets, technique_tags, exercises(default_set_scheme)')
     .eq('routine_day_id', routineDayId)
     .order('order_index', { ascending: true });
 
@@ -51,9 +51,11 @@ export async function startWorkoutForDay(input: StartWorkoutInput): Promise<stri
       .filter((r: any) => r.exercise_id)
       .map((r: any) => ({
         workout_session_id: session.id,
+        routine_day_exercise_id: r.id,
         exercise_id: r.exercise_id,
         order_index: r.order_index ?? 0,
-        technique_tags: [],
+        technique_tags:
+          Array.isArray(r.technique_tags) && r.technique_tags.length > 0 ? r.technique_tags : ['Normal-Sets'],
       })) || [];
 
   if (exercisesToInsert.length > 0) {
