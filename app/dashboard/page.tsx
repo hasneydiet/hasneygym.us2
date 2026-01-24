@@ -428,32 +428,24 @@ export default function DashboardPage() {
                         {profile?.full_name || 'Not set'}
                       </div>
 
-                      <div className="mt-1 flex flex-wrap items-center gap-2">
-                        <span className="inline-flex items-center rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium backdrop-blur">
-                          Goal: {profile?.goal ? goalLabel(profile.goal) : 'Not set'}
-                        </span>
-                        <div className="mt-2 space-y-0.5 text-xs text-muted-foreground">
-                        <div>
-                          Routine Start Date: {formatDateYMD(profile?.goal_start)}
-                        </div>
-                        <div>
-                          Routine End Date: {formatDateYMD(profile?.goal_end)}
-                        </div>
-                      </div>
-                      </div>
+	                      <div className="mt-2 space-y-0.5 text-xs text-muted-foreground">
+	                        <div>Goal: {profile?.goal ? goalLabel(profile.goal) : 'Not set'}</div>
+	                        <div>Routine Start Date: {formatDateYMD(profile?.goal_start)}</div>
+	                        <div>Routine End Date: {formatDateYMD(profile?.goal_end)}</div>
+	                      </div>
                     </div>
                   </div>
 
                   <div className="mt-5 grid grid-cols-2 gap-3">
-                    <div className="rounded-xl border border-border/60 bg-background/60 p-3 backdrop-blur">
-                      <div className="text-[11px] font-medium text-muted-foreground">Weight</div>
+	                    <div className="rounded-xl border border-border/60 bg-background/60 p-3 backdrop-blur">
+	                      <div className="text-[11px] font-medium text-muted-foreground">Start Weight</div>
                       <div className="mt-1 text-sm font-semibold">
                         {profile?.weight_lbs != null ? `${profile.weight_lbs} lb` : 'Not set'}
                       </div>
                     </div>
 
-                    <div className="rounded-xl border border-border/60 bg-background/60 p-3 backdrop-blur">
-                      <div className="text-[11px] font-medium text-muted-foreground">Body fat</div>
+	                    <div className="rounded-xl border border-border/60 bg-background/60 p-3 backdrop-blur">
+	                      <div className="text-[11px] font-medium text-muted-foreground">Start Body Fat</div>
                       <div className="mt-1 text-sm font-semibold">
                         {profile?.body_fat_percent != null ? `${profile.body_fat_percent}%` : 'Not set'}
                       </div>
