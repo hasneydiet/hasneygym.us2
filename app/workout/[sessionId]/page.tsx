@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useCoach } from '@/hooks/useCoach';
@@ -8,7 +8,7 @@ import { useCoach } from '@/hooks/useCoach';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Plus, Clock, Trash2, GripVertical, Info } from 'lucide-react';
+import {Plus, Clock, Trash2, GripVertical, Info, Dumbbell} from 'lucide-react';
 type WorkoutSession = any;
 type WorkoutExercise = any;
 type WorkoutSet = any;
@@ -1173,9 +1173,18 @@ const applySetTechnique = async (newTechnique: string) => {
                           const weightPlaceholder =
                             prevWeight !== null && prevWeight !== undefined && prevWeight !== '' ? String(prevWeight) : '';
 
-                          return (
-                            <tr
-                              key={set.id}
+                          return showTechniqueReminder ? (
+                            <Fragment key={set.id}>
+                              <tr className="set-row border-b-0">
+                              <td colSpan={5} className="px-2 pt-3 pb-1">
+                                <div className="flex items-center justify-center text-xs font-semibold text-primary">
+                                  <Dumbbell className="h-4 w-4 mr-2" />
+                                  <span>Technique Required: {currentTechnique.toUpperCase()}</span>
+                                  <Dumbbell className="h-4 w-4 ml-2" />
+                                </div>
+                              </td>
+                            </tr>
+                              <tr
                               className={
                                 "set-row " +
                                 (set.id === highlightSetId ? "set-row--new " : "") +
@@ -1183,13 +1192,8 @@ const applySetTechnique = async (newTechnique: string) => {
                               }
                             >
 	                            <td className="px-2 py-2 font-semibold text-gray-200 tabular-nums">
-	                              <div className="flex flex-col leading-tight">
-	                                <span>{idx + 1}</span>
-	                                {showTechniqueReminder ? (
-	                                  <span className="text-[11px] font-semibold text-primary truncate">{currentTechnique}</span>
-	                                ) : null}
-	                              </div>
-	                            </td>
+                              <span>{idx + 1}</span>
+                            </td>
 
                             <td className="px-2 py-2">
                               <input
@@ -1278,7 +1282,108 @@ const applySetTechnique = async (newTechnique: string) => {
                               </button>
                             </td>
                           </tr>
-                        );
+                            </Fragment>
+                          ) : (
+                            <tr
+                              key={set.id}
+                              className={
+                                "set-row " +
+                                (set.id === highlightSetId ? "set-row--new " : "") +
+                                (removingSetIds.has(set.id) ? "set-row--removing " : "")
+                              }
+                            >
+	                            <td className="px-2 py-2 font-semibold text-gray-200 tabular-nums">
+                              <span>{idx + 1}</span>
+                            </td>
+
+                            <td className="px-2 py-2">
+                              <input
+                                type="number"
+                                inputMode="numeric"
+                                 aria-label={`Reps for set ${idx + 1}`}
+                                placeholder={repsPlaceholder}
+                                value={getDisplayValue(set.id, 'reps', set.reps)}
+                                onChange={(e) => setDraftValue(set.id, 'reps', e.target.value)}
+                                onFocus={(e) => e.currentTarget.select()}
+                                ref={(el) => {
+                                  const keyA = `${exercise.id}:${set.id}:reps`;
+                                  const keyB = `${exercise.id}:${idx}:reps`;
+                                  if (el) {
+                                    inputRefs.current.set(keyA, el);
+                                    inputRefs.current.set(keyB, el);
+                                  } else {
+                                    inputRefs.current.delete(keyA);
+                                    inputRefs.current.delete(keyB);
+                                  }
+                                }}
+                                onKeyDown={(e) => handleRepsKeyDown(exercise.id, idx, e)}
+                                onBlur={() => {
+                                  const raw = getDraftRaw(set.id, 'reps').trim();
+                                  const num = raw === '' ? 0 : Number(raw);
+                                  saveSet(set.id, 'reps', Number.isFinite(num) ? num : 0);
+                                  clearDraftField(set.id, 'reps');
+                                }}
+                                className="w-full h-11 px-2 py-2 rounded-xl border border-gray-700 bg-gray-900/40 text-center text-white placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-950"
+                              />
+                              {formatPrevLine('Prev:', prevReps)}
+                            </td>
+
+                            <td className="px-2 py-2">
+                              <input
+                                type="number"
+                                inputMode="decimal"
+                                 aria-label={`Weight for set ${idx + 1}`}
+                                step="0.5"
+                                placeholder={weightPlaceholder}
+                                value={getDisplayValue(set.id, 'weight', set.weight)}
+                                onChange={(e) => setDraftValue(set.id, 'weight', e.target.value)}
+                                onFocus={(e) => e.currentTarget.select()}
+                                ref={(el) => {
+                                  const keyA = `${exercise.id}:${set.id}:weight`;
+                                  const keyB = `${exercise.id}:${idx}:weight`;
+                                  if (el) {
+                                    inputRefs.current.set(keyA, el);
+                                    inputRefs.current.set(keyB, el);
+                                  } else {
+                                    inputRefs.current.delete(keyA);
+                                    inputRefs.current.delete(keyB);
+                                  }
+                                }}
+                                onKeyDown={(e) => handleWeightKeyDown(exercise.id, idx, (sets[exercise.id] || []).length, e)}
+                                onBlur={() => {
+                                  const raw = getDraftRaw(set.id, 'weight').trim();
+                                  const num = raw === '' ? 0 : Number(raw);
+                                  saveSet(set.id, 'weight', Number.isFinite(num) ? num : 0);
+                                  clearDraftField(set.id, 'weight');
+                                }}
+                                className="w-full h-11 px-2 py-2 rounded-xl border border-gray-700 bg-gray-900/40 text-center text-white placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-950"
+                              />
+                              {formatPrevLine('Prev:', prevWeight)}
+                            </td>
+
+                            <td className="px-2 py-2 text-center">
+                              <button
+                                onClick={() => handleToggleCompleted(exercise, set)}
+                                className={`w-11 h-11 rounded border-2 flex items-center justify-center ${
+                                  set.is_completed ? 'bg-white border-white text-gray-900' : 'border-gray-700'
+                                }`}
+                                title="Mark set complete"
+                              >
+                                {set.is_completed && <span className="text-xs">✓</span>}
+                              </button>
+                            </td>
+
+                            <td className="px-2 py-2 text-center">
+                              <button
+                                onClick={() => deleteSet(exercise.id, set.id)}
+                                className="w-11 h-11 rounded text-gray-300 hover:text-red-400"
+                                title="Delete set"
+                              >
+                                ✕
+                              </button>
+                            </td>
+                          </tr>
+                          );
                       })}
                     </tbody>
                   </table>
