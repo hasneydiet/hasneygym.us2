@@ -75,6 +75,7 @@ export async function startWorkoutForDay(input: StartWorkoutInput): Promise<stri
           Array.isArray(r.technique_tags) && r.technique_tags.length > 0
             ? r.technique_tags
             : [prefByExerciseId[String(r.exercise_id)] ?? 'Normal-Sets'],
+      }));
   if (exercisesToInsert.length > 0) {
     // 3) Insert workout_exercises (return id + exercise_id)
     const { data: weRows, error: weErr } = await supabase
