@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useCoach } from '@/hooks/useCoach';
@@ -8,7 +8,7 @@ import { useCoach } from '@/hooks/useCoach';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Plus, Clock, Trash2, GripVertical } from 'lucide-react';
+import {Plus, Clock, Trash2, GripVertical, Info, Dumbbell} from 'lucide-react';
 type WorkoutSession = any;
 type WorkoutExercise = any;
 type WorkoutSet = any;
@@ -105,6 +105,11 @@ const TECHNIQUE_GUIDES: Record<
     tips: ['Use mostly on machines/cables and limit frequency to manage fatigue.'],
   },
 };
+
+// Techniques that should display a reminder label on the LAST set row.
+const TECHNIQUE_LAST_SET_REMINDER = new Set(['Rest-Pause', 'Drop-Sets', 'Myo-Reps', 'Failure']);
+
+
 export default function WorkoutPage() {
   const params = useParams();
   const router = useRouter();
@@ -131,13 +136,83 @@ export default function WorkoutPage() {
   // Draft typed values: used only while editing; after blur it gets cleared.
   const [draft, setDraft] = useState<Record<string, Record<string, string>>>({});
 
-// Technique guide sheet
-const [techniqueOpen, setTechniqueOpen] = useState(false);
-const [techniqueKey, setTechniqueKey] = useState<string | null>(null);
+// Technique guide sheet (shows instructions for the CURRENT selected technique)
+const [techniqueGuideOpen, setTechniqueGuideOpen] = useState(false);
+const [techniqueGuideExerciseId, setTechniqueGuideExerciseId] = useState<string | null>(null);
 
-const openTechnique = (key: string) => {
-  setTechniqueKey(key);
-  setTechniqueOpen(true);
+// Set-technique (Normal-Sets / Rest-Pause, etc) picker for the active session.
+const [setTechniqueOpen, setSetTechniqueOpen] = useState(false);
+const [techniqueExerciseId, setTechniqueExerciseId] = useState<string | null>(null);
+
+const SET_TECHNIQUES = ['Normal-Sets', 'Drop-Sets', 'Rest-Pause', 'GVT', 'Myo-Reps', 'Super-Sets', 'Failure'];
+
+const openSetTechnique = (workoutExerciseId: string) => {
+  setTechniqueExerciseId(workoutExerciseId);
+  setSetTechniqueOpen(true);
+};
+
+const openTechniqueGuide = (workoutExerciseId: string) => {
+  setTechniqueGuideExerciseId(workoutExerciseId);
+  setTechniqueGuideOpen(true);
+};
+
+const applySetTechnique = async (newTechnique: string) => {
+  const workoutExerciseId = techniqueExerciseId;
+  if (!workoutExerciseId) return;
+
+  // Find the row so we can (optionally) persist the selection back to the routine template.
+  const row = exercises.find((e: any) => e.id === workoutExerciseId) as any;
+  const originRoutineDayExerciseId = row?.routine_day_exercise_id as string | null | undefined;
+
+  // Optimistic UI: update immediately.
+  setExercises((prev: any[]) =>
+    prev.map((e: any) => (e.id === workoutExerciseId ? { ...e, technique_tags: [newTechnique] } : e))
+  );
+
+  try {
+		// NOTE: Supabase update builders are "thenable" but not typed as Promise.
+		// Await them explicitly to satisfy TypeScript and keep behavior clear.
+		const res1 = await supabase
+			.from('workout_exercises')
+			.update({ technique_tags: [newTechnique] })
+			.eq('id', workoutExerciseId);
+		if (res1?.error) throw res1.error;
+
+		// If the workout was started from a routine day and this exercise was seeded from a specific template row,
+		// persist the selection so future workouts inherit it.
+		if (originRoutineDayExerciseId) {
+			const res2 = await supabase
+				.from('routine_day_exercises')
+				.update({ technique_tags: [newTechnique] })
+				.eq('id', originRoutineDayExerciseId);
+			if (res2?.error) throw res2.error;
+		}
+
+		// Smart default: remember the last selected technique for this exercise (used when adding the exercise again).
+		if (effectiveUserId && row?.exercise_id) {
+			const res3 = await supabase
+				.from('user_exercise_preferences')
+				.upsert(
+					{
+						user_id: effectiveUserId,
+						exercise_id: row.exercise_id,
+						technique: newTechnique,
+						updated_at: new Date().toISOString(),
+					},
+					{ onConflict: 'user_id,exercise_id' }
+				);
+			if (res3?.error) throw res3.error;
+		}
+
+  } catch (e: any) {
+    console.error(e);
+    alert(e?.message || 'Failed to update technique.');
+    // Re-sync from server in case optimistic update diverged.
+    await loadWorkout();
+  } finally {
+    setSetTechniqueOpen(false);
+    setTechniqueExerciseId(null);
+  }
 };
 
   // Session clock
@@ -246,6 +321,19 @@ const openTechnique = (key: string) => {
 
     const onMove = (ev: PointerEvent) => {
       dragPointerYRef.current = ev.clientY;
+
+      // Auto-scroll while dragging near viewport edges (mobile-friendly, HEVY-like)
+      const edge = 80;
+      const y = ev.clientY;
+      const vh = window.innerHeight;
+      if (y < edge) {
+        const strength = (edge - y) / edge;
+        window.scrollBy({ top: -Math.round(18 * strength), left: 0, behavior: 'auto' });
+      } else if (y > vh - edge) {
+        const strength = (y - (vh - edge)) / edge;
+        window.scrollBy({ top: Math.round(18 * strength), left: 0, behavior: 'auto' });
+      }
+
       // Follow the finger (throttled via rAF to keep it smooth on mobile)
       if (dragRafRef.current == null) {
         dragRafRef.current = requestAnimationFrame(() => {
@@ -265,7 +353,6 @@ const openTechnique = (key: string) => {
       if (entries.length === 0) return;
 
       // Use the pointer position, not the element rect, for a more natural mobile feel.
-      const y = ev.clientY;
       let over = dragOverIndex;
       for (const it of entries) {
         if (y < it.mid) {
@@ -630,13 +717,27 @@ const openTechnique = (key: string) => {
       const setsCount = Number.isFinite(schemeSets) ? Math.max(1, Math.floor(schemeSets)) : 1;
       const defaultReps = Number.isFinite(schemeReps) ? Math.max(0, Math.floor(schemeReps)) : 0;
 
+      // Smart default: use the last technique the user chose for this exercise (across sessions).
+      let defaultTechnique = 'Normal-Sets';
+      if (effectiveUserId) {
+        const { data: prefRow } = await supabase
+          .from('user_exercise_preferences')
+          .select('technique')
+          .eq('user_id', effectiveUserId)
+          .eq('exercise_id', selectedExerciseId)
+          .maybeSingle();
+        if (prefRow?.technique) defaultTechnique = String(prefRow.technique);
+      }
+
+
       const { data: newWorkoutExercise, error: weErr } = await supabase
         .from('workout_exercises')
         .insert({
           workout_session_id: sessionId,
           exercise_id: selectedExerciseId,
           order_index: nextOrder,
-          technique_tags: [],
+          routine_day_exercise_id: null,
+          technique_tags: [defaultTechnique],
         })
         .select('id')
         .single();
@@ -742,11 +843,11 @@ const openTechnique = (key: string) => {
   };
 
   const getExerciseRestSeconds = (ex: any): number => {
-    const v = ex?.exercises?.rest_seconds ?? ex?.exercises?.default_set_scheme?.restSeconds;
-    const n = Number(v);
-    if (!Number.isFinite(n) || n <= 0) return 60;
-    return Math.floor(n);
-  };
+  // Rest time is set per exercise; default is 60 seconds.
+  const v = ex?.exercises?.rest_seconds ?? ex?.exercises?.default_set_scheme?.restSeconds;
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 60;
+};
 
   const handleToggleCompleted = async (workoutExerciseRow: any, setRow: any) => {
     const willComplete = !setRow.is_completed;
@@ -985,6 +1086,8 @@ const openTechnique = (key: string) => {
         <div className="space-y-6">
           {exercises.map((exercise: any) => {
             const prevSets = prevSetsByExercise[exercise.id] || [];
+            // While reordering, collapse cards to just the exercise name for easier dragging (HEVY-like)
+            const isReorderMode = Boolean(draggingExerciseId);
 
             return (
               <div
@@ -1032,68 +1135,97 @@ const openTechnique = (key: string) => {
                     <h3 className="section-title text-white">{exercise.exercises?.name || 'Exercise'}</h3>
                   </div>
 
-                  <div className="mt-2 flex items-center justify-between gap-3">
-                    {/* Technique on the left (no pill border) */}
-                    <div className="min-w-0">
-                      {exercise.exercises?.default_technique_tags?.[0] ? (
+                  {!isReorderMode && (
+                    <div className="mt-2 flex items-center justify-between gap-3">
+                      {/* Technique on the left (no pill border) */}
+                      <div className="min-w-0 flex items-center gap-2">
+                        {/* Set technique (session + routine default) */}
                         <button
                           type="button"
-                          onClick={() => openTechnique(exercise.exercises!.default_technique_tags![0])}
-                          className="tap-target text-sm font-semibold text-primary truncate"
-                          aria-label={`How to perform ${exercise.exercises!.default_technique_tags![0]}`}
+                          onClick={() => openSetTechnique(exercise.id)}
+                          disabled={sessionIsCompleted}
+                          className="tap-target text-sm font-semibold text-primary truncate disabled:opacity-40 disabled:pointer-events-none"
+                          aria-label="Change set technique"
+                          title={sessionIsCompleted ? 'Workout completed' : 'Change set technique'}
                         >
-                          {exercise.exercises!.default_technique_tags![0]}
+                          {(Array.isArray(exercise.technique_tags) && exercise.technique_tags[0]) || 'Normal-Sets'}
                         </button>
-                      ) : (
-                        <span className="text-sm text-gray-400">&nbsp;</span>
-                      )}
-                    </div>
 
-                    {/* Rest timer on the right */}
-                    <div className="flex items-center gap-2 text-sm text-gray-300 shrink-0">
-                      <Clock className="h-4 w-4 text-gray-300" />
-                      {restSecondsRemaining !== null && restExerciseId === exercise.id ? (
-                        <span className="font-medium">{formatClock(restSecondsRemaining)}</span>
-                      ) : (
-                        <span className="font-medium">{formatClock(getExerciseRestSeconds(exercise))}</span>
-                      )}
+                        {/* Technique instructions (for the currently selected technique) */}
+                        <button
+                          type="button"
+                          onClick={() => openTechniqueGuide(exercise.id)}
+                          className="tap-target inline-flex items-center justify-center rounded-lg p-1 text-gray-300/80 hover:text-white"
+                          aria-label="Technique instructions"
+                          title="Technique instructions"
+                        >
+                          <Info className="h-4 w-4" />
+                        </button>
+</div>
+
+                      {/* Rest timer on the right */}
+                      <div className="flex items-center gap-2 text-sm text-gray-300 shrink-0">
+                        <Clock className="h-4 w-4 text-gray-300" />
+                        {restSecondsRemaining !== null && restExerciseId === exercise.id ? (
+                          <span className="font-medium">{formatClock(restSecondsRemaining)}</span>
+                        ) : (
+                          <span className="font-medium">{formatClock(getExerciseRestSeconds(exercise))}</span>
+                        )}
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
+                {!isReorderMode && (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left text-[11px] uppercase tracking-wide text-gray-300/80 border-b border-gray-800">
+                          <th className="px-2 py-2 w-12">Set</th>
+                          <th className="px-2 py-2">Reps</th>
+                          <th className="px-2 py-2">Weight</th>
+                          <th className="px-2 py-2 text-center">Done</th>
+                          <th className="px-2 py-2 w-12 text-center">Del</th>
+                        </tr>
+                      </thead>
 
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-[11px] uppercase tracking-wide text-gray-300/80 border-b border-gray-800">
-                        <th className="px-2 py-2 w-12">Set</th>
-                        <th className="px-2 py-2">Reps</th>
-                        <th className="px-2 py-2">Weight</th>
-                        <th className="px-2 py-2 text-center">Done</th>
-                        <th className="px-2 py-2 w-12 text-center">Del</th>
-                      </tr>
-                    </thead>
+                      <tbody>
+                        {(sets[exercise.id] || []).map((set: any, idx: number) => {
+                          const prev = prevSets[idx];
+                          const prevReps = prev?.reps ?? null;
+                          const prevWeight = prev?.weight ?? null;
+	                          const currentTechnique =
+	                            (Array.isArray(exercise.technique_tags) && exercise.technique_tags[0]) || 'Normal-Sets';
+	                          const isLastSetForExercise =
+	                            idx === Math.max(0, (sets[exercise.id] || []).length - 1) && (sets[exercise.id] || []).length > 0;
+	                          const showTechniqueReminder =
+	                            isLastSetForExercise && TECHNIQUE_LAST_SET_REMINDER.has(currentTechnique);
 
-                    <tbody>
-                      {(sets[exercise.id] || []).map((set: any, idx: number) => {
-                        const prev = prevSets[idx];
-                        const prevReps = prev?.reps ?? null;
-                        const prevWeight = prev?.weight ?? null;
+                          const repsPlaceholder =
+                            prevReps !== null && prevReps !== undefined && prevReps !== '' ? String(prevReps) : '';
+                          const weightPlaceholder =
+                            prevWeight !== null && prevWeight !== undefined && prevWeight !== '' ? String(prevWeight) : '';
 
-                        const repsPlaceholder =
-                          prevReps !== null && prevReps !== undefined && prevReps !== '' ? String(prevReps) : '';
-                        const weightPlaceholder =
-                          prevWeight !== null && prevWeight !== undefined && prevWeight !== '' ? String(prevWeight) : '';
-
-                        return (
-                          <tr
-                            key={set.id}
-                            className={
-                              "set-row " +
-                              (set.id === highlightSetId ? "set-row--new " : "") +
-                              (removingSetIds.has(set.id) ? "set-row--removing " : "")
-                            }
-                          >
-                            <td className="px-2 py-2 font-semibold text-gray-200 tabular-nums">{idx + 1}</td>
+                          return showTechniqueReminder ? (
+                            <Fragment key={set.id}>
+                              <tr className="set-row border-b-0">
+                              <td colSpan={5} className="px-2 pt-3 pb-1">
+                                <div className="flex items-center justify-center text-xs font-semibold text-primary">
+                                  <Dumbbell className="h-4 w-4 mr-2" />
+                                  <span>Technique Required: {currentTechnique.toUpperCase()}</span>
+                                  <Dumbbell className="h-4 w-4 ml-2" />
+                                </div>
+                              </td>
+                            </tr>
+                              <tr
+                              className={
+                                "set-row " +
+                                (set.id === highlightSetId ? "set-row--new " : "") +
+                                (removingSetIds.has(set.id) ? "set-row--removing " : "")
+                              }
+                            >
+	                            <td className="px-2 py-2 font-semibold text-gray-200 tabular-nums">
+                              <span>{idx + 1}</span>
+                            </td>
 
                             <td className="px-2 py-2">
                               <input
@@ -1182,7 +1314,108 @@ const openTechnique = (key: string) => {
                               </button>
                             </td>
                           </tr>
-                        );
+                            </Fragment>
+                          ) : (
+                            <tr
+                              key={set.id}
+                              className={
+                                "set-row " +
+                                (set.id === highlightSetId ? "set-row--new " : "") +
+                                (removingSetIds.has(set.id) ? "set-row--removing " : "")
+                              }
+                            >
+	                            <td className="px-2 py-2 font-semibold text-gray-200 tabular-nums">
+                              <span>{idx + 1}</span>
+                            </td>
+
+                            <td className="px-2 py-2">
+                              <input
+                                type="number"
+                                inputMode="numeric"
+                                 aria-label={`Reps for set ${idx + 1}`}
+                                placeholder={repsPlaceholder}
+                                value={getDisplayValue(set.id, 'reps', set.reps)}
+                                onChange={(e) => setDraftValue(set.id, 'reps', e.target.value)}
+                                onFocus={(e) => e.currentTarget.select()}
+                                ref={(el) => {
+                                  const keyA = `${exercise.id}:${set.id}:reps`;
+                                  const keyB = `${exercise.id}:${idx}:reps`;
+                                  if (el) {
+                                    inputRefs.current.set(keyA, el);
+                                    inputRefs.current.set(keyB, el);
+                                  } else {
+                                    inputRefs.current.delete(keyA);
+                                    inputRefs.current.delete(keyB);
+                                  }
+                                }}
+                                onKeyDown={(e) => handleRepsKeyDown(exercise.id, idx, e)}
+                                onBlur={() => {
+                                  const raw = getDraftRaw(set.id, 'reps').trim();
+                                  const num = raw === '' ? 0 : Number(raw);
+                                  saveSet(set.id, 'reps', Number.isFinite(num) ? num : 0);
+                                  clearDraftField(set.id, 'reps');
+                                }}
+                                className="w-full h-11 px-2 py-2 rounded-xl border border-gray-700 bg-gray-900/40 text-center text-white placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-950"
+                              />
+                              {formatPrevLine('Prev:', prevReps)}
+                            </td>
+
+                            <td className="px-2 py-2">
+                              <input
+                                type="number"
+                                inputMode="decimal"
+                                 aria-label={`Weight for set ${idx + 1}`}
+                                step="0.5"
+                                placeholder={weightPlaceholder}
+                                value={getDisplayValue(set.id, 'weight', set.weight)}
+                                onChange={(e) => setDraftValue(set.id, 'weight', e.target.value)}
+                                onFocus={(e) => e.currentTarget.select()}
+                                ref={(el) => {
+                                  const keyA = `${exercise.id}:${set.id}:weight`;
+                                  const keyB = `${exercise.id}:${idx}:weight`;
+                                  if (el) {
+                                    inputRefs.current.set(keyA, el);
+                                    inputRefs.current.set(keyB, el);
+                                  } else {
+                                    inputRefs.current.delete(keyA);
+                                    inputRefs.current.delete(keyB);
+                                  }
+                                }}
+                                onKeyDown={(e) => handleWeightKeyDown(exercise.id, idx, (sets[exercise.id] || []).length, e)}
+                                onBlur={() => {
+                                  const raw = getDraftRaw(set.id, 'weight').trim();
+                                  const num = raw === '' ? 0 : Number(raw);
+                                  saveSet(set.id, 'weight', Number.isFinite(num) ? num : 0);
+                                  clearDraftField(set.id, 'weight');
+                                }}
+                                className="w-full h-11 px-2 py-2 rounded-xl border border-gray-700 bg-gray-900/40 text-center text-white placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-950"
+                              />
+                              {formatPrevLine('Prev:', prevWeight)}
+                            </td>
+
+                            <td className="px-2 py-2 text-center">
+                              <button
+                                onClick={() => handleToggleCompleted(exercise, set)}
+                                className={`w-11 h-11 rounded border-2 flex items-center justify-center ${
+                                  set.is_completed ? 'bg-white border-white text-gray-900' : 'border-gray-700'
+                                }`}
+                                title="Mark set complete"
+                              >
+                                {set.is_completed && <span className="text-xs">✓</span>}
+                              </button>
+                            </td>
+
+                            <td className="px-2 py-2 text-center">
+                              <button
+                                onClick={() => deleteSet(exercise.id, set.id)}
+                                className="w-11 h-11 rounded text-gray-300 hover:text-red-400"
+                                title="Delete set"
+                              >
+                                ✕
+                              </button>
+                            </td>
+                          </tr>
+                          );
                       })}
                     </tbody>
                   </table>
@@ -1200,6 +1433,7 @@ const openTechnique = (key: string) => {
                     </button>
                   </div>
                 </div>
+                )}
               </div>
             );
           })}
@@ -1273,45 +1507,86 @@ const openTechnique = (key: string) => {
         </div>
       </div>
 
-<Sheet open={techniqueOpen} onOpenChange={setTechniqueOpen}>
+{/* Set-technique picker (persist to session; and to routine template when applicable) */}
+<Sheet open={setTechniqueOpen} onOpenChange={setSetTechniqueOpen}>
   <SheetContent
     side="bottom"
     className="border-t border-white/10 bg-[hsl(var(--surface))] text-white shadow-2xl"
   >
-    {techniqueKey && TECHNIQUE_GUIDES[techniqueKey] ? (
-      <div className="space-y-4">
-        <SheetHeader>
-          <SheetTitle className="text-white">{TECHNIQUE_GUIDES[techniqueKey].title}</SheetTitle>
-          <SheetDescription className="text-gray-300">
-            {TECHNIQUE_GUIDES[techniqueKey].summary}
-          </SheetDescription>
-        </SheetHeader>
+    <div className="space-y-4">
+      <SheetHeader>
+        <SheetTitle className="text-white">Set Technique</SheetTitle>
+        <SheetDescription className="text-gray-300">
+          This updates the current workout in real time. If this workout was started from a routine day, it also becomes
+          the default for future workouts until you change it again.
+        </SheetDescription>
+      </SheetHeader>
 
-        <div className="space-y-3">
-          <div>
-            <div className="mb-2 text-sm font-semibold text-gray-200">How To</div>
-            <ol className="list-decimal space-y-2 pl-5 text-sm text-gray-200">
-              {TECHNIQUE_GUIDES[techniqueKey].steps.map((s) => (
-                <li key={s}>{s}</li>
-              ))}
-            </ol>
-          </div>
-
-          {TECHNIQUE_GUIDES[techniqueKey].tips?.length ? (
-            <div>
-              <div className="mb-2 text-sm font-semibold text-gray-200">Tips</div>
-              <ul className="list-disc space-y-2 pl-5 text-sm text-gray-200">
-                {TECHNIQUE_GUIDES[techniqueKey].tips!.map((t) => (
-                  <li key={t}>{t}</li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-        </div>
+      <div className="grid grid-cols-2 gap-2">
+        {SET_TECHNIQUES.map((t) => (
+          <button
+            key={t}
+            type="button"
+            onClick={() => applySetTechnique(t)}
+            className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-left text-sm font-semibold text-white hover:bg-white/10"
+          >
+            {t}
+          </button>
+        ))}
       </div>
-    ) : null}
+    </div>
   </SheetContent>
 </Sheet>
-    </div>
+
+<Sheet open={techniqueGuideOpen} onOpenChange={(open) => {
+  setTechniqueGuideOpen(open);
+  if (!open) setTechniqueGuideExerciseId(null);
+}}>
+  <SheetContent
+    side="bottom"
+    className="border-t border-white/10 bg-[hsl(var(--surface))] text-white shadow-2xl"
+  >
+    {(() => {
+      const ex = techniqueGuideExerciseId
+        ? exercises.find((e: any) => e.id === techniqueGuideExerciseId)
+        : null;
+      const key =
+        (ex && Array.isArray((ex as any).technique_tags) && (ex as any).technique_tags[0]) || 'Normal-Sets';
+      const guide = TECHNIQUE_GUIDES[key] || TECHNIQUE_GUIDES['Normal-Sets'];
+      if (!guide) return null;
+      return (
+        <div className="space-y-4">
+          <SheetHeader>
+            <SheetTitle className="text-white">{guide.title}</SheetTitle>
+            <SheetDescription className="text-gray-300">{guide.summary}</SheetDescription>
+          </SheetHeader>
+
+          <div className="space-y-3">
+            <div>
+              <div className="mb-2 text-sm font-semibold text-gray-200">How To</div>
+              <ol className="list-decimal space-y-2 pl-5 text-sm text-gray-200">
+                {guide.steps.map((s) => (
+                  <li key={s}>{s}</li>
+                ))}
+              </ol>
+            </div>
+
+            {guide.tips?.length ? (
+              <div>
+                <div className="mb-2 text-sm font-semibold text-gray-200">Tips</div>
+                <ul className="list-disc space-y-2 pl-5 text-sm text-gray-200">
+                  {guide.tips.map((t) => (
+                    <li key={t}>{t}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      );
+    })()}
+  </SheetContent>
+</Sheet>
+</div>
   );
 }

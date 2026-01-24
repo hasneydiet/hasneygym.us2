@@ -11,7 +11,12 @@ export const metadata: Metadata = {
   description: 'Personal Workout Tracker',
   viewport: 'width=device-width, initial-scale=1, maximum-scale=5, viewport-fit=cover',
   manifest: '/manifest.json',
-  themeColor: '#0F0F14',
+  // PWA polish: ensure correct status bar + theme behavior in standalone mode.
+  // Keep colors consistent with the existing dark theme.
+  themeColor: [
+    { media: '(prefers-color-scheme: dark)', color: '#0F0F14' },
+    { media: '(prefers-color-scheme: light)', color: '#0F0F14' },
+  ],
   icons: {
     icon: [
       { url: '/icons/icon-32x32.png', sizes: '32x32', type: 'image/png' },
@@ -19,6 +24,18 @@ export const metadata: Metadata = {
       { url: '/icons/icon-512x512.png', sizes: '512x512', type: 'image/png' },
     ],
     apple: [{ url: '/icons/icon-180x180.png', sizes: '180x180', type: 'image/png' }],
+  },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'H-Core',
+  },
+  other: {
+    // iOS + Android standalone polish
+    'apple-mobile-web-app-capable': 'yes',
+    'mobile-web-app-capable': 'yes',
+    // Avoid iOS auto-linking phone numbers
+    'format-detection': 'telephone=no',
   },
 };
 

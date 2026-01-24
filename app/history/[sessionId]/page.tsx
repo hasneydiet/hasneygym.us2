@@ -7,6 +7,7 @@ import Navigation from '@/components/Navigation';
 import { supabase } from '@/lib/supabase';
 import { useCoach } from '@/hooks/useCoach';
 import { WorkoutSession, WorkoutExercise, WorkoutSet } from '@/lib/types';
+import { computeExerciseMetricsDetailed } from '@/lib/progressUtils';
 import { format } from 'date-fns';
 import { Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -23,6 +24,12 @@ export default function SessionDetailPage() {
   const [session, setSession] = useState<WorkoutSession | null>(null);
   const [exercises, setExercises] = useState<WorkoutExercise[]>([]);
   const [sets, setSets] = useState<{ [exerciseId: string]: WorkoutSet[] }>({});
+  const [summary, setSummary] = useState<{
+    totalVolume: number;
+    completedSets: number;
+    durationMinutes: number | null;
+    prs: { exerciseName: string; metric: string; value: string }[];
+  } | null>(null);
 
   useEffect(() => {
     loadSession();
@@ -59,6 +66,139 @@ export default function SessionDetailPage() {
           setsMap[ex.id] = setsData || [];
         }
         setSets(setsMap);
+
+        // Compute session analytics (volume, PRs, duration) for this detail view.
+        try {
+          const total = exData.reduce(
+            (acc, ex) => {
+              const s = setsMap[ex.id] || [];
+              const completedCount = s.filter((x) => x.is_completed).length;
+              const m = computeExerciseMetricsDetailed(s);
+              return {
+                totalVolume: acc.totalVolume + (m.volume || 0),
+                completedSets: acc.completedSets + completedCount,
+                perExercise: {
+                  ...acc.perExercise,
+                  [ex.exercise_id]: {
+                    name: ex.exercises?.name || 'Exercise',
+                    volume: m.volume || 0,
+                    bestWeight: m.bestWeight || 0,
+                    bestReps: m.bestReps || 0,
+                    est1RM: m.est1RM || 0,
+                  },
+                },
+              };
+            },
+            {
+              totalVolume: 0,
+              completedSets: 0,
+              perExercise: {} as Record<
+                string,
+                { name: string; volume: number; bestWeight: number; bestReps: number; est1RM: number }
+              >,
+            }
+          );
+
+          const durationMinutes =
+            sessionData?.ended_at
+              ? Math.max(
+                  0,
+                  Math.round(
+                    (new Date(sessionData.ended_at).getTime() -
+                      new Date(sessionData.started_at).getTime()) /
+                      60000
+                  )
+                )
+              : null;
+
+          // Fetch prior bests for PR detection (compare this session vs user's previous sessions).
+          const exerciseIds = Object.keys(total.perExercise);
+          let prs: { exerciseName: string; metric: string; value: string }[] = [];
+
+          if (exerciseIds.length > 0) {
+            const { data: priorWorkoutExercises } = await supabase
+              .from('workout_exercises')
+              .select('id, exercise_id')
+              .in('exercise_id', exerciseIds)
+              .neq('workout_session_id', sessionId)
+              .limit(400);
+
+            if (priorWorkoutExercises && priorWorkoutExercises.length > 0) {
+              const weIdToExerciseId: Record<string, string> = {};
+              for (const we of priorWorkoutExercises as any[]) {
+                weIdToExerciseId[we.id] = we.exercise_id;
+              }
+
+              const priorIds = (priorWorkoutExercises as any[]).map((x) => x.id);
+              const { data: priorSets } = await supabase
+                .from('workout_sets')
+                .select('workout_exercise_id, reps, weight, is_completed')
+                .in('workout_exercise_id', priorIds);
+
+              // Compute best-per-workout_exercise, then take max per exercise_id.
+              const setsByWE: Record<string, WorkoutSet[]> = {};
+              for (const s of (priorSets || []) as any[]) {
+                const id = s.workout_exercise_id as string;
+                if (!setsByWE[id]) setsByWE[id] = [];
+                setsByWE[id].push(s as WorkoutSet);
+              }
+
+              const bestByExercise: Record<
+                string,
+                { volume: number; bestWeight: number; est1RM: number }
+              > = {};
+
+              for (const [weId, sArr] of Object.entries(setsByWE)) {
+                const exId = weIdToExerciseId[weId];
+                if (!exId) continue;
+                const m = computeExerciseMetricsDetailed(sArr);
+                const cur = bestByExercise[exId] || { volume: 0, bestWeight: 0, est1RM: 0 };
+                bestByExercise[exId] = {
+                  volume: Math.max(cur.volume, m.volume || 0),
+                  bestWeight: Math.max(cur.bestWeight, m.bestWeight || 0),
+                  est1RM: Math.max(cur.est1RM, m.est1RM || 0),
+                };
+              }
+
+              // Compare this session's metrics vs prior best.
+              for (const exId of exerciseIds) {
+                const cur = total.perExercise[exId];
+                const prev = bestByExercise[exId] || { volume: 0, bestWeight: 0, est1RM: 0 };
+                if (cur.bestWeight > 0 && cur.bestWeight > prev.bestWeight) {
+                  prs.push({
+                    exerciseName: cur.name,
+                    metric: 'Best Weight',
+                    value: `${cur.bestWeight} × ${cur.bestReps}`,
+                  });
+                }
+                if (cur.est1RM > 0 && cur.est1RM > prev.est1RM) {
+                  prs.push({
+                    exerciseName: cur.name,
+                    metric: 'Est 1RM',
+                    value: `${cur.est1RM}`,
+                  });
+                }
+                if (cur.volume > 0 && cur.volume > prev.volume) {
+                  prs.push({
+                    exerciseName: cur.name,
+                    metric: 'Volume',
+                    value: `${cur.volume}`,
+                  });
+                }
+              }
+            }
+          }
+
+          setSummary({
+            totalVolume: Math.round(total.totalVolume),
+            completedSets: total.completedSets,
+            durationMinutes,
+            prs: prs.slice(0, 12),
+          });
+        } catch (e) {
+          // Fail-safe: session detail should remain usable even if analytics fail.
+          setSummary(null);
+        }
       }
     }
   };
@@ -152,6 +292,40 @@ export default function SessionDetailPage() {
                 <Button onClick={() => router.push(`/workout/${sessionId}`)} className="mt-4">
                   Resume Workout
                 </Button>
+              )}
+
+              {summary && (
+                <div className="mt-4 pt-4 border-t border-border/60">
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <p className="text-xs text-muted-foreground">Total Volume</p>
+                      <p className="text-sm font-semibold text-foreground">{summary.totalVolume}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Completed Sets</p>
+                      <p className="text-sm font-semibold text-foreground">{summary.completedSets}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Duration</p>
+                      <p className="text-sm font-semibold text-foreground">
+                        {summary.durationMinutes != null ? `${summary.durationMinutes} min` : '—'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {summary.prs.length > 0 && (
+                    <div className="mt-4">
+                      <p className="text-xs font-semibold tracking-wide text-muted-foreground mb-2">PRs this session</p>
+                      <div className="flex flex-wrap gap-2">
+                        {summary.prs.map((p, idx) => (
+                          <Badge key={`${p.exerciseName}-${p.metric}-${idx}`} variant="secondary" className="border-border/60">
+                            {p.exerciseName}: {p.metric} {p.value}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           )}

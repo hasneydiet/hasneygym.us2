@@ -9,7 +9,7 @@ import Navigation from '@/components/Navigation';
 import { supabase } from '@/lib/supabase';
 import { useCoach } from '@/hooks/useCoach';
 import { Routine } from '@/lib/types';
-import { Plus, Edit2, Trash2, Share2, Copy } from 'lucide-react';
+import { Plus, Edit2, Trash2, Share2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -39,8 +39,6 @@ export default function RoutinesPage() {
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({ name: '', notes: '' });
-
-  const [cloningRoutineId, setCloningRoutineId] = useState<string | null>(null);
 
   const [shareOpen, setShareOpen] = useState(false);
   const [shareRoutine, setShareRoutine] = useState<Routine | null>(null);
@@ -137,136 +135,6 @@ export default function RoutinesPage() {
     }
   };
 
-  const handleClone = async (routine: Routine) => {
-    // For coach view of all routines (not impersonating), cloning would be ambiguous.
-    if (isCoach && !impersonateUserId) return;
-
-    const uid = effectiveUserId;
-    if (!uid) return;
-
-    if (cloningRoutineId) return;
-    setCloningRoutineId(routine.id);
-
-    try {
-      // Pull full routine template (days + exercises) so we can deep-copy.
-      const { data: routineRow, error: routineErr } = await supabase
-        .from('routines')
-        .select(
-          `
-          id,
-          name,
-          notes,
-          routine_days(
-            id,
-            day_index,
-            name,
-            routine_day_exercises(
-              id,
-              exercise_id,
-              order_index,
-              superset_group_id,
-              default_sets
-            )
-          )
-        `
-        )
-        .eq('id', routine.id)
-        .eq('user_id', uid)
-        .single();
-
-      if (routineErr || !routineRow) {
-        alert('Could not clone routine. Please try again.');
-        return;
-      }
-
-      const sourceName = String((routineRow as any).name ?? routine.name ?? '').trim();
-      const cloneName = sourceName ? `${sourceName} (Copy)` : 'Routine (Copy)';
-
-      // Create the new routine.
-      const { data: newRoutine, error: newRoutineErr } = await supabase
-        .from('routines')
-        .insert({
-          user_id: uid,
-          name: cloneName,
-          notes: (routineRow as any).notes ?? '',
-        })
-        .select('id')
-        .single();
-
-      if (newRoutineErr || !newRoutine?.id) {
-        alert('Could not clone routine. Please try again.');
-        return;
-      }
-
-      const sourceDays: any[] = Array.isArray((routineRow as any).routine_days)
-        ? [...(routineRow as any).routine_days]
-        : [];
-      sourceDays.sort((a, b) => (a?.day_index ?? 0) - (b?.day_index ?? 0));
-
-      // Insert routine days (preserve day_index order).
-      const daysToInsert = sourceDays.map((d) => ({
-        routine_id: newRoutine.id,
-        day_index: d.day_index ?? 0,
-        name: d.name ?? 'Day',
-      }));
-
-      const dayIdMap = new Map<string, string>();
-      if (daysToInsert.length > 0) {
-        const { data: newDays, error: daysErr } = await supabase
-          .from('routine_days')
-          .insert(daysToInsert)
-          .select('id,day_index');
-
-        if (daysErr || !newDays) {
-          alert('Could not clone routine days. Please try again.');
-          return;
-        }
-
-        // Map source day -> new day by day_index (stable within a routine)
-        const byIndex = new Map<number, string>();
-        for (const nd of newDays as any[]) byIndex.set(Number(nd.day_index ?? 0), String(nd.id));
-        for (const sd of sourceDays) {
-          const newDayId = byIndex.get(Number(sd.day_index ?? 0));
-          if (newDayId) dayIdMap.set(String(sd.id), newDayId);
-        }
-      }
-
-      // Insert routine day exercises.
-      const exercisesToInsert: any[] = [];
-      for (const sd of sourceDays) {
-        const newDayId = dayIdMap.get(String(sd.id));
-        if (!newDayId) continue;
-        const sde: any[] = Array.isArray(sd.routine_day_exercises) ? sd.routine_day_exercises : [];
-        sde.sort((a, b) => (a?.order_index ?? 0) - (b?.order_index ?? 0));
-        for (const ex of sde) {
-          exercisesToInsert.push({
-            routine_day_id: newDayId,
-            exercise_id: ex.exercise_id,
-            order_index: ex.order_index ?? 0,
-            superset_group_id: ex.superset_group_id ?? null,
-            default_sets: ex.default_sets ?? [],
-          });
-        }
-      }
-
-      if (exercisesToInsert.length > 0) {
-        const { error: exErr } = await supabase
-          .from('routine_day_exercises')
-          .insert(exercisesToInsert);
-
-        if (exErr) {
-          alert('Could not clone routine exercises. Please try again.');
-          return;
-        }
-      }
-
-      if (routinesCacheKey) cacheDel(routinesCacheKey);
-      router.push(`/routines/${newRoutine.id}`);
-    } finally {
-      setCloningRoutineId(null);
-    }
-  };
-
   return (
     <AuthGuard>
       <div className="app-shell">
@@ -345,18 +213,6 @@ export default function RoutinesPage() {
                       title="Share"
                     >
                       <Share2 className="w-4 h-4" />
-                    </Button>
-                  )}
-                  {!(isCoach && !impersonateUserId) && (
-                    <Button
-                      onClick={() => handleClone(routine)}
-                      variant="outline"
-                      className="tap-target px-3"
-                      aria-label="Clone routine"
-                      title="Clone"
-                      disabled={cloningRoutineId === routine.id}
-                    >
-                      <Copy className="w-4 h-4" />
                     </Button>
                   )}
                   <Button
