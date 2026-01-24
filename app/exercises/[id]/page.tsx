@@ -5,11 +5,30 @@ import { useParams, useRouter } from 'next/navigation';
 import AuthGuard from '@/components/AuthGuard';
 import Navigation from '@/components/Navigation';
 import { supabase } from '@/lib/supabase';
-import { Exercise, WorkoutSet } from '@/lib/types';
-import { computeExerciseMetrics } from '@/lib/progressUtils';
+import { Exercise } from '@/lib/types';
+import { computeExerciseMetrics, computeExerciseMetricsDetailed } from '@/lib/progressUtils';
 import { ArrowLeft } from 'lucide-react';
 import { format } from 'date-fns';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+} from '@/components/ui/chart';
+import {
+  Line,
+  LineChart,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+} from 'recharts';
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+} from '@/components/ui/chart';
+import { Line, LineChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,6 +38,8 @@ interface SessionMetrics {
   volume: number;
   bestSet: string;
   est1RM: number;
+  bestWeight: number;
+  bestReps: number;
 }
 
 export default function ExerciseProgressPage() {
@@ -50,7 +71,8 @@ export default function ExerciseProgressPage() {
       .select('id, workout_session_id, workout_sessions!inner(started_at)')
       .eq('exercise_id', exerciseId)
       .order('workout_sessions(started_at)', { ascending: false })
-      .limit(10);
+      // Pull enough data for meaningful trends/PRs without overfetching.
+      .limit(24);
 
     if (workoutExercises && workoutExercises.length > 0) {
       const metricsPromises = workoutExercises.map(async (we) => {
@@ -60,10 +82,13 @@ export default function ExerciseProgressPage() {
           .eq('workout_exercise_id', we.id);
 
         const metrics = computeExerciseMetrics(setsData || []);
+        const detailed = computeExerciseMetricsDetailed(setsData || []);
         return {
           sessionId: we.workout_session_id,
           date: (we as any).workout_sessions.started_at,
           ...metrics,
+          bestWeight: detailed.bestWeight,
+          bestReps: detailed.bestReps,
         };
       });
 
@@ -76,6 +101,23 @@ export default function ExerciseProgressPage() {
 
   const lastSession = sessions[0];
   const previousSession = sessions[1];
+
+  const bestEver = sessions.reduce(
+    (acc, s) => {
+      return {
+        volume: Math.max(acc.volume, s.volume || 0),
+        bestWeight: Math.max(acc.bestWeight, s.bestWeight || 0),
+        est1RM: Math.max(acc.est1RM, s.est1RM || 0),
+      };
+    },
+    { volume: 0, bestWeight: 0, est1RM: 0 }
+  );
+
+  const isPR = (metric: 'volume' | 'bestWeight' | 'est1RM') => {
+    if (!lastSession) return false;
+    const val = (lastSession as any)[metric] || 0;
+    return val > 0 && val >= (bestEver as any)[metric];
+  };
 
   return (
     <AuthGuard>
@@ -111,16 +153,29 @@ export default function ExerciseProgressPage() {
                     <div className="space-y-2">
                       <div className="flex justify-between">
                         <span className="text-sm text-muted-foreground">Best Set:</span>
-                        <span className="text-sm font-medium text-foreground">{lastSession.bestSet}</span>
+                        <span className="text-sm font-medium text-foreground flex items-center gap-2">
+                          {lastSession.bestSet}
+                          {isPR('bestWeight') && (
+                            <Badge variant="secondary" className="h-5 px-2 text-[10px]">PR</Badge>
+                          )}
+                        </span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-sm text-muted-foreground">Volume:</span>
-                        <span className="text-sm font-medium text-foreground">{lastSession.volume} kg</span>
+                        <span className="text-sm font-medium text-foreground flex items-center gap-2">
+                          {lastSession.volume} kg
+                          {isPR('volume') && (
+                            <Badge variant="secondary" className="h-5 px-2 text-[10px]">PR</Badge>
+                          )}
+                        </span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-sm text-muted-foreground">Est 1RM:</span>
-                        <span className="text-sm font-medium text-foreground">
+                        <span className="text-sm font-medium text-foreground flex items-center gap-2">
                           {lastSession.est1RM > 0 ? `${lastSession.est1RM} kg` : 'N/A'}
+                          {isPR('est1RM') && (
+                            <Badge variant="secondary" className="h-5 px-2 text-[10px]">PR</Badge>
+                          )}
                         </span>
                       </div>
                     </div>
@@ -148,6 +203,85 @@ export default function ExerciseProgressPage() {
                           {previousSession.est1RM > 0 ? `${previousSession.est1RM} kg` : 'N/A'}
                         </span>
                       </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="surface p-6 mb-6">
+                <h2 className="text-lg font-semibold tracking-tight mb-4">Trends</h2>
+                {sessions.length < 2 ? (
+                  <p className="text-sm text-muted-foreground">Complete more sessions to see trends.</p>
+                ) : (
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div>
+                      <p className="text-sm font-medium text-muted-foreground mb-2">Volume</p>
+                      <ChartContainer
+                        config={{
+                          volume: { label: 'Volume', color: 'hsl(var(--primary))' },
+                        }}
+                        className="w-full"
+                      >
+                        <LineChart
+                          data={[...sessions]
+                            .slice(0, 12)
+                            .reverse()
+                            .map((s) => ({
+                              date: format(new Date(s.date), 'MM/dd'),
+                              volume: s.volume,
+                            }))}
+                          margin={{ left: 8, right: 8, top: 8, bottom: 0 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="date" tickLine={false} axisLine={false} />
+                          <YAxis tickLine={false} axisLine={false} width={36} />
+                          <ChartTooltip
+                            content={<ChartTooltipContent indicator="line" />}
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey="volume"
+                            stroke="var(--color-volume)"
+                            strokeWidth={2}
+                            dot={false}
+                          />
+                        </LineChart>
+                      </ChartContainer>
+                    </div>
+
+                    <div>
+                      <p className="text-sm font-medium text-muted-foreground mb-2">Estimated 1RM</p>
+                      <ChartContainer
+                        config={{
+                          est1RM: { label: 'Est 1RM', color: 'hsl(var(--primary))' },
+                        }}
+                        className="w-full"
+                      >
+                        <LineChart
+                          data={[...sessions]
+                            .slice(0, 12)
+                            .reverse()
+                            .map((s) => ({
+                              date: format(new Date(s.date), 'MM/dd'),
+                              est1RM: s.est1RM,
+                            }))}
+                          margin={{ left: 8, right: 8, top: 8, bottom: 0 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="date" tickLine={false} axisLine={false} />
+                          <YAxis tickLine={false} axisLine={false} width={36} />
+                          <ChartTooltip
+                            content={<ChartTooltipContent indicator="line" />}
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey="est1RM"
+                            stroke="var(--color-est1RM)"
+                            strokeWidth={2}
+                            dot={false}
+                          />
+                        </LineChart>
+                      </ChartContainer>
                     </div>
                   </div>
                 )}
