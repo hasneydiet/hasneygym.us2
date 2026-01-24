@@ -105,6 +105,9 @@ const TECHNIQUE_GUIDES: Record<
     tips: ['Use mostly on machines/cables and limit frequency to manage fatigue.'],
   },
 };
+
+// Techniques that should display a reminder label on the LAST set row.
+const TECHNIQUE_LAST_SET_REMINDER = new Set(['Rest-Pause', 'Drop-Sets', 'Myo-Reps', 'Failure']);
 export default function WorkoutPage() {
   const params = useParams();
   const router = useRouter();
@@ -1158,6 +1161,12 @@ const applySetTechnique = async (newTechnique: string) => {
                           const prev = prevSets[idx];
                           const prevReps = prev?.reps ?? null;
                           const prevWeight = prev?.weight ?? null;
+	                          const currentTechnique =
+	                            (Array.isArray(exercise.technique_tags) && exercise.technique_tags[0]) || 'Normal-Sets';
+	                          const isLastSetForExercise =
+	                            idx === Math.max(0, (sets[exercise.id] || []).length - 1) && (sets[exercise.id] || []).length > 0;
+	                          const showTechniqueReminder =
+	                            isLastSetForExercise && TECHNIQUE_LAST_SET_REMINDER.has(currentTechnique);
 
                           const repsPlaceholder =
                             prevReps !== null && prevReps !== undefined && prevReps !== '' ? String(prevReps) : '';
@@ -1173,7 +1182,14 @@ const applySetTechnique = async (newTechnique: string) => {
                                 (removingSetIds.has(set.id) ? "set-row--removing " : "")
                               }
                             >
-                            <td className="px-2 py-2 font-semibold text-gray-200 tabular-nums">{idx + 1}</td>
+	                            <td className="px-2 py-2 font-semibold text-gray-200 tabular-nums">
+	                              <div className="flex flex-col leading-tight">
+	                                <span>{idx + 1}</span>
+	                                {showTechniqueReminder ? (
+	                                  <span className="text-[11px] font-semibold text-primary truncate">{currentTechnique}</span>
+	                                ) : null}
+	                              </div>
+	                            </td>
 
                             <td className="px-2 py-2">
                               <input
