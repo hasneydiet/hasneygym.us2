@@ -189,7 +189,7 @@ const applySetTechnique = async (newTechnique: string) => {
     await loadWorkout();
   } finally {
     setSetTechniqueOpen(false);
-    setSetTechniqueExerciseId(null);
+    setTechniqueExerciseId(null);
   }
 };
 
