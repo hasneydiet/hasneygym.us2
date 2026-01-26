@@ -12,8 +12,6 @@ export interface Exercise {
   equipment: string;
   notes: string;
   created_at: string;
-  /** 'strength' (set-based) or 'cardio' (time-based). */
-  exercise_type?: 'strength' | 'cardio';
   /** Default rest time after a completed set (in seconds). */
   rest_seconds?: number;
   default_technique_tags: string[];
@@ -75,8 +73,6 @@ export interface WorkoutExercise {
   order_index: number;
   superset_group_id: string | null;
   technique_tags: string[];
-  /** For cardio exercises (time-based). */
-  duration_seconds?: number;
   exercises?: Exercise;
 }
 
