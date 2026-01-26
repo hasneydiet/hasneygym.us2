@@ -204,7 +204,8 @@ export default function ExercisesPage() {
     setEditingExercise(exercise);
     setFormData({
       name: exercise.name,
-      muscle_group: exercise.muscle_group,
+      // Normalize legacy/variant values (e.g. Quadriceps -> Quads) so the UI stays consistent.
+      muscle_group: normalizeMuscleGroup(exercise.muscle_group),
       equipment: exercise.equipment,
       notes: exercise.notes,
       rest_seconds: (exercise as any).rest_seconds ?? 60,
@@ -477,7 +478,7 @@ export default function ExercisesPage() {
                         {exercise.name}
                       </td>
                       <td className="px-3 sm:px-4 py-3 text-sm text-muted-foreground break-words hidden md:table-cell">
-                        {exercise.muscle_group || '-'}
+                        {normalizeMuscleGroup(exercise.muscle_group) || '-'}
                       </td>
                       <td className="px-3 sm:px-4 py-3 text-sm text-muted-foreground break-words hidden md:table-cell">
                         {(exercise.equipment || '-').replace(/\b\w/g, (c) => c.toUpperCase())}
