@@ -15,13 +15,6 @@ import { Badge } from '@/components/ui/badge';
 
 export const dynamic = 'force-dynamic';
 
-function formatDurationSeconds(totalSeconds: number): string {
-  const s = Math.max(0, Math.floor(Number(totalSeconds) || 0));
-  const mm = Math.floor((s % 3600) / 60);
-  const ss = s % 60;
-  return `${mm}:${String(ss).padStart(2, '0')}`;
-}
-
 export default function SessionDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -373,8 +366,6 @@ function ExerciseDetail({
   exercise: WorkoutExercise;
   sets: WorkoutSet[];
 }) {
-    const exType = (exercise.exercises as any)?.exercise_type === 'cardio' || (exercise.exercises as any)?.muscle_group === 'Cardio' ? 'cardio' : 'strength';
-
   return (
     <div className="p-4">
       <h3 className="text-base sm:text-lg font-semibold tracking-tight mb-2">{exercise.exercises?.name}</h3>
@@ -390,15 +381,6 @@ function ExerciseDetail({
           </div>
         </div>
       )}
-      {exType === 'cardio' ? (
-        <div className="mt-2 rounded-xl bg-muted/30 border border-border/60 px-4 py-3">
-          <p className="text-sm">
-            <span className="text-muted-foreground">Duration:</span>{' '}
-            <span className="font-semibold tabular-nums">{formatDurationSeconds((exercise as any).duration_seconds ?? 0)}</span>
-          </p>
-        </div>
-      ) : (
-
 
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
@@ -426,8 +408,7 @@ function ExerciseDetail({
           </tbody>
         </table>
       </div>
-          )}
-</div>
+    </div>
   );
 }
 
