@@ -40,7 +40,7 @@ export async function startWorkoutForDay(input: StartWorkoutInput): Promise<stri
   // 2) Pull routine_day_exercises + exercise default scheme
   const { data: rdeRows, error: rdeErr } = await supabase
     .from('routine_day_exercises')
-    .select('id, exercise_id, order_index, default_sets, technique_tags, exercises(default_set_scheme, exercise_type, muscle_group)')
+    .select('id, exercise_id, order_index, default_sets, technique_tags, exercises(default_set_scheme)')
     .eq('routine_day_id', routineDayId)
     .order('order_index', { ascending: true });
 
@@ -86,7 +86,7 @@ export async function startWorkoutForDay(input: StartWorkoutInput): Promise<stri
     if (weErr) throw weErr;
 
     // Build lookup by exercise_id so we know how many sets to create
-    const rdeByExerciseId: Record<string, { default_sets: any[]; default_set_scheme: any | null; exercise_type: 'strength' | 'cardio' }> = {};
+    const rdeByExerciseId: Record<string, { default_sets: any[]; default_set_scheme: any | null }> = {};
 
     for (const row of rdeRows || []) {
       const exerciseId = (row as any).exercise_id as string | undefined;
@@ -94,10 +94,6 @@ export async function startWorkoutForDay(input: StartWorkoutInput): Promise<stri
       rdeByExerciseId[exerciseId] = {
         default_sets: Array.isArray((row as any).default_sets) ? (row as any).default_sets : [],
         default_set_scheme: (row as any).exercises?.default_set_scheme ?? null,
-        exercise_type:
-          ((row as any).exercises?.exercise_type ?? ((row as any).exercises?.muscle_group === 'Cardio' ? 'cardio' : 'strength')) === 'cardio'
-            ? 'cardio'
-            : 'strength',
       };
     }
 
@@ -109,12 +105,6 @@ export async function startWorkoutForDay(input: StartWorkoutInput): Promise<stri
       const exerciseId = (we as any).exercise_id as string;
 
       const meta = rdeByExerciseId[exerciseId];
-      const exType = meta?.exercise_type === 'cardio' ? 'cardio' : 'strength';
-
-      // Cardio is time-based (no sets)
-      if (exType === 'cardio') {
-        continue;
-      }
       const scheme = meta?.default_set_scheme || null;
       const defaultSetsArray = meta?.default_sets || [];
 
