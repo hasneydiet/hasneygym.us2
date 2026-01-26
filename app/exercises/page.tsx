@@ -6,6 +6,7 @@ import AuthGuard from '@/components/AuthGuard';
 import Navigation from '@/components/Navigation';
 import { supabase } from '@/lib/supabase';
 import { Exercise, TECHNIQUE_TAGS } from '@/lib/types';
+import { CANONICAL_MUSCLE_GROUPS, normalizeMuscleGroup } from '@/lib/muscleGroups';
 import { cacheGet, cacheSet } from '@/lib/perfCache';
 import { Plus, Search, Edit2, Trash2, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -19,29 +20,9 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
-// Non-breaking: HTML datalist suggestions keep inputs free-form while providing a fast picker on mobile/desktop.
-const MUSCLE_GROUP_OPTIONS = [
-  'Chest',
-  'Back',
-  'Shoulders',
-  'Biceps',
-  'Triceps',
-  'Forearms',
-  'Abs',
-  'Obliques',
-  'Traps',
-  'Lats',
-  'Lower Back',
-  'Glutes',
-  'Quads',
-  'Hamstrings',
-  'Calves',
-  'Adductors',
-  'Abductors',
-  'Hip Flexors',
-  'Full Body',
-  'Cardio',
-];
+// Keep muscle groups consistent across the app.
+// Inputs remain free-form; this only standardizes the picker options.
+const MUSCLE_GROUP_OPTIONS = CANONICAL_MUSCLE_GROUPS;
 
 const EQUIPMENT_OPTIONS = [
   'Dumbbell',
@@ -188,7 +169,7 @@ export default function ExercisesPage() {
 
     const payload = {
       name: formData.name,
-      muscle_group: formData.muscle_group,
+      muscle_group: normalizeMuscleGroup(formData.muscle_group),
       equipment: normalizeEquipment(formData.equipment),
       notes: formData.notes,
       rest_seconds: Number.isFinite(formData.rest_seconds) ? Math.max(0, Math.floor(formData.rest_seconds)) : 60,
@@ -251,7 +232,7 @@ export default function ExercisesPage() {
 
   const filteredExercises = exercises.filter((ex) => {
     const matchesGroup = selectedMuscleGroup
-      ? (ex.muscle_group || '').toLowerCase() === selectedMuscleGroup.toLowerCase()
+      ? normalizeMuscleGroup(ex.muscle_group) === normalizeMuscleGroup(selectedMuscleGroup)
       : true;
     const q = searchTerm.trim().toLowerCase();
     const matchesSearch = !q

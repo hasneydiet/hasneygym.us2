@@ -7,6 +7,7 @@ import Navigation from '@/components/Navigation';
 import { supabase } from '@/lib/supabase';
 import { useCoach } from '@/hooks/useCoach';
 import { Routine, RoutineDay, RoutineDayExercise, Exercise } from '@/lib/types';
+import { CANONICAL_MUSCLE_GROUPS, normalizeMuscleGroup } from '@/lib/muscleGroups';
 import { Plus, Trash2, ChevronUp, ChevronDown, X, PencilLine, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -35,8 +36,8 @@ export default function RoutineEditorPage() {
   const [exerciseNameFilter, setExerciseNameFilter] = useState<string>('');
 
   const muscleGroupOptions = useMemo(() => {
-    const groups = exercises.map((e) => e.muscle_group).filter(Boolean);
-    return ['all', ...Array.from(new Set(groups)).sort()];
+    // Keep filter options consistent across the app to prevent duplicates.
+    return ['all', ...CANONICAL_MUSCLE_GROUPS];
   }, [exercises]);
 
   const ALLOWED_EQUIPMENT = ['barbell','body weight','cable','dumbbell','kettlebell','machine','smith machine'] as const;
@@ -62,7 +63,11 @@ export default function RoutineEditorPage() {
   const filteredExercises = useMemo(() => {
     const q = exerciseNameFilter.trim().toLowerCase();
     return exercises.filter((e) => {
-      if (exerciseMuscleGroupFilter !== 'all' && e.muscle_group !== exerciseMuscleGroupFilter) return false;
+      if (
+        exerciseMuscleGroupFilter !== 'all' &&
+        normalizeMuscleGroup(e.muscle_group) !== normalizeMuscleGroup(exerciseMuscleGroupFilter)
+      )
+        return false;
       const eqNorm = normalizeEquipment((e as any).equipment);
       if (exerciseEquipmentFilter !== 'all' && eqNorm !== exerciseEquipmentFilter) return false;
       if (q && !e.name.toLowerCase().includes(q)) return false;
