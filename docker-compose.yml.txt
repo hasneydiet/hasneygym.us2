@@ -1,0 +1,12 @@
+version: "3.8"
+
+services:
+  hasneygym:
+    build: .
+    container_name: hasneygym-staging
+    restart: unless-stopped
+    ports:
+      - "3005:3000"
+    environment:
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
