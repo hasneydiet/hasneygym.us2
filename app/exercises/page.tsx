@@ -326,7 +326,7 @@ export default function ExercisesPage() {
                   value={formData.muscle_group}
                   onChange={(v) => setFormData({ ...formData, muscle_group: v })}
                   placeholder="E.g., Chest, Back, Legs"
-                  options={MUSCLE_GROUP_OPTIONS}
+                  options={[...MUSCLE_GROUP_OPTIONS]}
                 />
 
                 <AutocompleteInput
