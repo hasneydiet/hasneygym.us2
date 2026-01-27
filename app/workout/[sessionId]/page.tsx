@@ -771,7 +771,7 @@ const applySetTechnique = async (newTechnique: string) => {
           routine_day_exercise_id: null,
           technique_tags: [defaultTechnique],
           // Cardio stores time on the workout_exercises row.
-          duration_seconds: isCardio ? 0 : null,
+          duration_seconds: 0,
         })
         .select('id')
         .single();

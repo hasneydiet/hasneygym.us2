@@ -76,10 +76,8 @@ export async function startWorkoutForDay(input: StartWorkoutInput): Promise<stri
             ? r.technique_tags
             : [prefByExerciseId[String(r.exercise_id)] ?? 'Normal-Sets'],
         // Cardio is time-based and has no sets.
-        duration_seconds:
-          (r as any)?.exercises?.exercise_type === 'cardio' || (r as any)?.exercises?.muscle_group === 'Cardio'
-            ? 0
-            : null,
+        duration_seconds: 0,
+
       }));
   if (exercisesToInsert.length > 0) {
     // 3) Insert workout_exercises (return id + exercise_id)
