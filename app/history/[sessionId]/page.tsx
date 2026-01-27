@@ -13,6 +13,17 @@ import { Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 
+function isCardioExercise(ex: any) {
+  return ex?.exercises?.exercise_type === 'cardio' || ex?.exercises?.muscle_group === 'Cardio';
+}
+
+function formatHMFromSeconds(totalSeconds: number | null | undefined) {
+  const s = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+  const hh = Math.floor(s / 3600);
+  const mm = Math.floor((s % 3600) / 60);
+  return `${hh}:${String(mm).padStart(2, '0')}`;
+}
+
 export const dynamic = 'force-dynamic';
 
 export default function SessionDetailPage() {
@@ -366,11 +377,36 @@ function ExerciseDetail({
   exercise: WorkoutExercise;
   sets: WorkoutSet[];
 }) {
+  const isCardio = isCardioExercise(exercise);
+  const durationSecs = Number((exercise as any)?.duration_seconds || 0);
+  const cardioCompleted = durationSecs > 0;
   return (
     <div className="p-4">
       <h3 className="text-base sm:text-lg font-semibold tracking-tight mb-2">{exercise.exercises?.name}</h3>
 
-      {exercise.technique_tags && exercise.technique_tags.length > 0 && (
+      {isCardio ? (
+        <div className="mb-3">
+          <div className="flex items-center gap-2">
+            <Badge variant="secondary" className="border-border/60">
+              Cardio
+            </Badge>
+            {cardioCompleted ? (
+              <Badge variant="secondary" className="border-border/60">
+                Completed
+              </Badge>
+            ) : (
+              <Badge variant="secondary" className="border-border/60">
+                Not completed
+              </Badge>
+            )}
+          </div>
+          <div className="mt-2 text-sm text-foreground">
+            Duration: <span className="font-semibold">{formatHMFromSeconds(durationSecs)}</span>
+          </div>
+        </div>
+      ) : null}
+
+      {!isCardio && exercise.technique_tags && exercise.technique_tags.length > 0 && (
         <div className="mb-3">
           <div className="flex flex-wrap gap-2">
             {exercise.technique_tags.map((tag) => (
@@ -382,6 +418,7 @@ function ExerciseDetail({
         </div>
       )}
 
+      {!isCardio && (
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="text-xs text-muted-foreground bg-muted/40">
@@ -408,6 +445,7 @@ function ExerciseDetail({
           </tbody>
         </table>
       </div>
+      )}
     </div>
   );
 }

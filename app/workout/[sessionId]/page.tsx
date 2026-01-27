@@ -34,18 +34,19 @@ function formatHMFromSeconds(totalSeconds: number | null | undefined) {
   return `${hh}:${String(mm).padStart(2, '0')}`;
 }
 
-
 function parseHM(input: string): number {
   const raw = (input || '').trim();
   if (!raw) return 0;
-  // Accept: "MM:SS" or "SS" or "M:SS"
-  if (/^\d+$/.test(raw)) return Math.max(0, parseInt(raw, 10));
+  // Accept: "H:MM" or "MM" (minutes). No seconds.
+  // - "25"   => 25 minutes
+  // - "1:30" => 1 hour 30 minutes
+  if (/^\d+$/.test(raw)) return Math.max(0, parseInt(raw, 10)) * 60;
   const parts = raw.split(':').map((p) => p.trim());
   if (parts.length !== 2) return 0;
-  const mm = parseInt(parts[0] || '0', 10);
-  const ss = parseInt(parts[1] || '0', 10);
-  if (!Number.isFinite(mm) || !Number.isFinite(ss)) return 0;
-  return Math.max(0, mm * 60 + clampInt(ss, 0, 59));
+  const hh = parseInt(parts[0] || '0', 10);
+  const mm = parseInt(parts[1] || '0', 10);
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return 0;
+  return Math.max(0, Math.max(0, hh) * 3600 + clampInt(mm, 0, 59) * 60);
 }
 
 function isCardioWorkoutExercise(ex: any) {
