@@ -40,7 +40,7 @@ export async function startWorkoutForDay(input: StartWorkoutInput): Promise<stri
   // 2) Pull routine_day_exercises + exercise default scheme
   const { data: rdeRows, error: rdeErr } = await supabase
     .from('routine_day_exercises')
-    .select('id, exercise_id, order_index, default_sets, technique_tags, exercises(default_set_scheme)')
+    .select('id, exercise_id, order_index, default_sets, technique_tags, exercises(default_set_scheme, exercise_type, muscle_group)')
     .eq('routine_day_id', routineDayId)
     .order('order_index', { ascending: true });
 
@@ -105,6 +105,13 @@ export async function startWorkoutForDay(input: StartWorkoutInput): Promise<stri
       const exerciseId = (we as any).exercise_id as string;
 
       const meta = rdeByExerciseId[exerciseId];
+      const exType =
+        (meta as any)?.exercises?.exercise_type || ((meta as any)?.exercises?.muscle_group === 'Cardio' ? 'cardio' : 'strength');
+      const isCardio = exType === 'cardio';
+      if (isCardio) {
+        // Cardio is time-based: do not seed sets.
+        continue;
+      }
       const scheme = meta?.default_set_scheme || null;
       const defaultSetsArray = meta?.default_sets || [];
 

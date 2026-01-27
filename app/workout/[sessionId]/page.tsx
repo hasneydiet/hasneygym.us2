@@ -119,6 +119,7 @@ export default function WorkoutPage() {
   const [session, setSession] = useState<WorkoutSession | null>(null);
   const [exercises, setExercises] = useState<WorkoutExercise[]>([]);
   const [sets, setSets] = useState<{ [exerciseId: string]: WorkoutSet[] }>({});
+  const [cardioDurationInput, setCardioDurationInput] = useState<Record<string, string>>({});
 
   const [prevSetsByExercise, setPrevSetsByExercise] = useState<Record<string, WorkoutSet[]>>({});
 
@@ -747,17 +748,28 @@ const applySetTechnique = async (newTechnique: string) => {
       const workoutExerciseId = (newWorkoutExercise as any)?.id as string | undefined;
       if (!workoutExerciseId) throw new Error('Failed to create workout exercise.');
 
-      const setsToInsert = Array.from({ length: setsCount }).map((_, i) => ({
-        workout_exercise_id: workoutExerciseId,
-        set_index: i,
-        reps: defaultReps,
-        weight: 0,
-        rpe: null,
-        is_completed: false,
-      }));
+      const selectedExercise = exerciseLibrary.find((e: any) => e.id === selectedExerciseId);
+      const isCardio =
+        (selectedExercise as any)?.exercise_type === 'cardio' ||
+        (selectedExercise as any)?.muscle_group === 'Cardio';
 
-      const { error: wsErr } = await supabase.from('workout_sets').insert(setsToInsert);
-      if (wsErr) throw wsErr;
+      // Strength is set-based; cardio is time-based (no sets).
+      if (!isCardio) {
+        const setsToInsert = Array.from({ length: setsCount }).map((_, i) => ({
+          workout_exercise_id: workoutExerciseId,
+          set_index: i,
+          reps: defaultReps,
+          weight: 0,
+          rpe: null,
+          is_completed: false,
+        }));
+
+        const { error: wsErr } = await supabase.from('workout_sets').insert(setsToInsert);
+        if (wsErr) throw wsErr;
+      } else {
+        // Ensure duration starts at 0 (and can be updated via the cardio UI).
+        await supabase.from('workout_exercises').update({ duration_seconds: 0 }).eq('id', workoutExerciseId);
+      }
 
       // Reset UI and reload workout (so it appears immediately and is logged to history via session tables)
       setSelectedExerciseId('');
@@ -860,6 +872,20 @@ const applySetTechnique = async (newTechnique: string) => {
   const getWorkoutValidationError = (): string | null => {
     for (const ex of exercises) {
       const exName = ex?.exercises?.name || ex?.name || 'Exercise';
+      const exType =
+        (ex as any)?.exercises?.exercise_type ||
+        ((ex as any)?.exercises?.muscle_group === 'Cardio' ? 'cardio' : 'strength');
+
+      // Cardio is time-based: require duration > 0
+      if (exType === 'cardio') {
+        const duration = Number((ex as any)?.duration_seconds ?? 0);
+        if (!Number.isFinite(duration) || duration <= 0) {
+          return `Please complete your workout before finishing.\n\nMissing cardio duration for: ${exName}`;
+        }
+        continue;
+      }
+
+      // Strength is set-based: require sets and completion
       const exSets = sets[ex.id] || [];
 
       if (exSets.length === 0) {
@@ -1086,6 +1112,10 @@ const applySetTechnique = async (newTechnique: string) => {
         <div className="space-y-6">
           {exercises.map((exercise: any) => {
             const prevSets = prevSetsByExercise[exercise.id] || [];
+            const exType =
+              exercise?.exercises?.exercise_type ||
+              (exercise?.exercises?.muscle_group === 'Cardio' ? 'cardio' : 'strength');
+            const isCardio = exType === 'cardio';
             // While reordering, collapse cards to just the exercise name for easier dragging (HEVY-like)
             const isReorderMode = Boolean(draggingExerciseId);
 
@@ -1176,6 +1206,27 @@ const applySetTechnique = async (newTechnique: string) => {
                   )}
                 </div>
                 {!isReorderMode && (
+                  isCardio ? (
+                    <div className="mt-3 flex items-center gap-3">
+                      <Input
+                        value={cardioDurationInput[exercise.id] ?? formatDuration(Number(exercise.duration_seconds || 0))}
+                        onChange={(e) => setCardioDurationInput((p) => ({ ...p, [exercise.id]: e.target.value }))}
+                        placeholder="MM:SS"
+                        className="w-28 text-center"
+                        inputMode="numeric"
+                      />
+                      <Button
+                        type="button"
+                        onClick={() => saveCardioDuration(exercise.id)}
+                        className="h-10"
+                      >
+                        Mark complete
+                      </Button>
+                      <div className="text-xs text-gray-400">
+                        {Number(exercise.duration_seconds || 0) > 0 ? `Saved: ${formatDuration(Number(exercise.duration_seconds || 0))}` : 'Not saved'}
+                      </div>
+                    </div>
+                  ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
@@ -1433,6 +1484,7 @@ const applySetTechnique = async (newTechnique: string) => {
                     </button>
                   </div>
                 </div>
+                  )
                 )}
               </div>
             );
@@ -1589,4 +1641,29 @@ const applySetTechnique = async (newTechnique: string) => {
 </Sheet>
 </div>
   );
+
+  const saveCardioDuration = async (workoutExerciseId: string) => {
+    const input = cardioDurationInput[workoutExerciseId] || '';
+    const seconds = parseDuration(input);
+
+    if (seconds === null || seconds <= 0) {
+      window.alert('Enter a valid duration in MM:SS (greater than 00:00).');
+      return;
+    }
+
+    const { error } = await supabase
+      .from('workout_exercises')
+      .update({ duration_seconds: seconds })
+      .eq('id', workoutExerciseId);
+
+    if (error) {
+      console.error(error);
+      window.alert('Failed to save duration.');
+      return;
+    }
+
+    setExercises((prev: any[]) =>
+      prev.map((e) => (e.id === workoutExerciseId ? { ...e, duration_seconds: seconds } : e))
+    );
+  };
 }

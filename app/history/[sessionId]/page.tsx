@@ -13,6 +13,14 @@ import { Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 
+
+const formatDuration = (totalSeconds: number): string => {
+  const s = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+  const mm = Math.floor(s / 60);
+  const ss = s % 60;
+  return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
+};
+
 export const dynamic = 'force-dynamic';
 
 export default function SessionDetailPage() {
@@ -366,6 +374,9 @@ function ExerciseDetail({
   exercise: WorkoutExercise;
   sets: WorkoutSet[];
 }) {
+  const exType = (exercise as any)?.exercises?.exercise_type || ((exercise as any)?.exercises?.muscle_group === 'Cardio' ? 'cardio' : 'strength');
+  const isCardio = exType === 'cardio';
+
   return (
     <div className="p-4">
       <h3 className="text-base sm:text-lg font-semibold tracking-tight mb-2">{exercise.exercises?.name}</h3>
@@ -382,6 +393,12 @@ function ExerciseDetail({
         </div>
       )}
 
+      {isCardio ? (
+        <div className="mt-2 text-sm">
+          <div className="text-muted-foreground">Duration</div>
+          <div className="font-semibold">{formatDuration(Number((exercise as any).duration_seconds || 0))}</div>
+        </div>
+      ) : (
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="text-xs text-muted-foreground bg-muted/40">
@@ -408,6 +425,7 @@ function ExerciseDetail({
           </tbody>
         </table>
       </div>
+      )}
     </div>
   );
 }
