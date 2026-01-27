@@ -150,6 +150,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     let mounted = true;
+    let timeoutId: any = null;
 
     const load = async () => {
       setLoading(true);
@@ -255,7 +256,7 @@ export default function DashboardPage() {
         setLastWorkout(cached.lastWorkout ?? null);
         setProfile(cached.profile ?? null);
         setLoading(false);
-        setTimeout(() => mounted && load(), 200);
+        timeoutId = setTimeout(() => mounted && load(), 200);
       } else {
         load();
       }
@@ -265,11 +266,13 @@ export default function DashboardPage() {
 
     return () => {
       mounted = false;
+      if (timeoutId) clearTimeout(timeoutId);
     };
   }, [router, effectiveUserId, cacheKey]);
 
   useEffect(() => {
     let mounted = true;
+    let timeoutId: any = null;
     const run = async () => {
       if (!lastWorkout?.id || !effectiveUserId) {
         setLastWorkoutAnalytics(null);
@@ -333,6 +336,7 @@ export default function DashboardPage() {
     run();
     return () => {
       mounted = false;
+      if (timeoutId) clearTimeout(timeoutId);
     };
   }, [lastWorkout?.id, effectiveUserId]);
 

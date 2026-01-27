@@ -140,7 +140,7 @@ export default function ExercisesPage() {
       if (w && typeof w.requestIdleCallback === 'function') {
         w.requestIdleCallback(refresh, { timeout: 1200 });
       } else {
-        setTimeout(refresh, 250);
+        timeoutId = setTimeout(refresh, 250);
       }
       return;
     }

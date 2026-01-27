@@ -12,6 +12,7 @@ export default function Home() {
   const { isCoach, ready } = useCoach();
 
   useEffect(() => {
+    let cancelled = false;
     const checkAuth = async () => {
       try {
         // If Supabase env vars are missing/misconfigured, this call can throw.
@@ -19,7 +20,7 @@ export default function Home() {
         const { data: { session } } = await supabase.auth.getSession();
 
         if (!session) {
-          router.replace('/login');
+          if (!cancelled) router.replace('/login');
           return;
         }
 
@@ -27,17 +28,20 @@ export default function Home() {
         if (!ready) return;
 
         if (isCoach) {
-          router.replace('/coach');
+          if (!cancelled) router.replace('/coach');
         } else {
-          router.replace('/dashboard');
+          if (!cancelled) router.replace('/dashboard');
         }
       } catch {
         // Fail-safe: route to login if anything unexpected happens.
-        router.replace('/login');
+        if (!cancelled) router.replace('/login');
       }
     };
 
     checkAuth();
+    return () => {
+      cancelled = true;
+    };
   }, [router, isCoach, ready]);
 
   return (
