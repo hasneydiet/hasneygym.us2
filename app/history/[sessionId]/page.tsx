@@ -14,7 +14,9 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 
 function isCardioExercise(ex: any) {
-  return ex?.exercises?.exercise_type === 'cardio' || ex?.exercises?.muscle_group === 'Cardio';
+  const t = String(ex?.exercises?.exercise_type ?? '').trim().toLowerCase();
+  const mg = String(ex?.exercises?.muscle_group ?? '').trim().toLowerCase();
+  return t === 'cardio' || mg === 'cardio';
 }
 
 function formatHMFromSeconds(totalSeconds: number | null | undefined) {
@@ -59,23 +61,31 @@ export default function SessionDetailPage() {
 
       const { data: exData } = await supabase
         .from('workout_exercises')
-        .select('*, exercises(*)')
+        .select('id, workout_session_id, exercise_id, order_index, technique_tags, duration_seconds, exercises(id, name, muscle_group, exercise_type)')
         .eq('workout_session_id', sessionId)
         .order('order_index');
 
       if (exData) {
         setExercises(exData);
 
-        const setsMap: { [exerciseId: string]: WorkoutSet[] } = {};
-        for (const ex of exData) {
-          const { data: setsData } = await supabase
-            .from('workout_sets')
-            .select('*')
-            .eq('workout_exercise_id', ex.id)
-            .order('set_index');
+        // Batch fetch sets for this session (avoid N+1 queries)
+        const exIds = exData.map((e: any) => e.id).filter(Boolean);
+        const { data: allSets } = exIds.length
+          ? await supabase
+              .from('workout_sets')
+              .select('id, workout_exercise_id, set_index, reps, weight, rpe, is_completed')
+              .in('workout_exercise_id', exIds)
+              .order('set_index')
+          : { data: [] as any[] };
 
-          setsMap[ex.id] = setsData || [];
+        const setsMap: { [exerciseId: string]: WorkoutSet[] } = {};
+        for (const ex of exData) setsMap[ex.id] = [];
+        for (const s of allSets || []) {
+          const k = (s as any).workout_exercise_id;
+          if (!k) continue;
+          (setsMap[k] = setsMap[k] || []).push(s as any);
         }
+
         setSets(setsMap);
 
         // Compute session analytics (volume, PRs, duration) for this detail view.

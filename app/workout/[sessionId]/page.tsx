@@ -50,7 +50,9 @@ function parseHM(input: string): number {
 }
 
 function isCardioWorkoutExercise(ex: any) {
-  return ex?.exercises?.exercise_type === 'cardio' || ex?.exercises?.muscle_group === 'Cardio';
+  const t = String(ex?.exercises?.exercise_type ?? '').trim().toLowerCase();
+  const mg = String(ex?.exercises?.muscle_group ?? '').trim().toLowerCase();
+  return t === 'cardio' || mg === 'cardio';
 }
 
 
@@ -693,7 +695,7 @@ const applySetTechnique = async (newTechnique: string) => {
 
     const { data: exData } = await supabase
       .from('workout_exercises')
-      .select('*, exercises(*)')
+      .select('id, workout_session_id, exercise_id, routine_day_exercise_id, order_index, technique_tags, duration_seconds, exercises(id, name, muscle_group, exercise_type, rest_seconds, default_set_scheme)')
       .eq('workout_session_id', sessionId)
       .order('order_index');
 
@@ -812,53 +814,88 @@ const applySetTechnique = async (newTechnique: string) => {
   const loadPreviousSetsForExercises = async (exData: WorkoutExercise[], startedAt: string) => {
     setPrevSetsByExercise({});
 
-    const entries = await Promise.all(
-      exData.map(async (ex) => {
-        const currentWorkoutExerciseId = ex.id;
-        const exerciseId = ex.exercise_id;
-
-        if (!exerciseId) return [currentWorkoutExerciseId, []] as [string, WorkoutSet[]];
-
-        const { data: prevSessions } = await supabase
-          .from('workout_sessions')
-          .select('id, started_at')
-          .lt('started_at', startedAt)
-          .order('started_at', { ascending: false })
-          .limit(25);
-
-        if (!prevSessions || prevSessions.length === 0) return [currentWorkoutExerciseId, []] as [string, WorkoutSet[]];
-
-        let prevWorkoutExerciseId: string | null = null;
-
-        for (const s of prevSessions) {
-          const { data: prevExerciseRow } = await supabase
-            .from('workout_exercises')
-            .select('id')
-            .eq('workout_session_id', s.id)
-            .eq('exercise_id', exerciseId)
-            .limit(1)
-            .maybeSingle();
-
-          if (prevExerciseRow?.id) {
-            prevWorkoutExerciseId = prevExerciseRow.id;
-            break;
-          }
-        }
-
-        if (!prevWorkoutExerciseId) return [currentWorkoutExerciseId, []] as [string, WorkoutSet[]];
-
-        const { data: prevSets } = await supabase
-          .from('workout_sets')
-          .select('*')
-          .eq('workout_exercise_id', prevWorkoutExerciseId)
-          .order('set_index');
-
-        return [currentWorkoutExerciseId, (prevSets || []) as WorkoutSet[]] as [string, WorkoutSet[]];
-      })
+    const exerciseIds = Array.from(
+      new Set(
+        (exData || [])
+          .map((ex: any) => ex?.exercise_id)
+          .filter(Boolean)
+          .map((x: any) => String(x))
+      )
     );
 
+    if (exerciseIds.length === 0) return;
+
+    // Fetch a small window of previous sessions once, then resolve last performed sets per exercise in bulk.
+    const { data: prevSessions } = await supabase
+      .from('workout_sessions')
+      .select('id, started_at')
+      .lt('started_at', startedAt)
+      .order('started_at', { ascending: false })
+      .limit(25);
+
+    if (!prevSessions || prevSessions.length === 0) return;
+
+    const prevSessionIds = prevSessions.map((s: any) => s.id).filter(Boolean);
+    if (prevSessionIds.length === 0) return;
+
+    // Rank sessions by recency so we can pick the most recent matching workout_exercise per exercise_id.
+    const sessionRank: Record<string, number> = {};
+    prevSessions.forEach((s: any, idx: number) => {
+      if (s?.id) sessionRank[String(s.id)] = idx;
+    });
+
+    const { data: prevWorkoutExercises } = await supabase
+      .from('workout_exercises')
+      .select('id, exercise_id, workout_session_id')
+      .in('workout_session_id', prevSessionIds)
+      .in('exercise_id', exerciseIds);
+
+    if (!prevWorkoutExercises || prevWorkoutExercises.length === 0) return;
+
+    const bestPrevByExerciseId: Record<string, string> = {};
+    const bestRankByExerciseId: Record<string, number> = {};
+    for (const row of prevWorkoutExercises as any[]) {
+      const exId = row?.exercise_id ? String(row.exercise_id) : null;
+      const weId = row?.id ? String(row.id) : null;
+      const sessId = row?.workout_session_id ? String(row.workout_session_id) : null;
+      if (!exId || !weId || !sessId) continue;
+      const r = sessionRank[sessId];
+      if (r === undefined) continue;
+
+      const bestR = bestRankByExerciseId[exId];
+      if (bestR === undefined || r < bestR) {
+        bestPrevByExerciseId[exId] = weId;
+        bestRankByExerciseId[exId] = r;
+      }
+    }
+
+    const prevWeIds = Array.from(new Set(Object.values(bestPrevByExerciseId))).filter(Boolean);
+    if (prevWeIds.length === 0) return;
+
+    const { data: prevSetsRows } = await supabase
+      .from('workout_sets')
+      .select('id, workout_exercise_id, set_index, reps, weight, rpe, is_completed')
+      .in('workout_exercise_id', prevWeIds)
+      .order('set_index');
+
+    const setsByPrevWeId: Record<string, WorkoutSet[]> = {};
+    for (const s of prevSetsRows || []) {
+      const k = (s as any)?.workout_exercise_id ? String((s as any).workout_exercise_id) : null;
+      if (!k) continue;
+      (setsByPrevWeId[k] = setsByPrevWeId[k] || []).push(s as any);
+    }
+
     const map: Record<string, WorkoutSet[]> = {};
-    for (const [k, v] of entries) map[k] = v;
+    for (const ex of exData || []) {
+      const currentWeId = String((ex as any)?.id || '');
+      const exId = (ex as any)?.exercise_id ? String((ex as any).exercise_id) : null;
+      if (!currentWeId || !exId) {
+        map[currentWeId] = [];
+        continue;
+      }
+      const prevWeId = bestPrevByExerciseId[exId];
+      map[currentWeId] = prevWeId ? setsByPrevWeId[prevWeId] || [] : [];
+    }
     setPrevSetsByExercise(map);
   };
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type MouseEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import AuthGuard from '@/components/AuthGuard';
 import Navigation from '@/components/Navigation';
@@ -62,7 +62,7 @@ export default function HistoryPage() {
     }
   };
 
-  const deleteSession = async (sessionId: string, e: React.MouseEvent) => {
+  const deleteSession = async (sessionId: string, e: MouseEvent) => {
     e.stopPropagation();
     if (!confirm('Delete this workout session? This cannot be undone.')) return;
 
