@@ -27,43 +27,6 @@ function clampInt(n: number, min: number, max: number) {
   return Math.min(max, Math.max(min, Math.floor(n)));
 }
 
-function getExerciseType(ex: any): 'strength' | 'cardio' {
-  const t = ex?.exercises?.exercise_type;
-  if (t === 'cardio') return 'cardio';
-  // Fallback for older rows / before migration
-  if (ex?.exercises?.muscle_group === 'Cardio') return 'cardio';
-  return 'strength';
-}
-
-function parseDurationToSeconds(raw: string): number {
-  const s = String(raw ?? '').trim();
-  if (!s) return 0;
-
-  // Accept "MM:SS", "M:SS", or plain seconds ("90")
-  if (/^\d+$/.test(s)) return clampInt(Number(s), 0, 24 * 60 * 60);
-
-  const parts = s.split(':').map((p) => p.trim());
-  if (parts.length === 2) {
-    const mm = clampInt(Number(parts[0] || 0), 0, 24 * 60);
-    const ss = clampInt(Number(parts[1] || 0), 0, 59);
-    return mm * 60 + ss;
-  }
-  if (parts.length === 3) {
-    const hh = clampInt(Number(parts[0] || 0), 0, 24);
-    const mm = clampInt(Number(parts[1] || 0), 0, 59);
-    const ss = clampInt(Number(parts[2] || 0), 0, 59);
-    return hh * 3600 + mm * 60 + ss;
-  }
-  return 0;
-}
-
-function formatDurationInput(totalSeconds: number): string {
-  const s = Math.max(0, Math.floor(Number(totalSeconds) || 0));
-  const mm = Math.floor((s % 3600) / 60);
-  const ss = s % 60;
-  return `${mm}:${String(ss).padStart(2, '0')}`;
-}
-
 
 
 const TECHNIQUE_GUIDES: Record<
@@ -156,7 +119,6 @@ export default function WorkoutPage() {
   const [session, setSession] = useState<WorkoutSession | null>(null);
   const [exercises, setExercises] = useState<WorkoutExercise[]>([]);
   const [sets, setSets] = useState<{ [exerciseId: string]: WorkoutSet[] }>({});
-  const [cardioInputs, setCardioInputs] = useState<Record<string, string>>({});
 
   const [prevSetsByExercise, setPrevSetsByExercise] = useState<Record<string, WorkoutSet[]>>({});
 
@@ -709,17 +671,6 @@ const applySetTechnique = async (newTechnique: string) => {
     if (!exData) return;
 
     setExercises(exData);
-    // Initialize cardio duration inputs
-    setCardioInputs(() => {
-      const next: Record<string, string> = {};
-      for (const ex of exData || []) {
-        if (getExerciseType(ex) === 'cardio') {
-          next[ex.id] = formatDurationInput(ex.duration_seconds ?? 0);
-        }
-      }
-      return next;
-    });
-
 
     const exIds = exData.map((e: any) => e.id);
     const { data: allSets } = await supabase
@@ -908,17 +859,6 @@ const applySetTechnique = async (newTechnique: string) => {
   // and required fields are filled out.
   const getWorkoutValidationError = (): string | null => {
     for (const ex of exercises) {
-      const exType = getExerciseType(ex);
-      if (exType === 'cardio') {
-        const seconds = Number(ex?.duration_seconds ?? 0);
-        if (!Number.isFinite(seconds) || seconds <= 0) {
-          const exName = ex?.exercises?.name || 'Cardio';
-          return `Please enter a cardio time before finishing.
-
-${exName} — duration is missing.`;
-        }
-        continue;
-      }
       const exName = ex?.exercises?.name || ex?.name || 'Exercise';
       const exSets = sets[ex.id] || [];
 
@@ -994,57 +934,7 @@ ${exName} — duration is missing.`;
     }
   };
 
-  const saveCardioDuration = async (workoutExerciseId: string) => {
-  if (sessionIsCompleted) return;
-
-  const raw = cardioInputs[workoutExerciseId] ?? '';
-  const seconds = parseDurationToSeconds(raw);
-
-  if (seconds <= 0) {
-    alert('Cardio time must be greater than 0.');
-    return;
-  }
-
-  const { error } = await supabase
-    .from('workout_exercises')
-    .update({ duration_seconds: seconds })
-    .eq('id', workoutExerciseId);
-
-  if (error) {
-    console.error('Save cardio duration failed:', error);
-    alert(error.message || 'Failed to save cardio time.');
-    return;
-  }
-
-  // Optimistic UI update
-  setExercises((prev: any[]) =>
-    prev.map((ex: any) => (ex.id === workoutExerciseId ? { ...ex, duration_seconds: seconds } : ex))
-  );
-};
-
-const clearCardioDuration = async (workoutExerciseId: string) => {
-  if (sessionIsCompleted) return;
-
-  const { error } = await supabase
-    .from('workout_exercises')
-    .update({ duration_seconds: 0 })
-    .eq('id', workoutExerciseId);
-
-  if (error) {
-    console.error('Clear cardio duration failed:', error);
-    alert(error.message || 'Failed to clear cardio time.');
-    return;
-  }
-
-  setExercises((prev: any[]) =>
-    prev.map((ex: any) => (ex.id === workoutExerciseId ? { ...ex, duration_seconds: 0 } : ex))
-  );
-  setCardioInputs((prev) => ({ ...prev, [workoutExerciseId]: formatDurationInput(0) }));
-};
-
-const addSet = async (exerciseId: string) => {
-    const exRow = exercises.find((x: any) => x.id === exerciseId);
-    if (getExerciseType(exRow) === 'cardio') return;
+  const addSet = async (exerciseId: string) => {
     const currentSets = sets[exerciseId] || [];
     const lastSet = currentSets[currentSets.length - 1];
 
@@ -1286,66 +1176,20 @@ const addSet = async (exerciseId: string) => {
                   )}
                 </div>
                 {!isReorderMode && (
-                  getExerciseType(exercise) === 'cardio' ? (
-                    <div className="mt-3 space-y-3">
-                      <div className="flex items-center justify-between gap-3 rounded-2xl bg-gray-800/40 border border-gray-700 px-4 py-3">
-                        <div className="flex items-center gap-2 text-white/90">
-                          <Clock className="h-4 w-4" />
-                          <span className="text-sm font-semibold">Duration</span>
-                        </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left text-[11px] uppercase tracking-wide text-gray-300/80 border-b border-gray-800">
+                          <th className="px-2 py-2 w-12">Set</th>
+                          <th className="px-2 py-2">Reps</th>
+                          <th className="px-2 py-2">Weight</th>
+                          <th className="px-2 py-2 text-center">Done</th>
+                          <th className="px-2 py-2 w-12 text-center">Del</th>
+                        </tr>
+                      </thead>
 
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          placeholder="MM:SS"
-                          value={cardioInputs[exercise.id] ?? formatDurationInput(exercise.duration_seconds ?? 0)}
-                          onChange={(e) =>
-                            setCardioInputs((prev) => ({ ...prev, [exercise.id]: e.target.value }))
-                          }
-                          disabled={sessionIsCompleted}
-                          className="w-24 h-10 rounded-xl border border-gray-700 bg-gray-900/60 px-3 text-sm text-white text-right tabular-nums disabled:opacity-40"
-                        />
-                      </div>
-
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => saveCardioDuration(exercise.id)}
-                          disabled={sessionIsCompleted}
-                          className="flex-1 h-12 rounded-2xl bg-gray-800/60 border border-gray-700 text-white/90 text-base font-semibold inline-flex items-center justify-center gap-2 active:scale-[0.99] disabled:opacity-40"
-                        >
-                          <Clock className="h-5 w-5" aria-hidden="true" />
-                          {Number(exercise.duration_seconds ?? 0) > 0 ? 'Update' : 'Mark Complete'}
-                        </button>
-
-                        {Number(exercise.duration_seconds ?? 0) > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => clearCardioDuration(exercise.id)}
-                            disabled={sessionIsCompleted}
-                            className="h-12 px-4 rounded-2xl bg-transparent border border-gray-700 text-white/80 text-base font-semibold inline-flex items-center justify-center active:scale-[0.99] disabled:opacity-40"
-                          >
-                            Clear
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="text-left text-[11px] uppercase tracking-wide text-gray-300/80 border-b border-gray-800">
-                            <th className="px-2 py-2 w-12">Set</th>
-                            <th className="px-2 py-2">Reps</th>
-                            <th className="px-2 py-2">Weight</th>
-                            <th className="px-2 py-2 text-center">Done</th>
-                            <th className="px-2 py-2 w-12 text-center">Del</th>
-                          </tr>
-                        </thead>
-
-                        <tbody>
-                          {(sets[exercise.id] || []).map((set: any, idx: number) => {
-
+                      <tbody>
+                        {(sets[exercise.id] || []).map((set: any, idx: number) => {
                           const prev = prevSets[idx];
                           const prevReps = prev?.reps ?? null;
                           const prevWeight = prev?.weight ?? null;
@@ -1590,7 +1434,6 @@ const addSet = async (exerciseId: string) => {
                   </div>
                 </div>
                 )}
- 
               </div>
             );
           })}
