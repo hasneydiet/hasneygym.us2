@@ -9,7 +9,9 @@ ENV NEXT_PUBLIC_SUPABASE_URL=https://fgtilnlpcardkbdellyy.supabase.co
 ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZndGlsbmxwY2FyZGtiZGVsbHl5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjczMjAwMTQsImV4cCI6MjA4Mjg5NjAxNH0.BAPXw8TNmBRoCiwyOIsEJc__TzQ1ZgdUrO7J4nuiKfE
 
 COPY package*.json ./
-RUN npm ci
+ENV NPM_CONFIG_INSTALL_LINKS=true
+ENV NPM_CONFIG_BIN_LINKS=true
+RUN npm ci --no-audit --no-fund
 COPY . .
 RUN npm run build
 

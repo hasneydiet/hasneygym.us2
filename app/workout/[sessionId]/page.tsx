@@ -638,12 +638,8 @@ const applySetTechnique = async (newTechnique: string) => {
   }, []);
 
   useEffect(() => {
-    let cancelledLoad = false;
-    loadWorkout(cancelledLoad);
+    loadWorkout();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    return () => {
-      cancelledLoad = true;
-    };
   }, [sessionId, effectiveUserId]);
 
   // Load exercise list lazily for the session-only "Add Exercise" flow
@@ -684,14 +680,14 @@ const applySetTechnique = async (newTechnique: string) => {
     return () => cancelAnimationFrame(id);
   }, [pendingFocusKey, sets]);
 
-  const loadWorkout = async (cancelledLoad?: boolean) => {
+  const loadWorkout = async () => {
     const { data: sessionData } = await supabase
       .from('workout_sessions')
       .select('*, routines(name), routine_days(name)')
       .eq('id', sessionId)
       .single();
 
-    if (!sessionData || cancelledLoad) return;
+    if (!sessionData) return;
 
     setSession(sessionData);
 
@@ -701,7 +697,7 @@ const applySetTechnique = async (newTechnique: string) => {
       .eq('workout_session_id', sessionId)
       .order('order_index');
 
-    if (!exData || cancelledLoad) return;
+    if (!exData) return;
 
     setExercises(exData);
 
@@ -718,7 +714,6 @@ const applySetTechnique = async (newTechnique: string) => {
       map[s.workout_exercise_id] = map[s.workout_exercise_id] || [];
       map[s.workout_exercise_id].push(s);
     }
-    if (cancelledLoad) return;
     setSets(map);
 
     await loadPreviousSetsForExercises(exData, sessionData.started_at);

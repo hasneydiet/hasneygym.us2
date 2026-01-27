@@ -1,6 +1,13 @@
 [build]
-command = "npx next build"
+command = "npm run build"
 publish = ".next"
+
+[build.environment]
+NODE_VERSION = "20"
+NPM_FLAGS = "--no-audit --no-fund"
+NPM_CONFIG_INSTALL_LINKS = "true"
+NPM_CONFIG_BIN_LINKS = "true"
+
 
 [[plugins]]
 package = "@netlify/plugin-nextjs"

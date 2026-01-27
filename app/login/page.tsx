@@ -31,23 +31,19 @@ export default function LoginPage() {
 
 
   useEffect(() => {
-    let cancelled = false;
     const checkAuth = async () => {
       try {
         const {
           data: { session },
         } = await supabase.auth.getSession();
         if (session) {
-          if (!cancelled) await redirectAfterLogin(supabase, router);
+          await redirectAfterLogin(supabase, router);
         }
       } catch {
         // If supabase client is misconfigured, just stay on login.
       }
     };
     checkAuth();
-    return () => {
-      cancelled = true;
-    };
   }, [router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -73,7 +69,7 @@ export default function LoginPage() {
             // ignore
           }
           // signUp returns the created user; use it (or fallback to entered email)
-          if (!cancelled) await redirectAfterLogin(supabase, router);
+          await redirectAfterLogin(supabase, router);
         }
       } else {
         const { data, error } = await supabase.auth.signInWithPassword({
