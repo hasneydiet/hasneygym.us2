@@ -11,6 +11,7 @@ ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiO
 COPY package*.json ./
 RUN npm ci
 COPY . .
+RUN npm run build
 
 # ---- Run stage ----
 FROM node:20-alpine AS runner
@@ -30,4 +31,5 @@ COPY --from=builder /app/public ./public
 COPY --from=builder /app/package.json ./package.json
 
 EXPOSE 3000
-CMD ["npm","run","dev"]
+CMD ["npm","run","start"]
+
