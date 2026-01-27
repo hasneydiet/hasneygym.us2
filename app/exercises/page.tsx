@@ -170,8 +170,7 @@ export default function ExercisesPage() {
     const payload = {
       name: formData.name,
       muscle_group: normalizeMuscleGroup(formData.muscle_group),
-	    // Cardio exercises are time-based; everything else is strength (set-based)
-	    exercise_type: normalizeMuscleGroup(formData.muscle_group) === 'Cardio' ? 'cardio' : 'strength',
+      exercise_type: normalizeMuscleGroup(formData.muscle_group) === 'Cardio' ? 'cardio' : 'strength',
       equipment: normalizeEquipment(formData.equipment),
       notes: formData.notes,
       rest_seconds: Number.isFinite(formData.rest_seconds) ? Math.max(0, Math.floor(formData.rest_seconds)) : 60,

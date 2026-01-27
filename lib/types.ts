@@ -8,6 +8,7 @@ export interface Exercise {
   created_by: string | null;
   name: string;
   muscle_group: string;
+  exercise_type?: 'strength' | 'cardio' | null;
   muscle_section: string;
   equipment: string;
   notes: string;
@@ -21,9 +22,6 @@ export interface Exercise {
     restSeconds?: number;
     notes?: string;
   } | null;
-
-  /** Strength (set-based) vs Cardio (time-based). Defaults to strength if missing. */
-  exercise_type?: 'strength' | 'cardio';
 }
 
 export interface Routine {
@@ -76,10 +74,8 @@ export interface WorkoutExercise {
   order_index: number;
   superset_group_id: string | null;
   technique_tags: string[];
-  exercises?: Exercise;
-
-  /** Only used for cardio exercises (time-based). */
   duration_seconds?: number | null;
+  exercises?: Exercise;
 }
 
 export interface WorkoutSet {
