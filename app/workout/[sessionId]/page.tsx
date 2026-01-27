@@ -1,7 +1,5 @@
 'use client';
 
-export const dynamic = 'force-dynamic';
-
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -36,22 +34,19 @@ function formatHMFromSeconds(totalSeconds: number | null | undefined) {
   return `${hh}:${String(mm).padStart(2, '0')}`;
 }
 
+
 function parseHM(input: string): number {
   const raw = (input || '').trim();
   if (!raw) return 0;
-  // Accept: "H:MM" or "MM" (minutes)
-  if (/^\d+$/.test(raw)) return Math.max(0, parseInt(raw, 10)) * 60;
-
+  // Accept: "MM:SS" or "SS" or "M:SS"
+  if (/^\d+$/.test(raw)) return Math.max(0, parseInt(raw, 10));
   const parts = raw.split(':').map((p) => p.trim());
   if (parts.length !== 2) return 0;
-
-  const hh = parseInt(parts[0] || '0', 10);
-  const mm = parseInt(parts[1] || '0', 10);
-  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return 0;
-
-  return Math.max(0, clampInt(hh, 0, 99) * 3600 + clampInt(mm, 0, 59) * 60);
+  const mm = parseInt(parts[0] || '0', 10);
+  const ss = parseInt(parts[1] || '0', 10);
+  if (!Number.isFinite(mm) || !Number.isFinite(ss)) return 0;
+  return Math.max(0, mm * 60 + clampInt(ss, 0, 59));
 }
-
 
 function isCardioWorkoutExercise(ex: any) {
   return ex?.exercises?.exercise_type === 'cardio' || ex?.exercises?.muscle_group === 'Cardio';
@@ -160,7 +155,6 @@ export default function WorkoutPage() {
 
   // Cardio (time-based) draft input per workout_exercise_id
   const [cardioDraft, setCardioDraft] = useState<Record<string, string>>({});
-  const [cardioSaved, setCardioSaved] = useState<Record<string, boolean>>({});
 
   // Micro-interactions: track which set was just added/removed for subtle animations
   const [highlightSetId, setHighlightSetId] = useState<string | null>(null);
@@ -1228,22 +1222,13 @@ const applySetTechnique = async (newTechnique: string) => {
                     </div>
                   )}
                 </div>
-                {!isReorderMode && (isCardio ? (
-                  {(() => {
+                {!isReorderMode && (isCardio ? (() => {
                     const savedSecs = Number((exercise as any)?.duration_seconds || 0);
-                    const draftStr = cardioDraft[exercise.id] ?? formatHMFromSeconds(savedSecs);
-                    const draftSecs = parseHM(draftStr);
-                    const isCompleted = savedSecs > 0;
-                    const isDirty = draftSecs !== savedSecs;
-
-                    const buttonLabel = sessionIsCompleted
-                      ? 'Completed ✓'
-                      : isCompleted
-                        ? (isDirty ? 'Update' : 'Completed ✓')
-                        : 'Complete';
-
-                    const buttonDisabled = sessionIsCompleted || (isCompleted && !isDirty);
-
+                    const draftValue = (cardioDraft[exercise.id] ?? '').toString();
+                    const displayValue = draftValue !== '' ? draftValue : formatHMFromSeconds(savedSecs);
+                    const parsedSecs = parseHM(displayValue);
+                    const isDirty = draftValue.trim() !== '';
+                    const isCompleted = savedSecs > 0 && !isDirty;
                     return (
                       <div className="mt-3 flex flex-col sm:flex-row sm:items-end gap-3">
                         <div className="flex-1">
@@ -1253,32 +1238,28 @@ const applySetTechnique = async (newTechnique: string) => {
                           <input
                             type="text"
                             inputMode="numeric"
-                            placeholder="0:00"
-                            value={draftStr}
+                            placeholder="0:25"
+                            value={displayValue}
                             onChange={(e) => setCardioDraft((p) => ({ ...p, [exercise.id]: e.target.value }))}
                             disabled={sessionIsCompleted}
                             className="w-full h-11 px-3 rounded-xl border border-gray-700 bg-gray-900/40 text-center text-white placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-950"
                           />
-                          {cardioSaved[exercise.id] ? (
-                            <div className="mt-1 text-[11px] text-green-400 font-semibold text-center">
-                              Saved ✓
-                            </div>
+                          {isCompleted ? (
+                            <div className="mt-1 text-xs font-semibold text-emerald-300">Completed</div>
                           ) : null}
                         </div>
 
                         <button
                           type="button"
-                          disabled={buttonDisabled}
+                          disabled={sessionIsCompleted || isCompleted}
                           onClick={async () => {
-                            const secs = draftSecs;
-                            if (!secs || secs <= 0) {
+                            if (!parsedSecs || parsedSecs <= 0) {
                               alert('Cardio duration must be greater than 0.');
                               return;
                             }
-
                             const { error } = await supabase
                               .from('workout_exercises')
-                              .update({ duration_seconds: secs })
+                              .update({ duration_seconds: parsedSecs })
                               .eq('id', exercise.id);
 
                             if (error) {
@@ -1288,7 +1269,7 @@ const applySetTechnique = async (newTechnique: string) => {
                             }
 
                             setExercises((prev) =>
-                              prev.map((ex) => (ex.id === exercise.id ? { ...ex, duration_seconds: secs } : ex))
+                              prev.map((ex) => (ex.id === exercise.id ? { ...ex, duration_seconds: parsedSecs } : ex))
                             );
 
                             setCardioDraft((p) => {
@@ -1296,24 +1277,14 @@ const applySetTechnique = async (newTechnique: string) => {
                               delete copy[exercise.id];
                               return copy;
                             });
-
-                            setCardioSaved((p) => ({ ...p, [exercise.id]: true }));
-                            window.setTimeout(() => {
-                              setCardioSaved((p2) => {
-                                const copy = { ...p2 };
-                                delete copy[exercise.id];
-                                return copy;
-                              });
-                            }, 1200);
                           }}
-                          className="h-11 px-4 rounded-xl bg-primary text-primary-foreground font-semibold disabled:opacity-40 disabled:pointer-events-none"
+                          className="h-11 px-4 rounded-xl bg-primary text-primary-foreground font-semibold disabled:opacity-50 disabled:pointer-events-none"
                         >
-                          {buttonLabel}
+                          {isCompleted ? 'Completed ✓' : 'Complete'}
                         </button>
                       </div>
                     );
-                  })()}
-                )) : (
+                  })() : () : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
