@@ -1,5 +1,7 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -27,25 +29,29 @@ function clampInt(n: number, min: number, max: number) {
   return Math.min(max, Math.max(min, Math.floor(n)));
 }
 
-function formatMMSSFromSeconds(totalSeconds: number | null | undefined) {
+function formatHMFromSeconds(totalSeconds: number | null | undefined) {
   const s = Math.max(0, Math.floor(Number(totalSeconds) || 0));
-  const mm = Math.floor(s / 60);
-  const ss = s % 60;
-  return `${mm}:${String(ss).padStart(2, '0')}`;
+  const hh = Math.floor(s / 3600);
+  const mm = Math.floor((s % 3600) / 60);
+  return `${hh}:${String(mm).padStart(2, '0')}`;
 }
 
-function parseMMSS(input: string): number {
+function parseHM(input: string): number {
   const raw = (input || '').trim();
   if (!raw) return 0;
-  // Accept: "MM:SS" or "SS" or "M:SS"
-  if (/^\d+$/.test(raw)) return Math.max(0, parseInt(raw, 10));
+  // Accept: "H:MM" or "MM" (minutes)
+  if (/^\d+$/.test(raw)) return Math.max(0, parseInt(raw, 10)) * 60;
+
   const parts = raw.split(':').map((p) => p.trim());
   if (parts.length !== 2) return 0;
-  const mm = parseInt(parts[0] || '0', 10);
-  const ss = parseInt(parts[1] || '0', 10);
-  if (!Number.isFinite(mm) || !Number.isFinite(ss)) return 0;
-  return Math.max(0, mm * 60 + clampInt(ss, 0, 59));
+
+  const hh = parseInt(parts[0] || '0', 10);
+  const mm = parseInt(parts[1] || '0', 10);
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return 0;
+
+  return Math.max(0, clampInt(hh, 0, 99) * 3600 + clampInt(mm, 0, 59) * 60);
 }
+
 
 function isCardioWorkoutExercise(ex: any) {
   return ex?.exercises?.exercise_type === 'cardio' || ex?.exercises?.muscle_group === 'Cardio';
@@ -154,6 +160,7 @@ export default function WorkoutPage() {
 
   // Cardio (time-based) draft input per workout_exercise_id
   const [cardioDraft, setCardioDraft] = useState<Record<string, string>>({});
+  const [cardioSaved, setCardioSaved] = useState<Record<string, boolean>>({});
 
   // Micro-interactions: track which set was just added/removed for subtle animations
   const [highlightSetId, setHighlightSetId] = useState<string | null>(null);
@@ -1181,7 +1188,7 @@ const applySetTechnique = async (newTechnique: string) => {
                     <h3 className="section-title text-white">{exercise.exercises?.name || 'Exercise'}</h3>
                   </div>
 
-                  {!isReorderMode && (
+                  {!isReorderMode && !isCardio && (
                     <div className="mt-2 flex items-center justify-between gap-3">
                       {/* Technique on the left (no pill border) */}
                       <div className="min-w-0 flex items-center gap-2">
@@ -1222,63 +1229,91 @@ const applySetTechnique = async (newTechnique: string) => {
                   )}
                 </div>
                 {!isReorderMode && (isCardio ? (
-                  <div className="mt-3 flex flex-col sm:flex-row sm:items-end gap-3">
-                    <div className="flex-1">
-                      <label className="block text-[11px] uppercase tracking-wide text-gray-300/80 mb-1">
-                        Duration (MM:SS)
-                      </label>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        placeholder="0:00"
-                        value={cardioDraft[exercise.id] ?? formatMMSSFromSeconds((exercise as any).duration_seconds)}
-                        onChange={(e) =>
-                          setCardioDraft((p) => ({ ...p, [exercise.id]: e.target.value }))
-                        }
-                        disabled={sessionIsCompleted}
-                        className="w-full h-11 px-3 rounded-xl border border-gray-700 bg-gray-900/40 text-center text-white placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-950"
-                      />
-                    </div>
-                    <button
-                      type="button"
-                      disabled={sessionIsCompleted}
-                      onClick={async () => {
-                        const secs = parseMMSS(
-                          cardioDraft[exercise.id] ??
-                            formatMMSSFromSeconds((exercise as any).duration_seconds)
-                        );
-                        if (!secs || secs <= 0) {
-                          alert('Cardio duration must be greater than 0.');
-                          return;
-                        }
-                        const { error } = await supabase
-                          .from('workout_exercises')
-                          .update({ duration_seconds: secs })
-                          .eq('id', exercise.id);
-                        if (error) {
-                          console.error(error);
-                          alert(error.message || 'Failed to save duration.');
-                          return;
-                        }
-                        setExercises((prev) =>
-                          prev.map((ex) =>
-                            (ex as any).id === (exercise as any).id
-                              ? { ...ex, duration_seconds: secs }
-                              : ex
-                          )
-                        );
-                        setCardioDraft((p) => {
-                          const copy = { ...p };
-                          delete copy[exercise.id];
-                          return copy;
-                        });
-                      }}
-                      className="h-11 px-4 rounded-xl bg-primary text-primary-foreground font-semibold disabled:opacity-40 disabled:pointer-events-none"
-                    >
-                      Mark complete
-                    </button>
-                  </div>
-                ) : (
+                  {(() => {
+                    const savedSecs = Number((exercise as any)?.duration_seconds || 0);
+                    const draftStr = cardioDraft[exercise.id] ?? formatHMFromSeconds(savedSecs);
+                    const draftSecs = parseHM(draftStr);
+                    const isCompleted = savedSecs > 0;
+                    const isDirty = draftSecs !== savedSecs;
+
+                    const buttonLabel = sessionIsCompleted
+                      ? 'Completed ✓'
+                      : isCompleted
+                        ? (isDirty ? 'Update' : 'Completed ✓')
+                        : 'Complete';
+
+                    const buttonDisabled = sessionIsCompleted || (isCompleted && !isDirty);
+
+                    return (
+                      <div className="mt-3 flex flex-col sm:flex-row sm:items-end gap-3">
+                        <div className="flex-1">
+                          <label className="block text-[11px] uppercase tracking-wide text-gray-300/80 mb-1">
+                            Duration (H:MM)
+                          </label>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            placeholder="0:00"
+                            value={draftStr}
+                            onChange={(e) => setCardioDraft((p) => ({ ...p, [exercise.id]: e.target.value }))}
+                            disabled={sessionIsCompleted}
+                            className="w-full h-11 px-3 rounded-xl border border-gray-700 bg-gray-900/40 text-center text-white placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-950"
+                          />
+                          {cardioSaved[exercise.id] ? (
+                            <div className="mt-1 text-[11px] text-green-400 font-semibold text-center">
+                              Saved ✓
+                            </div>
+                          ) : null}
+                        </div>
+
+                        <button
+                          type="button"
+                          disabled={buttonDisabled}
+                          onClick={async () => {
+                            const secs = draftSecs;
+                            if (!secs || secs <= 0) {
+                              alert('Cardio duration must be greater than 0.');
+                              return;
+                            }
+
+                            const { error } = await supabase
+                              .from('workout_exercises')
+                              .update({ duration_seconds: secs })
+                              .eq('id', exercise.id);
+
+                            if (error) {
+                              console.error(error);
+                              alert(error.message || 'Failed to save duration.');
+                              return;
+                            }
+
+                            setExercises((prev) =>
+                              prev.map((ex) => (ex.id === exercise.id ? { ...ex, duration_seconds: secs } : ex))
+                            );
+
+                            setCardioDraft((p) => {
+                              const copy = { ...p };
+                              delete copy[exercise.id];
+                              return copy;
+                            });
+
+                            setCardioSaved((p) => ({ ...p, [exercise.id]: true }));
+                            window.setTimeout(() => {
+                              setCardioSaved((p2) => {
+                                const copy = { ...p2 };
+                                delete copy[exercise.id];
+                                return copy;
+                              });
+                            }, 1200);
+                          }}
+                          className="h-11 px-4 rounded-xl bg-primary text-primary-foreground font-semibold disabled:opacity-40 disabled:pointer-events-none"
+                        >
+                          {buttonLabel}
+                        </button>
+                      </div>
+                    );
+                  })()}
+                )) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
