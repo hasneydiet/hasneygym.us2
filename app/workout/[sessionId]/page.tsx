@@ -1284,7 +1284,7 @@ const applySetTechnique = async (newTechnique: string) => {
                         </button>
                       </div>
                     );
-                  })() : () : (
+                  })() : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
