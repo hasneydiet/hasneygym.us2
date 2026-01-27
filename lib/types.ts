@@ -8,7 +8,6 @@ export interface Exercise {
   created_by: string | null;
   name: string;
   muscle_group: string;
-  exercise_type?: 'strength' | 'cardio' | null;
   muscle_section: string;
   equipment: string;
   notes: string;
@@ -74,7 +73,6 @@ export interface WorkoutExercise {
   order_index: number;
   superset_group_id: string | null;
   technique_tags: string[];
-  duration_seconds?: number | null;
   exercises?: Exercise;
 }
 

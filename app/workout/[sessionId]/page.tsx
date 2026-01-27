@@ -27,6 +27,30 @@ function clampInt(n: number, min: number, max: number) {
   return Math.min(max, Math.max(min, Math.floor(n)));
 }
 
+function formatMMSSFromSeconds(totalSeconds: number | null | undefined) {
+  const s = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+  const mm = Math.floor(s / 60);
+  const ss = s % 60;
+  return `${mm}:${String(ss).padStart(2, '0')}`;
+}
+
+function parseMMSS(input: string): number {
+  const raw = (input || '').trim();
+  if (!raw) return 0;
+  // Accept: "MM:SS" or "SS" or "M:SS"
+  if (/^\d+$/.test(raw)) return Math.max(0, parseInt(raw, 10));
+  const parts = raw.split(':').map((p) => p.trim());
+  if (parts.length !== 2) return 0;
+  const mm = parseInt(parts[0] || '0', 10);
+  const ss = parseInt(parts[1] || '0', 10);
+  if (!Number.isFinite(mm) || !Number.isFinite(ss)) return 0;
+  return Math.max(0, mm * 60 + clampInt(ss, 0, 59));
+}
+
+function isCardioWorkoutExercise(ex: any) {
+  return ex?.exercises?.exercise_type === 'cardio' || ex?.exercises?.muscle_group === 'Cardio';
+}
+
 
 
 const TECHNIQUE_GUIDES: Record<
@@ -119,7 +143,6 @@ export default function WorkoutPage() {
   const [session, setSession] = useState<WorkoutSession | null>(null);
   const [exercises, setExercises] = useState<WorkoutExercise[]>([]);
   const [sets, setSets] = useState<{ [exerciseId: string]: WorkoutSet[] }>({});
-  const [cardioDurationInput, setCardioDurationInput] = useState<Record<string, string>>({});
 
   const [prevSetsByExercise, setPrevSetsByExercise] = useState<Record<string, WorkoutSet[]>>({});
 
@@ -128,6 +151,9 @@ export default function WorkoutPage() {
   const [selectedExerciseId, setSelectedExerciseId] = useState('');
   const [availableExercises, setAvailableExercises] = useState<any[]>([]);
   const [addingExercise, setAddingExercise] = useState(false);
+
+  // Cardio (time-based) draft input per workout_exercise_id
+  const [cardioDraft, setCardioDraft] = useState<Record<string, string>>({});
 
   // Micro-interactions: track which set was just added/removed for subtle animations
   const [highlightSetId, setHighlightSetId] = useState<string | null>(null);
@@ -624,7 +650,7 @@ const applySetTechnique = async (newTechnique: string) => {
 
       const { data, error } = await supabase
         .from('exercises')
-        .select('id, name')
+        .select('id, name, muscle_group, exercise_type')
         .order('name');
 
       if (!cancelled && !error && data) {
@@ -704,21 +730,23 @@ const applySetTechnique = async (newTechnique: string) => {
       // determine order index (append to end)
       const nextOrder = exercises.length;
 
-      // pull default set scheme for a better starter experience (still session-only)
+      // Pull exercise metadata so we can branch:
+      // - Strength = set-based
+      // - Cardio = time-based (no workout_sets)
       const { data: exMeta } = await supabase
         .from('exercises')
         .select('default_set_scheme, muscle_group, exercise_type')
         .eq('id', selectedExerciseId)
         .maybeSingle();
 
-      const isCardio = (exMeta as any)?.exercise_type === 'cardio' || (exMeta as any)?.muscle_group === 'Cardio';
+      const isCardio =
+        (exMeta as any)?.exercise_type === 'cardio' || (exMeta as any)?.muscle_group === 'Cardio';
 
       const scheme = (exMeta as any)?.default_set_scheme ?? null;
       const schemeSets = scheme && typeof scheme === 'object' ? Number((scheme as any).sets) : NaN;
       const schemeReps = scheme && typeof scheme === 'object' ? Number((scheme as any).reps) : NaN;
 
-            const setsCount = isCardio ? 0 : Number.isFinite(schemeSets) ? Math.max(1, Math.floor(schemeSets)) : 1;
-
+      const setsCount = isCardio ? 0 : Number.isFinite(schemeSets) ? Math.max(1, Math.floor(schemeSets)) : 1;
       const defaultReps = isCardio ? 0 : Number.isFinite(schemeReps) ? Math.max(0, Math.floor(schemeReps)) : 0;
 
       // Smart default: use the last technique the user chose for this exercise (across sessions).
@@ -742,7 +770,8 @@ const applySetTechnique = async (newTechnique: string) => {
           order_index: nextOrder,
           routine_day_exercise_id: null,
           technique_tags: [defaultTechnique],
-                  duration_seconds: isCardio ? 0 : null,
+          // Cardio stores time on the workout_exercises row.
+          duration_seconds: isCardio ? 0 : null,
         })
         .select('id')
         .single();
@@ -752,7 +781,6 @@ const applySetTechnique = async (newTechnique: string) => {
       const workoutExerciseId = (newWorkoutExercise as any)?.id as string | undefined;
       if (!workoutExerciseId) throw new Error('Failed to create workout exercise.');
 
-      // Strength is set-based; cardio is time-based (no sets).
       if (!isCardio) {
         const setsToInsert = Array.from({ length: setsCount }).map((_, i) => ({
           workout_exercise_id: workoutExerciseId,
@@ -764,7 +792,8 @@ const applySetTechnique = async (newTechnique: string) => {
         }));
 
         const { error: wsErr } = await supabase.from('workout_sets').insert(setsToInsert);
-        if (wsErr) throw wsErr;      }
+        if (wsErr) throw wsErr;
+      }
 
       // Reset UI and reload workout (so it appears immediately and is logged to history via session tables)
       setSelectedExerciseId('');
@@ -867,20 +896,15 @@ const applySetTechnique = async (newTechnique: string) => {
   const getWorkoutValidationError = (): string | null => {
     for (const ex of exercises) {
       const exName = ex?.exercises?.name || ex?.name || 'Exercise';
-      const exType =
-        (ex as any)?.exercises?.exercise_type ||
-        ((ex as any)?.exercises?.muscle_group === 'Cardio' ? 'cardio' : 'strength');
+      const cardio = isCardioWorkoutExercise(ex);
 
-      // Cardio is time-based: require duration > 0
-      if (exType === 'cardio') {
-        const duration = Number((ex as any)?.duration_seconds ?? 0);
-        if (!Number.isFinite(duration) || duration <= 0) {
-          return `Please complete your workout before finishing.\n\nMissing cardio duration for: ${exName}`;
+      if (cardio) {
+        const secs = Number((ex as any)?.duration_seconds || 0);
+        if (!Number.isFinite(secs) || secs <= 0) {
+          return `Please complete your workout before finishing.\n\n${exName} — cardio duration must be greater than 0.`;
         }
         continue;
       }
-
-      // Strength is set-based: require sets and completion
       const exSets = sets[ex.id] || [];
 
       if (exSets.length === 0) {
@@ -1107,10 +1131,7 @@ const applySetTechnique = async (newTechnique: string) => {
         <div className="space-y-6">
           {exercises.map((exercise: any) => {
             const prevSets = prevSetsByExercise[exercise.id] || [];
-            const exType =
-              exercise?.exercises?.exercise_type ||
-              (exercise?.exercises?.muscle_group === 'Cardio' ? 'cardio' : 'strength');
-            const isCardio = exType === 'cardio';
+            const isCardio = isCardioWorkoutExercise(exercise);
             // While reordering, collapse cards to just the exercise name for easier dragging (HEVY-like)
             const isReorderMode = Boolean(draggingExerciseId);
 
@@ -1200,28 +1221,64 @@ const applySetTechnique = async (newTechnique: string) => {
                     </div>
                   )}
                 </div>
-                {!isReorderMode && (
-                  isCardio ? (
-                    <div className="mt-3 flex items-center gap-3">
-                      <Input
-                        value={cardioDurationInput[exercise.id] ?? formatDuration(Number(exercise.duration_seconds || 0))}
-                        onChange={(e) => setCardioDurationInput((p) => ({ ...p, [exercise.id]: e.target.value }))}
-                        placeholder="MM:SS"
-                        className="w-28 text-center"
+                {!isReorderMode && (isCardio ? (
+                  <div className="mt-3 flex flex-col sm:flex-row sm:items-end gap-3">
+                    <div className="flex-1">
+                      <label className="block text-[11px] uppercase tracking-wide text-gray-300/80 mb-1">
+                        Duration (MM:SS)
+                      </label>
+                      <input
+                        type="text"
                         inputMode="numeric"
+                        placeholder="0:00"
+                        value={cardioDraft[exercise.id] ?? formatMMSSFromSeconds((exercise as any).duration_seconds)}
+                        onChange={(e) =>
+                          setCardioDraft((p) => ({ ...p, [exercise.id]: e.target.value }))
+                        }
+                        disabled={sessionIsCompleted}
+                        className="w-full h-11 px-3 rounded-xl border border-gray-700 bg-gray-900/40 text-center text-white placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-950"
                       />
-                      <Button
-                        type="button"
-                        onClick={() => saveCardioDuration(exercise.id)}
-                        className="h-10"
-                      >
-                        Mark complete
-                      </Button>
-                      <div className="text-xs text-gray-400">
-                        {Number(exercise.duration_seconds || 0) > 0 ? `Saved: ${formatDuration(Number(exercise.duration_seconds || 0))}` : 'Not saved'}
-                      </div>
                     </div>
-                  ) : (
+                    <button
+                      type="button"
+                      disabled={sessionIsCompleted}
+                      onClick={async () => {
+                        const secs = parseMMSS(
+                          cardioDraft[exercise.id] ??
+                            formatMMSSFromSeconds((exercise as any).duration_seconds)
+                        );
+                        if (!secs || secs <= 0) {
+                          alert('Cardio duration must be greater than 0.');
+                          return;
+                        }
+                        const { error } = await supabase
+                          .from('workout_exercises')
+                          .update({ duration_seconds: secs })
+                          .eq('id', exercise.id);
+                        if (error) {
+                          console.error(error);
+                          alert(error.message || 'Failed to save duration.');
+                          return;
+                        }
+                        setExercises((prev) =>
+                          prev.map((ex) =>
+                            (ex as any).id === (exercise as any).id
+                              ? { ...ex, duration_seconds: secs }
+                              : ex
+                          )
+                        );
+                        setCardioDraft((p) => {
+                          const copy = { ...p };
+                          delete copy[exercise.id];
+                          return copy;
+                        });
+                      }}
+                      className="h-11 px-4 rounded-xl bg-primary text-primary-foreground font-semibold disabled:opacity-40 disabled:pointer-events-none"
+                    >
+                      Mark complete
+                    </button>
+                  </div>
+                ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
@@ -1479,8 +1536,7 @@ const applySetTechnique = async (newTechnique: string) => {
                     </button>
                   </div>
                 </div>
-                  )
-                )}
+                ))}
               </div>
             );
           })}
@@ -1636,29 +1692,4 @@ const applySetTechnique = async (newTechnique: string) => {
 </Sheet>
 </div>
   );
-
-  const saveCardioDuration = async (workoutExerciseId: string) => {
-    const input = cardioDurationInput[workoutExerciseId] || '';
-    const seconds = parseDuration(input);
-
-    if (seconds === null || seconds <= 0) {
-      window.alert('Enter a valid duration in MM:SS (greater than 00:00).');
-      return;
-    }
-
-    const { error } = await supabase
-      .from('workout_exercises')
-      .update({ duration_seconds: seconds })
-      .eq('id', workoutExerciseId);
-
-    if (error) {
-      console.error(error);
-      window.alert('Failed to save duration.');
-      return;
-    }
-
-    setExercises((prev: any[]) =>
-      prev.map((e) => (e.id === workoutExerciseId ? { ...e, duration_seconds: seconds } : e))
-    );
-  };
 }

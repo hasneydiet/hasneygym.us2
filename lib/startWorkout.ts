@@ -37,14 +37,15 @@ export async function startWorkoutForDay(input: StartWorkoutInput): Promise<stri
   if (sessErr) throw sessErr;
   if (!session?.id) throw new Error('Failed to create workout session.');
 
-    // 2) Pull routine_day_exercises + exercise metadata (including type for cardio)
+  // 2) Pull routine_day_exercises + exercise default scheme
   const { data: rdeRows, error: rdeErr } = await supabase
     .from('routine_day_exercises')
-    .select('id, exercise_id, order_index, default_sets, technique_tags, exercises(default_set_scheme, exercise_type, muscle_group)')
+    .select('id, exercise_id, order_index, default_sets, technique_tags, exercises(default_set_scheme, muscle_group, exercise_type)')
     .eq('routine_day_id', routineDayId)
     .order('order_index', { ascending: true });
 
   if (rdeErr) throw rdeErr;
+
 
   // Smart defaults: if the routine template doesn't specify a technique, fall back to the user's last used technique for that exercise.
   const exerciseIds = (rdeRows || []).map((r: any) => r.exercise_id).filter(Boolean) as string[];
@@ -55,7 +56,6 @@ export async function startWorkoutForDay(input: StartWorkoutInput): Promise<stri
       .select('exercise_id, technique')
       .eq('user_id', userId)
       .in('exercise_id', exerciseIds);
-
     for (const p of prefs || []) {
       const exId = (p as any).exercise_id as string | undefined;
       const t = (p as any).technique as string | undefined;
@@ -63,70 +63,94 @@ export async function startWorkoutForDay(input: StartWorkoutInput): Promise<stri
     }
   }
 
-  // 3) Insert workout_exercises + workout_sets
-  for (const r of (rdeRows || []).filter((x: any) => x.exercise_id)) {
-    const exMeta = (r as any).exercises || {};
-    const isCardio =
-      (exMeta as any)?.exercise_type === 'cardio' || (exMeta as any)?.muscle_group === 'Cardio';
-
-    const technique_tags =
-      Array.isArray((r as any).technique_tags) && (r as any).technique_tags.length > 0
-        ? (r as any).technique_tags
-        : [prefByExerciseId[String((r as any).exercise_id)] ?? 'Normal-Sets'];
-
-    const { data: weRow, error: weErr } = await supabase
-      .from('workout_exercises')
-      .insert({
+  const exercisesToInsert =
+    (rdeRows || [])
+      .filter((r: any) => r.exercise_id)
+      .map((r: any) => ({
         workout_session_id: session.id,
-        routine_day_exercise_id: (r as any).id,
-        exercise_id: (r as any).exercise_id,
-        order_index: (r as any).order_index ?? 0,
-        technique_tags,
-        // Cardio is time-based: initialize duration at 0 and do NOT create sets
-        duration_seconds: isCardio ? 0 : null,
-      })
-      .select('id')
-      .single();
+        routine_day_exercise_id: r.id,
+        exercise_id: r.exercise_id,
+        order_index: r.order_index ?? 0,
+        technique_tags:
+          Array.isArray(r.technique_tags) && r.technique_tags.length > 0
+            ? r.technique_tags
+            : [prefByExerciseId[String(r.exercise_id)] ?? 'Normal-Sets'],
+        // Cardio is time-based and has no sets.
+        duration_seconds:
+          (r as any)?.exercises?.exercise_type === 'cardio' || (r as any)?.exercises?.muscle_group === 'Cardio'
+            ? 0
+            : null,
+      }));
+  if (exercisesToInsert.length > 0) {
+    // 3) Insert workout_exercises (return id + exercise_id)
+    const { data: weRows, error: weErr } = await supabase
+      .from('workout_exercises')
+      .insert(exercisesToInsert)
+      .select('id, exercise_id');
 
     if (weErr) throw weErr;
-    if (!weRow?.id) throw new Error('Failed to create workout exercise.');
 
-    // Strength: seed starter sets; Cardio: none.
-    if (isCardio) continue;
+    // Build lookup by exercise_id so we know how many sets to create
+    const rdeByExerciseId: Record<
+      string,
+      { default_sets: any[]; default_set_scheme: any | null; is_cardio: boolean }
+    > = {};
 
-    const scheme = (exMeta as any)?.default_set_scheme ?? null;
-    const defaultSetsArray = Array.isArray((r as any).default_sets) ? (r as any).default_sets : [];
-
-    let setsCount = 1;
-    let defaultReps = 0;
-
-    // If routine_day_exercises.default_sets is used (array), it wins
-    if (Array.isArray(defaultSetsArray) && defaultSetsArray.length > 0) {
-      setsCount = Math.max(1, defaultSetsArray.length);
-    } else if (scheme && typeof scheme === 'object') {
-      setsCount = Math.max(1, safeInt((scheme as any).sets, 1));
+    for (const row of rdeRows || []) {
+      const exerciseId = (row as any).exercise_id as string | undefined;
+      if (!exerciseId) continue;
+      rdeByExerciseId[exerciseId] = {
+        default_sets: Array.isArray((row as any).default_sets) ? (row as any).default_sets : [],
+        default_set_scheme: (row as any).exercises?.default_set_scheme ?? null,
+        is_cardio:
+          (row as any)?.exercises?.exercise_type === 'cardio' || (row as any)?.exercises?.muscle_group === 'Cardio',
+      };
     }
 
-    if (scheme && typeof scheme === 'object') {
-      defaultReps = Math.max(0, safeInt((scheme as any).reps, 0));
-    }
-
+    // 4) Insert starter sets (N sets per exercise based on default scheme)
     const setsToInsert: any[] = [];
-    for (let i = 0; i < setsCount; i++) {
-      const fromDefaultArray = Array.isArray(defaultSetsArray) ? defaultSetsArray[i] : null;
-      const repsFromArray =
-        fromDefaultArray && typeof fromDefaultArray === 'object' ? (fromDefaultArray as any).reps : undefined;
-      const weightFromArray =
-        fromDefaultArray && typeof fromDefaultArray === 'object' ? (fromDefaultArray as any).weight : undefined;
 
-      setsToInsert.push({
-        workout_exercise_id: weRow.id,
-        set_index: i,
-        reps: Number.isFinite(Number(repsFromArray)) ? Number(repsFromArray) : defaultReps,
-        weight: Number.isFinite(Number(weightFromArray)) ? Number(weightFromArray) : 0,
-        rpe: null,
-        is_completed: false,
-      });
+    for (const we of weRows || []) {
+      const workoutExerciseId = (we as any).id as string;
+      const exerciseId = (we as any).exercise_id as string;
+
+      const meta = rdeByExerciseId[exerciseId];
+      const scheme = meta?.default_set_scheme || null;
+      const defaultSetsArray = meta?.default_sets || [];
+
+      // Cardio is time-based (no sets).
+      if (meta?.is_cardio) continue;
+
+      let setsCount = 1;
+      let defaultReps = 0;
+
+      // If routine_day_exercises.default_sets is used (array), it wins
+      if (Array.isArray(defaultSetsArray) && defaultSetsArray.length > 0) {
+        setsCount = Math.max(1, defaultSetsArray.length);
+      } else if (scheme && typeof scheme === 'object') {
+        setsCount = Math.max(1, safeInt((scheme as any).sets, 1));
+      }
+
+      if (scheme && typeof scheme === 'object') {
+        defaultReps = Math.max(0, safeInt((scheme as any).reps, 0));
+      }
+
+      for (let i = 0; i < setsCount; i++) {
+        const fromDefaultArray = Array.isArray(defaultSetsArray) ? defaultSetsArray[i] : null;
+        const repsFromArray =
+          fromDefaultArray && typeof fromDefaultArray === 'object' ? (fromDefaultArray as any).reps : undefined;
+        const weightFromArray =
+          fromDefaultArray && typeof fromDefaultArray === 'object' ? (fromDefaultArray as any).weight : undefined;
+
+        setsToInsert.push({
+          workout_exercise_id: workoutExerciseId,
+          set_index: i,
+          reps: Number.isFinite(Number(repsFromArray)) ? Number(repsFromArray) : defaultReps,
+          weight: Number.isFinite(Number(weightFromArray)) ? Number(weightFromArray) : 0,
+          rpe: null,
+          is_completed: false,
+        });
+      }
     }
 
     if (setsToInsert.length > 0) {
