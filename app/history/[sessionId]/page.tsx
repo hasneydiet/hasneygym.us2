@@ -13,14 +13,6 @@ import { Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 
-
-const formatDuration = (totalSeconds: number): string => {
-  const s = Math.max(0, Math.floor(Number(totalSeconds) || 0));
-  const mm = Math.floor(s / 60);
-  const ss = s % 60;
-  return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
-};
-
 export const dynamic = 'force-dynamic';
 
 export default function SessionDetailPage() {
@@ -374,8 +366,16 @@ function ExerciseDetail({
   exercise: WorkoutExercise;
   sets: WorkoutSet[];
 }) {
-  const exType = (exercise as any)?.exercises?.exercise_type || ((exercise as any)?.exercises?.muscle_group === 'Cardio' ? 'cardio' : 'strength');
-  const isCardio = exType === 'cardio';
+  const isCardio =
+    (exercise as any)?.exercises?.exercise_type === 'cardio' ||
+    (exercise as any)?.exercises?.muscle_group === 'Cardio';
+  const durationSeconds = Number((exercise as any)?.duration_seconds || 0);
+  const durationLabel = (() => {
+    const s = Math.max(0, Math.floor(durationSeconds));
+    const mm = Math.floor(s / 60);
+    const ss = s % 60;
+    return `${mm}:${String(ss).padStart(2, '0')}`;
+  })();
 
   return (
     <div className="p-4">
@@ -393,14 +393,14 @@ function ExerciseDetail({
         </div>
       )}
 
-      {isCardio ? (
-        <div className="mt-2 text-sm">
-          <div className="text-muted-foreground">Duration</div>
-          <div className="font-semibold">{formatDuration(Number((exercise as any).duration_seconds || 0))}</div>
-        </div>
-      ) : (
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+	  {isCardio ? (
+	    <div className="mt-2">
+	      <p className="text-xs text-muted-foreground">Duration</p>
+	      <p className="text-sm font-semibold text-foreground">{durationSeconds > 0 ? durationLabel : '—'}</p>
+	    </div>
+	  ) : (
+	  <div className="overflow-x-auto">
+	    <table className="w-full text-sm">
           <thead className="text-xs text-muted-foreground bg-muted/40">
             <tr>
               <th className="px-3 py-2 text-left">Set</th>
@@ -423,9 +423,9 @@ function ExerciseDetail({
               </tr>
             ))}
           </tbody>
-        </table>
-      </div>
-      )}
+	    </table>
+	  </div>
+	  )}
     </div>
   );
 }
