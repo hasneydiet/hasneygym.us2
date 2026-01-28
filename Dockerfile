@@ -9,16 +9,16 @@ RUN npm ci --no-audit --no-fund
 
 COPY . .
 
-# ⛔ DO NOT REQUIRE SUPABASE ENV AT BUILD
-ENV NEXT_PUBLIC_SUPABASE_URL="build-time-placeholder"
-ENV NEXT_PUBLIC_SUPABASE_ANON_KEY="build-time-placeholder"
-
+# Build must NOT depend on runtime secrets.
+# Supabase env vars are provided at runtime by your platform (Portainer/Unraid).
 RUN npm run build
 
 # ---- Run stage ----
 FROM node:20-alpine AS runner
 WORKDIR /app
+
 ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
 
 COPY --from=builder /app ./
 

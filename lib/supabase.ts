@@ -1,41 +1,37 @@
-import { createClient } from '@supabase/supabase-js';
+'use client';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
-const _missingEnvMessage =
-  'Missing Supabase env vars. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in your platform env/secret manager (and locally in .env.local).';
+let _client: SupabaseClient | null = null;
 
-// During container image builds, some platforms do not pass build args/env into
-// the build step. Avoid failing the *image build* in that case; instead, throw
-// on first client usage at runtime if still misconfigured.
-const _isBuildStep = process.env.npm_lifecycle_event === 'build';
+export function getSupabaseClient(): SupabaseClient {
+  if (_client) return _client;
 
-// Explicit browser-auth config for session stability.
-// IMPORTANT: do NOT set a custom storageKey (it can break existing sessions across devices).
-export const supabase: ReturnType<typeof createClient> = (() => {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
   if (!supabaseUrl || !supabaseAnonKey) {
-    if (!_isBuildStep) {
-      // eslint-disable-next-line no-console
-      console.error(_missingEnvMessage);
-    }
-
-    // Stub that throws if anything tries to use it.
-    return new Proxy(
-      {},
-      {
-        get() {
-          throw new Error('Supabase is not configured (missing NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY).');
-        },
-      }
-    ) as any;
+    throw new Error(
+      'Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY at runtime.'
+    );
   }
 
-  return createClient(supabaseUrl, supabaseAnonKey, {
+  _client = createClient(supabaseUrl, supabaseAnonKey, {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: true,
     },
   });
-})();
+
+  return _client;
+}
+
+// Backwards-compatible export used throughout the app.
+// The actual client is created lazily at runtime on first access.
+export const supabase: SupabaseClient = new Proxy({} as SupabaseClient, {
+  get(_target, prop, _receiver) {
+    const client = getSupabaseClient() as any;
+    return client[prop as any];
+  },
+}) as SupabaseClient;

@@ -6,6 +6,9 @@ import PWARegister from '@/components/pwa/PWARegister';
 
 const inter = Inter({ subsets: ['latin'] });
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export const metadata: Metadata = {
   title: 'H-Core - Personal Workout Tracker',
   description: 'Personal Workout Tracker',
