@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import AuthGuard from '@/components/AuthGuard';
 import Navigation from '@/components/Navigation';
-import { supabase } from '@/lib/supabase';
+import { getSupabaseClient } from '@/lib/supabase';
 import { useCoach } from '@/hooks/useCoach';
 import { Routine, RoutineDay, RoutineDayExercise, Exercise } from '@/lib/types';
 import { CANONICAL_MUSCLE_GROUPS, normalizeMuscleGroup } from '@/lib/muscleGroups';
@@ -242,7 +242,8 @@ export default function RoutineEditorPage() {
   };
 
   const deleteDay = async (dayId: string) => {
-    if (confirm('Delete this day?')) {
+    const supabase = await getSupabaseClient();
+if (confirm('Delete this day?')) {
       await supabase.from('routine_days').delete().eq('id', dayId);
       if (effectiveUserId) loadRoutine(effectiveUserId);
     }
@@ -272,7 +273,8 @@ export default function RoutineEditorPage() {
   };
 
   const deleteExerciseFromDay = async (exerciseId: string) => {
-    await supabase.from('routine_day_exercises').delete().eq('id', exerciseId);
+    const supabase = await getSupabaseClient();
+await supabase.from('routine_day_exercises').delete().eq('id', exerciseId);
     if (effectiveUserId) loadRoutine(effectiveUserId);
   };
 

@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
+import { getSupabaseClient } from '@/lib/supabase';
 import { useCoach } from '@/hooks/useCoach';
 
 export const dynamic = 'force-dynamic';
@@ -13,7 +13,8 @@ export default function Home() {
 
   useEffect(() => {
     const checkAuth = async () => {
-      try {
+      const supabase = await getSupabaseClient();
+try {
         // If Supabase env vars are missing/misconfigured, this call can throw.
         // Never allow the app to get stuck on an infinite Loading screen.
         const { data: { session } } = await supabase.auth.getSession();

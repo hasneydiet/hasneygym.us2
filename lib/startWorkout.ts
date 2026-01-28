@@ -1,5 +1,4 @@
-import { supabase } from '@/lib/supabase';
-
+import { getSupabaseClient } from '@/lib/supabase';
 function safeInt(v: any, fallback: number) {
   const n = Number(v);
   if (!Number.isFinite(n)) return fallback;

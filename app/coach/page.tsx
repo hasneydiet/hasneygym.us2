@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import AuthGuard from '@/components/AuthGuard';
 import Navigation from '@/components/Navigation';
-import { supabase } from '@/lib/supabase';
+import { getSupabaseClient } from '@/lib/supabase';
 import { useCoach } from '@/hooks/useCoach';
 import { Button } from '@/components/ui/button';
 import { COACH_IMPERSONATE_EMAIL_KEY } from '@/lib/coach';
@@ -28,7 +28,8 @@ export default function CoachPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const getAccessToken = async () => {
-    const { data: sessionData } = await supabase.auth.getSession();
+    const supabase = await getSupabaseClient();
+const { data: sessionData } = await supabase.auth.getSession();
     return sessionData.session?.access_token || null;
   };
 

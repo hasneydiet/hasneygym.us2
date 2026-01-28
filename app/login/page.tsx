@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
+import { getSupabaseClient } from '@/lib/supabase';
 import BrandLogo from '@/components/BrandLogo';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -33,6 +33,7 @@ export default function LoginPage() {
   useEffect(() => {
     const checkAuth = async () => {
       try {
+        const supabase = await getSupabaseClient();
         const {
           data: { session },
         } = await supabase.auth.getSession();
@@ -52,6 +53,7 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
+      const supabase = await getSupabaseClient();
       if (isSignUp) {
         const { data, error } = await supabase.auth.signUp({
           email,

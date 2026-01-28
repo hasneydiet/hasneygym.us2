@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { getSupabaseClient } from '@/lib/supabase';
 import { Routine } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import {
@@ -39,7 +39,8 @@ export default function ShareRoutineDialog(props: {
   }, [open, routine?.id]);
 
   const getAccessToken = async () => {
-    const { data: sessionData } = await supabase.auth.getSession();
+    const supabase = await getSupabaseClient();
+const { data: sessionData } = await supabase.auth.getSession();
     return sessionData.session?.access_token || null;
   };
 

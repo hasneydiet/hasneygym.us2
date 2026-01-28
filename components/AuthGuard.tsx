@@ -2,32 +2,53 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
+import { getSupabaseClient } from '@/lib/supabase';
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
   useEffect(() => {
-    const checkAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        router.push('/login');
-      } else {
+    let unsubscribe: (() => void) | null = null;
+    let cancelled = false;
+
+    const init = async () => {
+      try {
+        const supabase = await getSupabaseClient();
+
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        if (cancelled) return;
+
+        if (!session) {
+          router.push('/login');
+          return;
+        }
+
         setLoading(false);
+
+        const {
+          data: { subscription },
+        } = supabase.auth.onAuthStateChange((_event, s) => {
+          if (!s) {
+            router.push('/login');
+          }
+        });
+
+        unsubscribe = () => subscription.unsubscribe();
+      } catch {
+        // If supabase client is misconfigured, send user to login.
+        router.push('/login');
       }
     };
 
-    checkAuth();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (!session) {
-        router.push('/login');
-      }
-    });
+    init();
 
     return () => {
-      subscription.unsubscribe();
+      cancelled = true;
+      unsubscribe?.();
     };
   }, [router]);
 
