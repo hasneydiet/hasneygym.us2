@@ -4,11 +4,14 @@ services:
   hasneygym:
     build:
       context: .
-    container_name: hasneygym
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: https://fgtilnlpcardkbdellyy.supabase.co
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZndGlsbmxwY2FyZGtiZGVsbHl5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjczMjAwMTQsImV4cCI6MjA4Mjg5NjAxNH0.BAPXw8TNmBRoCiwyOIsEJc__TzQ1ZgdUrO7J4nuiKfE
+    container_name: hasneygym-staging
     restart: unless-stopped
     ports:
       - "3001:3000"
     environment:
-      # Set these in Portainer/Unraid stack env vars
-      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      NEXT_PUBLIC_SUPABASE_URL: https://fgtilnlpcardkbdellyy.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZndGlsbmxwY2FyZGtiZGVsbHl5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjczMjAwMTQsImV4cCI6MjA4Mjg5NjAxNH0.BAPXw8TNmBRoCiwyOIsEJc__TzQ1ZgdUrO7J4nuiKfE
+
