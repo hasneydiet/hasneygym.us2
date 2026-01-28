@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Navigation from '@/components/Navigation';
-import { getSupabaseClient } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase';
 import { useCoach } from '@/hooks/useCoach';
 import type { RoutineDay } from '@/lib/types';
 import { sortRoutineDays } from '@/lib/routineDaySort';
@@ -28,8 +28,7 @@ function formatDate(d: string | null) {
 }
 
 async function getAuthedUser() {
-  const supabase = await getSupabaseClient();
-// Prefer session (fast + avoids AuthSessionMissingError edge cases)
+  // Prefer session (fast + avoids AuthSessionMissingError edge cases)
   const { data: sessData } = await supabase.auth.getSession();
   const session = sessData?.session ?? null;
   if (session?.user) return session.user;

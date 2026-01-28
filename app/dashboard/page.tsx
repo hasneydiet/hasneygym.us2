@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Navigation from '@/components/Navigation';
 import AuthGuard from '@/components/AuthGuard';
-import { getSupabaseClient } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase';
 import { useCoach } from '@/hooks/useCoach';
 import { sortRoutineDays } from '@/lib/routineDaySort';
 import { cacheGet, cacheSet } from '@/lib/perfCache';
@@ -100,8 +100,7 @@ function goalLabel(goal: ProfileGoal) {
 }
 
 async function getAuthedUser() {
-  const supabase = await getSupabaseClient();
-const { data: sessData } = await supabase.auth.getSession();
+  const { data: sessData } = await supabase.auth.getSession();
   const session = sessData?.session ?? null;
   if (session?.user) return session.user;
   try {

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import AuthGuard from '@/components/AuthGuard';
 import Navigation from '@/components/Navigation';
-import { getSupabaseClient } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase';
 import { Exercise, TECHNIQUE_TAGS } from '@/lib/types';
 import { CANONICAL_MUSCLE_GROUPS, normalizeMuscleGroup } from '@/lib/muscleGroups';
 import { cacheGet, cacheSet } from '@/lib/perfCache';
@@ -216,8 +216,7 @@ export default function ExercisesPage() {
   };
 
   const handleDelete = async (id: string) => {
-    const supabase = await getSupabaseClient();
-if (confirm('Delete this exercise?')) {
+    if (confirm('Delete this exercise?')) {
       await supabase.from('exercises').delete().eq('id', id);
       loadExercises();
     }

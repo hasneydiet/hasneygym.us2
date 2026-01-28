@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { getSupabaseClient } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase';
 import { COACH_IMPERSONATE_EMAIL_KEY, COACH_IMPERSONATE_KEY } from '@/lib/coach';
 
 // In some TS build setups, the inferred return type from supabase-js methods
@@ -105,8 +105,7 @@ export function useCoach() {
     };
 
     const load = async () => {
-      const supabase = await getSupabaseClient();
-try {
+      try {
         const userRes = (await withTimeout(supabase.auth.getUser(), 7000)) as unknown as UserGetResponse;
         const user = userRes.data.user;
         const userErr = userRes.error;
@@ -174,8 +173,7 @@ try {
     load();
 
     const { data: sub } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      const supabase = await getSupabaseClient();
-try {
+      try {
         const email = session?.user?.email ?? null;
         const userId = session?.user?.id ?? null;
         let isCoach = false;

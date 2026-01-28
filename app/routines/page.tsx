@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import nextDynamic from 'next/dynamic';
 import AuthGuard from '@/components/AuthGuard';
 import Navigation from '@/components/Navigation';
-import { getSupabaseClient } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase';
 import { useCoach } from '@/hooks/useCoach';
 import { Routine } from '@/lib/types';
 import { Plus, Edit2, Trash2, Share2, Copy } from 'lucide-react';
@@ -128,8 +128,7 @@ export default function RoutinesPage() {
   };
 
   const handleDelete = async (id: string) => {
-    const supabase = await getSupabaseClient();
-if (confirm('Delete this routine and all its data?')) {
+    if (confirm('Delete this routine and all its data?')) {
       await supabase.from('routines').delete().eq('id', id);
       if (routinesCacheKey) cacheDel(routinesCacheKey);
       if (effectiveUserId) loadRoutines(effectiveUserId);

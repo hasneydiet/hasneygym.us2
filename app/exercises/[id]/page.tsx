@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import AuthGuard from '@/components/AuthGuard';
 import Navigation from '@/components/Navigation';
-import { getSupabaseClient } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase';
 import { Exercise } from '@/lib/types';
 import { computeExerciseMetrics, computeExerciseMetricsDetailed } from '@/lib/progressUtils';
 import { ArrowLeft } from 'lucide-react';
