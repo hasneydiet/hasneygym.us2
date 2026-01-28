@@ -68,6 +68,12 @@ export default function SessionDetailPage() {
 
         const setsMap: { [exerciseId: string]: WorkoutSet[] } = {};
         for (const ex of exData) {
+          // Cardio is time-based and has no sets; avoid unnecessary queries.
+          if (isCardioExercise(ex)) {
+            setsMap[ex.id] = [];
+            continue;
+          }
+
           const { data: setsData } = await supabase
             .from('workout_sets')
             .select('*')
@@ -82,6 +88,7 @@ export default function SessionDetailPage() {
         try {
           const total = exData.reduce(
             (acc, ex) => {
+              if (isCardioExercise(ex)) return acc;
               const s = setsMap[ex.id] || [];
               const completedCount = s.filter((x) => x.is_completed).length;
               const m = computeExerciseMetricsDetailed(s);

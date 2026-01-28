@@ -701,12 +701,20 @@ const applySetTechnique = async (newTechnique: string) => {
 
     setExercises(exData);
 
-    const exIds = exData.map((e: any) => e.id);
-    const { data: allSets } = await supabase
-      .from('workout_sets')
-      .select('*')
-      .in('workout_exercise_id', exIds)
-      .order('set_index');
+    // Strength is set-based; cardio is time-based (no workout_sets rows).
+    // Fetch sets only for strength exercises to reduce load and avoid misleading empty rows.
+    const strengthExerciseIds = exData
+      .filter((ex: any) => !isCardioWorkoutExercise(ex))
+      .map((ex: any) => ex.id);
+
+    const { data: allSets } =
+      strengthExerciseIds.length > 0
+        ? await supabase
+            .from('workout_sets')
+            .select('*')
+            .in('workout_exercise_id', strengthExerciseIds)
+            .order('set_index')
+        : { data: [] as any[] };
 
     const map: { [exerciseId: string]: WorkoutSet[] } = {};
     for (const ex of exData) map[ex.id] = [];
@@ -816,6 +824,10 @@ const applySetTechnique = async (newTechnique: string) => {
       exData.map(async (ex) => {
         const currentWorkoutExerciseId = ex.id;
         const exerciseId = ex.exercise_id;
+
+        if (isCardioWorkoutExercise(ex)) {
+          return [currentWorkoutExerciseId, []] as [string, WorkoutSet[]];
+        }
 
         if (!exerciseId) return [currentWorkoutExerciseId, []] as [string, WorkoutSet[]];
 
