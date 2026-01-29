@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import AuthGuard from '@/components/AuthGuard';
 import Navigation from '@/components/Navigation';
 import { supabase } from '@/lib/supabase';
+import { useCoach } from '@/hooks/useCoach';
 import { Exercise, TECHNIQUE_TAGS } from '@/lib/types';
 import { CANONICAL_MUSCLE_GROUPS, normalizeMuscleGroup } from '@/lib/muscleGroups';
 import { cacheGet, cacheSet } from '@/lib/perfCache';
@@ -113,6 +114,7 @@ export const dynamic = 'force-dynamic';
 
 export default function ExercisesPage() {
   const router = useRouter();
+  const { isCoach } = useCoach();
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedMuscleGroup, setSelectedMuscleGroup] = useState<string>('');
@@ -127,6 +129,88 @@ export default function ExercisesPage() {
     default_technique_tags: [] as string[],
     default_set_scheme: null as { sets?: number; reps?: number; restSeconds?: number; notes?: string } | null,
   });
+
+  const [libraryStatus, setLibraryStatus] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const getAccessToken = async () => {
+    const { data: sessionData } = await supabase.auth.getSession();
+    return sessionData.session?.access_token || null;
+  };
+
+  const handleExportLibrary = async () => {
+    setLibraryStatus(null);
+    const token = await getAccessToken();
+    if (!token) {
+      setLibraryStatus('No session token found.');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/coach/library/export', {
+        headers: { Authorization: 'Bearer ' + token },
+        cache: 'no-store',
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setLibraryStatus((json as any)?.error || 'Export failed.');
+        return;
+      }
+
+      const payload = (json as any)?.library ?? json;
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'exercise-library-' + new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '.json';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setLibraryStatus('Exported library JSON.');
+    } catch (e: any) {
+      setLibraryStatus(e?.message || 'Export failed.');
+    }
+  };
+
+  const handlePickImportFile = () => {
+    setLibraryStatus(null);
+    fileInputRef.current?.click();
+  };
+
+  const handleImportFileChosen = async (file: File | null) => {
+    if (!file) return;
+    setLibraryStatus(null);
+    const token = await getAccessToken();
+    if (!token) {
+      setLibraryStatus('No session token found.');
+      return;
+    }
+
+    try {
+      const text = await file.text();
+      const body = JSON.parse(text);
+      const res = await fetch('/api/coach/library/import', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setLibraryStatus((json as any)?.error || 'Import failed.');
+        return;
+      }
+      setLibraryStatus('Imported library successfully.');
+      await loadExercises();
+    } catch (e: any) {
+      setLibraryStatus(e?.message || 'Import failed.');
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   useEffect(() => {
     // Mobile performance: render the cached exercise list immediately (if present)
@@ -249,7 +333,25 @@ export default function ExercisesPage() {
         <div className="page max-w-none">
           <div className="flex justify-between items-center mb-6">
             <h1 className="page-title">Exercises</h1>
-            <Button
+
+            <div className="flex items-center gap-2">
+              {isCoach && (
+                <>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="application/json"
+                    className="hidden"
+                    onChange={(e) => handleImportFileChosen(e.target.files?.[0] || null)}
+                  />
+                  <Button variant="outline" onClick={handleExportLibrary}>
+                    Export
+                  </Button>
+                  <Button onClick={handlePickImportFile}>Import</Button>
+                </>
+              )}
+
+              <Button
               onClick={() => {
                 setShowForm(true);
                 setEditingExercise(null);
@@ -269,6 +371,10 @@ export default function ExercisesPage() {
               <span>Add Exercise</span>
             </Button>
           </div>
+
+          {libraryStatus && (
+            <div className="mb-4 text-sm text-muted-foreground">{libraryStatus}</div>
+          )}
 
           <div className="mb-6">
             <div className="relative">

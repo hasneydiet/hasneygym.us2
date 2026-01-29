@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { spawn } = require('node:child_process');
 const path = require('node:path');
+const fs = require('node:fs');
 
 function waitForServerReady(proc, timeoutMs = 90_000) {
   return new Promise((resolve, reject) => {
@@ -67,6 +68,10 @@ test('smoke: server renders login page and protected route shell loads', async (
   };
 
   const nextCli = path.resolve(process.cwd(), 'node_modules', 'next', 'dist', 'bin', 'next');
+  if (!fs.existsSync(nextCli)) {
+    test.skip('Next.js binary not installed in this environment.');
+    return;
+  }
   const proc = spawn(process.execPath, [nextCli, 'dev', '-p', String(port)], {
     env,
     stdio: ['ignore', 'pipe', 'pipe']

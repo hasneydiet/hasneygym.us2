@@ -716,7 +716,7 @@ const applySetTechnique = async (newTechnique: string) => {
     }
     setSets(map);
 
-    await loadPreviousSetsForExercises(exData, sessionData.started_at, (sessionData as any)?.user_id || null);
+    await loadPreviousSetsForExercises(exData, sessionData.started_at);
   };
 
   const addExerciseToSession = async () => {
@@ -809,7 +809,7 @@ const applySetTechnique = async (newTechnique: string) => {
     }
   };
 
-  const loadPreviousSetsForExercises = async (exData: WorkoutExercise[], startedAt: string, ownerUserId: string | null) => {
+  const loadPreviousSetsForExercises = async (exData: WorkoutExercise[], startedAt: string) => {
     setPrevSetsByExercise({});
 
     const entries = await Promise.all(
@@ -819,14 +819,12 @@ const applySetTechnique = async (newTechnique: string) => {
 
         if (!exerciseId) return [currentWorkoutExerciseId, []] as [string, WorkoutSet[]];
 
-        const q = supabase
+        const { data: prevSessions } = await supabase
           .from('workout_sessions')
           .select('id, started_at')
           .lt('started_at', startedAt)
           .order('started_at', { ascending: false })
           .limit(25);
-
-        const { data: prevSessions } = ownerUserId ? await q.eq('user_id', ownerUserId) : await q;
 
         if (!prevSessions || prevSessions.length === 0) return [currentWorkoutExerciseId, []] as [string, WorkoutSet[]];
 
@@ -1100,15 +1098,24 @@ const applySetTechnique = async (newTechnique: string) => {
     loadWorkout();
   };
 
+  const formatPrevLine = (label: string, value: string | number | null | undefined) => {
+    if (value === null || value === undefined || value === '') return null;
+    return (
+      <div className="mt-1 text-[11px] leading-tight text-muted-foreground">
+        <span className="opacity-80">{label}</span> {value}
+      </div>
+    );
+  };
+
   return (
-    <div className="app-shell min-h-screen">
-      <div className="page max-w-5xl mx-auto px-4 py-6">
+    <div className="min-h-screen bg-background text-foreground">
+      <div className="max-w-5xl mx-auto px-4 py-6">
 		{/* Sticky session timer: stays visible while scrolling (HEVY-style) */}
-        <div className="sticky top-0 z-40 -mx-4 px-4 pt-2 pb-3 backdrop-blur bg-black/40">
+        <div className="sticky top-0 z-40 -mx-4 px-4 pt-2 pb-3 backdrop-blur bg-background/70 border-b border-border">
           <div className="flex items-center justify-end">
             {/* No outline around the timer pill (smooth, like HEVY) */}
-            <div className="inline-flex items-center gap-2 rounded-full bg-gray-900/60 px-3 py-1.5">
-              <Clock className="h-4 w-4 text-white/90" />
+            <div className="inline-flex items-center gap-2 rounded-full bg-muted/70 px-3 py-1.5">
+              <Clock className="h-4 w-4 text-foreground/90" />
               <span className="font-mono text-sm font-semibold tabular-nums">{formatClock(elapsedSeconds)}</span>
             </div>
           </div>
@@ -1117,7 +1124,7 @@ const applySetTechnique = async (newTechnique: string) => {
         <div className="flex items-start justify-between gap-4 mb-6">
           <div className="min-w-0">
             <h1 className="text-2xl font-bold truncate">{session?.routines?.name || 'Workout'}</h1>
-            {session?.routine_days?.name && <p className="text-gray-400 truncate">{session.routine_days.name}</p>}
+            {session?.routine_days?.name && <p className="text-muted-foreground truncate">{session.routine_days.name}</p>}
           </div>
         </div>
 
@@ -1137,7 +1144,7 @@ const applySetTechnique = async (newTechnique: string) => {
                   if (el) exerciseNodeRefs.current.set(exercise.id, el);
                   else exerciseNodeRefs.current.delete(exercise.id);
                 }}
-                className="bg-gray-900/40 border border-gray-800 rounded-2xl p-4 sm:p-5 shadow-lg shadow-black/20 relative"
+                className="bg-card border border-border rounded-2xl p-4 sm:p-5 shadow-sm relative"
                 style={
                   draggingExerciseId === exercise.id
                     ? {
@@ -1154,7 +1161,7 @@ const applySetTechnique = async (newTechnique: string) => {
                   disabled={sessionIsCompleted}
                   title={sessionIsCompleted ? 'Workout completed' : 'Remove exercise from this session'}
                   aria-label="Remove exercise from this session"
-                  className="absolute top-3 right-3 inline-flex items-center justify-center rounded-lg p-1.5 text-gray-300/80 hover:text-white disabled:opacity-40 disabled:pointer-events-none"
+                  className="absolute top-3 right-3 inline-flex items-center justify-center rounded-lg p-1.5 text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:pointer-events-none"
                 >
                   <Trash2 className="h-4 w-4" />
                 </button>
@@ -1167,13 +1174,13 @@ const applySetTechnique = async (newTechnique: string) => {
                       disabled={sessionIsCompleted}
                       aria-label="Reorder exercise"
                       title={sessionIsCompleted ? 'Workout completed' : 'Drag to reorder'}
-                      className="inline-flex items-center justify-center rounded-lg p-1 text-gray-300/80 hover:text-white disabled:opacity-40 disabled:pointer-events-none"
+                      className="inline-flex items-center justify-center rounded-lg p-1 text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:pointer-events-none"
                       style={{ touchAction: 'none' }}
                     >
                       <GripVertical className="h-4 w-4" />
                     </button>
 
-                    <h3 className="section-title text-white">{exercise.exercises?.name || 'Exercise'}</h3>
+                    <h3 className="section-title text-foreground">{exercise.exercises?.name || 'Exercise'}</h3>
                   </div>
 
                   {!isReorderMode && !isCardio && (
@@ -1196,7 +1203,7 @@ const applySetTechnique = async (newTechnique: string) => {
                         <button
                           type="button"
                           onClick={() => openTechniqueGuide(exercise.id)}
-                          className="tap-target inline-flex items-center justify-center rounded-lg p-1 text-gray-300/80 hover:text-white"
+                          className="tap-target inline-flex items-center justify-center rounded-lg p-1 text-muted-foreground hover:text-foreground"
                           aria-label="Technique instructions"
                           title="Technique instructions"
                         >
@@ -1236,7 +1243,7 @@ const applySetTechnique = async (newTechnique: string) => {
                             value={displayValue}
                             onChange={(e) => setCardioDraft((p) => ({ ...p, [exercise.id]: e.target.value }))}
                             disabled={sessionIsCompleted}
-                            className="w-full h-11 px-3 rounded-xl border border-gray-700 bg-gray-900/40 text-center text-white placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-950"
+                            className="w-full h-11 px-3 rounded-xl border border-input bg-background text-center text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                           />
                           {isCompleted ? (
                             <div className="mt-1 text-xs font-semibold text-emerald-300">Completed</div>
@@ -1357,9 +1364,9 @@ const applySetTechnique = async (newTechnique: string) => {
                                   saveSet(set.id, 'reps', Number.isFinite(num) ? num : 0);
                                   clearDraftField(set.id, 'reps');
                                 }}
-                                className="w-full h-11 px-2 py-2 rounded-xl border border-gray-700 bg-gray-900/40 text-center text-white placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-950"
+                                className="w-full h-11 px-2 py-2 rounded-xl border border-input bg-background text-center text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                               />
-                              {/* Prefilled values are loaded into the input itself (HEVY-style). */}
+                              {formatPrevLine('Prev:', prevReps)}
                             </td>
 
                             <td className="px-2 py-2">
@@ -1390,16 +1397,16 @@ const applySetTechnique = async (newTechnique: string) => {
                                   saveSet(set.id, 'weight', Number.isFinite(num) ? num : 0);
                                   clearDraftField(set.id, 'weight');
                                 }}
-                                className="w-full h-11 px-2 py-2 rounded-xl border border-gray-700 bg-gray-900/40 text-center text-white placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-950"
+                                className="w-full h-11 px-2 py-2 rounded-xl border border-input bg-background text-center text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                               />
-                              {/* Prefilled values are loaded into the input itself (HEVY-style). */}
+                              {formatPrevLine('Prev:', prevWeight)}
                             </td>
 
                             <td className="px-2 py-2 text-center">
                               <button
                                 onClick={() => handleToggleCompleted(exercise, set)}
                                 className={`w-11 h-11 rounded border-2 flex items-center justify-center ${
-                                  set.is_completed ? 'bg-white border-white text-gray-900' : 'border-gray-700'
+                                  set.is_completed ? 'bg-primary border-primary text-primary-foreground' : 'border-input'
                                 }`}
                                 title="Mark set complete"
                               >
@@ -1458,9 +1465,9 @@ const applySetTechnique = async (newTechnique: string) => {
                                   saveSet(set.id, 'reps', Number.isFinite(num) ? num : 0);
                                   clearDraftField(set.id, 'reps');
                                 }}
-                                className="w-full h-11 px-2 py-2 rounded-xl border border-gray-700 bg-gray-900/40 text-center text-white placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-950"
+                                className="w-full h-11 px-2 py-2 rounded-xl border border-input bg-background text-center text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                               />
-                              {/* Prefilled values are loaded into the input itself (HEVY-style). */}
+                              {formatPrevLine('Prev:', prevReps)}
                             </td>
 
                             <td className="px-2 py-2">
@@ -1491,16 +1498,16 @@ const applySetTechnique = async (newTechnique: string) => {
                                   saveSet(set.id, 'weight', Number.isFinite(num) ? num : 0);
                                   clearDraftField(set.id, 'weight');
                                 }}
-                                className="w-full h-11 px-2 py-2 rounded-xl border border-gray-700 bg-gray-900/40 text-center text-white placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-950"
+                                className="w-full h-11 px-2 py-2 rounded-xl border border-input bg-background text-center text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                               />
-                              {/* Prefilled values are loaded into the input itself (HEVY-style). */}
+                              {formatPrevLine('Prev:', prevWeight)}
                             </td>
 
                             <td className="px-2 py-2 text-center">
                               <button
                                 onClick={() => handleToggleCompleted(exercise, set)}
                                 className={`w-11 h-11 rounded border-2 flex items-center justify-center ${
-                                  set.is_completed ? 'bg-white border-white text-gray-900' : 'border-gray-700'
+                                  set.is_completed ? 'bg-primary border-primary text-primary-foreground' : 'border-input'
                                 }`}
                                 title="Mark set complete"
                               >
@@ -1529,7 +1536,7 @@ const applySetTechnique = async (newTechnique: string) => {
                       type="button"
                       aria-label="Add set"
                       onClick={() => addSet(exercise.id)}
-                      className="w-full h-14 rounded-2xl bg-gray-800/60 border border-gray-700 text-white/90 text-base font-semibold inline-flex items-center justify-center gap-2 active:scale-[0.99]"
+                      className="w-full h-14 rounded-2xl bg-gray-800/60 border border-input text-foreground/90 text-base font-semibold inline-flex items-center justify-center gap-2 active:scale-[0.99]"
                     >
                       <Plus className="h-5 w-5" aria-hidden="true" />
                       Add Set
@@ -1592,7 +1599,7 @@ const applySetTechnique = async (newTechnique: string) => {
             <button
               onClick={endWorkout}
               disabled={ending || discarding}
-              className="tap-target w-full min-h-[48px] px-4 py-3 rounded-2xl bg-white text-gray-900 font-semibold shadow-sm transition hover:shadow-md active:translate-y-px disabled:opacity-60 disabled:cursor-not-allowed"
+              className="tap-target w-full min-h-[48px] px-4 py-3 rounded-2xl bg-primary text-primary-foreground font-semibold shadow-sm transition hover:shadow-md active:translate-y-px disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {ending ? 'Ending…' : 'End Workout'}
             </button>
@@ -1600,13 +1607,13 @@ const applySetTechnique = async (newTechnique: string) => {
             <button
               onClick={discardWorkout}
               disabled={ending || discarding}
-              className="tap-target w-full min-h-[48px] px-4 py-3 rounded-2xl border border-red-500/60 text-red-300 font-semibold bg-transparent transition hover:bg-red-500/10 disabled:opacity-60 disabled:cursor-not-allowed"
+              className="tap-target w-full min-h-[48px] px-4 py-3 rounded-2xl border border-destructive/60 text-destructive font-semibold bg-transparent transition hover:bg-red-500/10 disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {discarding ? 'Discarding…' : 'Discard Workout'}
             </button>
           </div>
 
-          {exercises.length === 0 && <div className="text-gray-400">No exercises found for this session.</div>}
+          {exercises.length === 0 && <div className="text-muted-foreground">No exercises found for this session.</div>}
         </div>
       </div>
 
@@ -1614,11 +1621,11 @@ const applySetTechnique = async (newTechnique: string) => {
 <Sheet open={setTechniqueOpen} onOpenChange={setSetTechniqueOpen}>
   <SheetContent
     side="bottom"
-    className="border-t border-white/10 bg-[hsl(var(--surface))] text-white shadow-2xl"
+    className="border-t border-border bg-background text-foreground shadow-2xl"
   >
     <div className="space-y-4">
       <SheetHeader>
-        <SheetTitle className="text-white">Set Technique</SheetTitle>
+        <SheetTitle className="text-foreground">Set Technique</SheetTitle>
         <SheetDescription className="text-gray-300">
           This updates the current workout in real time. If this workout was started from a routine day, it also becomes
           the default for future workouts until you change it again.
@@ -1631,7 +1638,7 @@ const applySetTechnique = async (newTechnique: string) => {
             key={t}
             type="button"
             onClick={() => applySetTechnique(t)}
-            className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-left text-sm font-semibold text-white hover:bg-white/10"
+            className="rounded-xl border border-border bg-card px-3 py-2 text-left text-sm font-semibold text-foreground hover:bg-muted"
           >
             {t}
           </button>
@@ -1647,7 +1654,7 @@ const applySetTechnique = async (newTechnique: string) => {
 }}>
   <SheetContent
     side="bottom"
-    className="border-t border-white/10 bg-[hsl(var(--surface))] text-white shadow-2xl"
+    className="border-t border-border bg-background text-foreground shadow-2xl"
   >
     {(() => {
       const ex = techniqueGuideExerciseId
@@ -1660,7 +1667,7 @@ const applySetTechnique = async (newTechnique: string) => {
       return (
         <div className="space-y-4">
           <SheetHeader>
-            <SheetTitle className="text-white">{guide.title}</SheetTitle>
+            <SheetTitle className="text-foreground">{guide.title}</SheetTitle>
             <SheetDescription className="text-gray-300">{guide.summary}</SheetDescription>
           </SheetHeader>
 
