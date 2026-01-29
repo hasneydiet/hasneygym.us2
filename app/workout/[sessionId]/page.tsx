@@ -716,7 +716,7 @@ const applySetTechnique = async (newTechnique: string) => {
     }
     setSets(map);
 
-    await loadPreviousSetsForExercises(exData, sessionData.started_at);
+    await loadPreviousSetsForExercises(exData, sessionData.started_at, (sessionData as any)?.user_id || null);
   };
 
   const addExerciseToSession = async () => {
@@ -809,7 +809,7 @@ const applySetTechnique = async (newTechnique: string) => {
     }
   };
 
-  const loadPreviousSetsForExercises = async (exData: WorkoutExercise[], startedAt: string) => {
+  const loadPreviousSetsForExercises = async (exData: WorkoutExercise[], startedAt: string, ownerUserId: string | null) => {
     setPrevSetsByExercise({});
 
     const entries = await Promise.all(
@@ -819,12 +819,14 @@ const applySetTechnique = async (newTechnique: string) => {
 
         if (!exerciseId) return [currentWorkoutExerciseId, []] as [string, WorkoutSet[]];
 
-        const { data: prevSessions } = await supabase
+        const q = supabase
           .from('workout_sessions')
           .select('id, started_at')
           .lt('started_at', startedAt)
           .order('started_at', { ascending: false })
           .limit(25);
+
+        const { data: prevSessions } = ownerUserId ? await q.eq('user_id', ownerUserId) : await q;
 
         if (!prevSessions || prevSessions.length === 0) return [currentWorkoutExerciseId, []] as [string, WorkoutSet[]];
 
@@ -1098,15 +1100,6 @@ const applySetTechnique = async (newTechnique: string) => {
     loadWorkout();
   };
 
-  const formatPrevLine = (label: string, value: string | number | null | undefined) => {
-    if (value === null || value === undefined || value === '') return null;
-    return (
-      <div className="mt-1 text-[11px] leading-tight text-gray-400">
-        <span className="opacity-80">{label}</span> {value}
-      </div>
-    );
-  };
-
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-950 via-gray-900 to-gray-950 text-white">
       <div className="max-w-5xl mx-auto px-4 py-6">
@@ -1366,7 +1359,7 @@ const applySetTechnique = async (newTechnique: string) => {
                                 }}
                                 className="w-full h-11 px-2 py-2 rounded-xl border border-gray-700 bg-gray-900/40 text-center text-white placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-950"
                               />
-                              {formatPrevLine('Prev:', prevReps)}
+                              {/* Prefilled values are loaded into the input itself (HEVY-style). */}
                             </td>
 
                             <td className="px-2 py-2">
@@ -1399,7 +1392,7 @@ const applySetTechnique = async (newTechnique: string) => {
                                 }}
                                 className="w-full h-11 px-2 py-2 rounded-xl border border-gray-700 bg-gray-900/40 text-center text-white placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-950"
                               />
-                              {formatPrevLine('Prev:', prevWeight)}
+                              {/* Prefilled values are loaded into the input itself (HEVY-style). */}
                             </td>
 
                             <td className="px-2 py-2 text-center">
@@ -1467,7 +1460,7 @@ const applySetTechnique = async (newTechnique: string) => {
                                 }}
                                 className="w-full h-11 px-2 py-2 rounded-xl border border-gray-700 bg-gray-900/40 text-center text-white placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-950"
                               />
-                              {formatPrevLine('Prev:', prevReps)}
+                              {/* Prefilled values are loaded into the input itself (HEVY-style). */}
                             </td>
 
                             <td className="px-2 py-2">
@@ -1500,7 +1493,7 @@ const applySetTechnique = async (newTechnique: string) => {
                                 }}
                                 className="w-full h-11 px-2 py-2 rounded-xl border border-gray-700 bg-gray-900/40 text-center text-white placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-950"
                               />
-                              {formatPrevLine('Prev:', prevWeight)}
+                              {/* Prefilled values are loaded into the input itself (HEVY-style). */}
                             </td>
 
                             <td className="px-2 py-2 text-center">

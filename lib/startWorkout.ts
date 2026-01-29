@@ -37,10 +37,256 @@ export async function startWorkoutForDay(input: StartWorkoutInput): Promise<stri
   if (sessErr) throw sessErr;
   if (!session?.id) throw new Error('Failed to create workout session.');
 
+  // If the user has performed this routine day before, clone the most recent session's
+  // exercises + sets so the new session starts with the last-used values (HEVY-style).
+  // This is intentionally scoped to the same routine_day_id so day-to-day values remain distinct.
+  const { data: prevSession, error: prevSessErr } = await supabase
+    .from('workout_sessions')
+    .select('id, started_at')
+    .eq('user_id', userId)
+    .eq('routine_day_id', routineDayId)
+    .neq('id', session.id)
+    .order('started_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (prevSessErr) throw prevSessErr;
+
+  if (prevSession?.id) {
+    // Load previous workout exercises (including session-only added exercises).
+    const { data: prevExercises, error: prevExErr } = await supabase
+      .from('workout_exercises')
+      .select('id, exercise_id, order_index, superset_group_id, technique_tags, routine_day_exercise_id, duration_seconds')
+      .eq('workout_session_id', prevSession.id)
+      .order('order_index', { ascending: true });
+
+    if (prevExErr) throw prevExErr;
+
+    const prevExerciseIds = (prevExercises || []).map((r: any) => r.id).filter(Boolean) as string[];
+
+    // Load all sets for the previous exercises in a single query.
+    const prevSetsByPrevWorkoutExerciseId: Record<string, any[]> = {};
+    if (prevExerciseIds.length > 0) {
+      const { data: prevSets, error: prevSetsErr } = await supabase
+        .from('workout_sets')
+        .select('workout_exercise_id, set_index, reps, weight, rpe, notes')
+        .in('workout_exercise_id', prevExerciseIds)
+        .order('set_index', { ascending: true });
+      if (prevSetsErr) throw prevSetsErr;
+      for (const s of prevSets || []) {
+        const wid = (s as any).workout_exercise_id as string | undefined;
+        if (!wid) continue;
+        (prevSetsByPrevWorkoutExerciseId[wid] ||= []).push(s);
+      }
+    }
+
+    // Insert the cloned exercises for the new session.
+    const exercisesToInsert = (prevExercises || [])
+      .filter((r: any) => r?.exercise_id)
+      .map((r: any) => ({
+        workout_session_id: session.id,
+        routine_day_exercise_id: r.routine_day_exercise_id ?? null,
+        exercise_id: r.exercise_id,
+        order_index: r.order_index ?? 0,
+        superset_group_id: r.superset_group_id ?? null,
+        technique_tags: Array.isArray(r.technique_tags) ? r.technique_tags : ['Normal-Sets'],
+        duration_seconds: Number.isFinite(Number(r.duration_seconds)) ? Number(r.duration_seconds) : 0,
+      }));
+
+    if (exercisesToInsert.length > 0) {
+      const { data: newWeRows, error: weErr } = await supabase
+        .from('workout_exercises')
+        .insert(exercisesToInsert)
+        .select('id, exercise_id, routine_day_exercise_id, order_index');
+
+      if (weErr) throw weErr;
+
+      // Map previous exercise row -> new exercise row.
+      // Prefer routine_day_exercise_id when available (stable across reorders), otherwise fall back
+      // to (exercise_id + order_index) for session-only added exercises.
+      const newByRde: Record<string, any> = {};
+      const newByKey: Record<string, any> = {};
+      for (const n of newWeRows || []) {
+        const rde = (n as any).routine_day_exercise_id as string | null;
+        if (rde) newByRde[rde] = n;
+        const k = `${String((n as any).exercise_id)}::${String((n as any).order_index ?? 0)}`;
+        newByKey[k] = n;
+      }
+
+      const setsToInsert: any[] = [];
+
+      for (const prevEx of prevExercises || []) {
+        const prevExId = (prevEx as any).id as string | undefined;
+        const prevExerciseId = (prevEx as any).exercise_id as string | undefined;
+        if (!prevExId || !prevExerciseId) continue;
+
+        const prevRde = (prevEx as any).routine_day_exercise_id as string | null;
+        const match = prevRde ? newByRde[prevRde] : null;
+        const fallback = newByKey[`${String(prevExerciseId)}::${String((prevEx as any).order_index ?? 0)}`];
+        const newRow = match || fallback;
+        const newWorkoutExerciseId = (newRow as any)?.id as string | undefined;
+        if (!newWorkoutExerciseId) continue;
+
+        const prevSets = prevSetsByPrevWorkoutExerciseId[prevExId] || [];
+
+        // If the previous entry had sets, clone them. Cardio entries typically have 0 sets.
+        for (let i = 0; i < prevSets.length; i++) {
+          const ps: any = prevSets[i];
+          setsToInsert.push({
+            workout_exercise_id: newWorkoutExerciseId,
+            set_index: Number.isFinite(Number(ps?.set_index)) ? Number(ps.set_index) : i,
+            reps: Number.isFinite(Number(ps?.reps)) ? Number(ps.reps) : 0,
+            weight: Number.isFinite(Number(ps?.weight)) ? Number(ps.weight) : 0,
+            rpe: ps?.rpe ?? null,
+            is_completed: false,
+            notes: ps?.notes ?? '',
+          });
+        }
+      }
+
+      if (setsToInsert.length > 0) {
+        const { error: wsErr } = await supabase.from('workout_sets').insert(setsToInsert);
+        if (wsErr) throw wsErr;
+      }
+    }
+
+    // Also include any NEW template exercises added to the routine day since the last session.
+    // These should appear in the session without removing the user's last-session customizations.
+    const { data: rdeRowsForMerge, error: rdeMergeErr } = await supabase
+      .from('routine_day_exercises')
+      .select('id, exercise_id, order_index, superset_group_id, default_sets, technique_tags, exercises(default_set_scheme, muscle_group, exercise_type)')
+      .eq('routine_day_id', routineDayId)
+      .order('order_index', { ascending: true });
+    if (rdeMergeErr) throw rdeMergeErr;
+
+    const existingRdeIds = new Set(
+      (prevExercises || [])
+        .map((r: any) => (r as any).routine_day_exercise_id)
+        .filter(Boolean)
+        .map(String)
+    );
+
+    const missingTemplateRows = (rdeRowsForMerge || []).filter((r: any) => {
+      const id = (r as any).id as string | undefined;
+      return id && !existingRdeIds.has(String(id));
+    });
+
+    if (missingTemplateRows.length > 0) {
+      // Determine the next order_index after cloned exercises.
+      const maxOrder = (prevExercises || []).reduce((m: number, r: any) => Math.max(m, Number(r?.order_index) || 0), -1);
+      const baseOrder = maxOrder + 1;
+
+      // Smart defaults: if template doesn't specify a technique, fall back to user's preference.
+      const missingExerciseIds = missingTemplateRows.map((r: any) => r.exercise_id).filter(Boolean) as string[];
+      const prefByExerciseId: Record<string, string> = {};
+      if (missingExerciseIds.length > 0) {
+        const { data: prefs } = await supabase
+          .from('user_exercise_preferences')
+          .select('exercise_id, technique')
+          .eq('user_id', userId)
+          .in('exercise_id', missingExerciseIds);
+        for (const p of prefs || []) {
+          const exId = (p as any).exercise_id as string | undefined;
+          const t = (p as any).technique as string | undefined;
+          if (exId && t) prefByExerciseId[exId] = String(t);
+        }
+      }
+
+      const addExercisesToInsert = missingTemplateRows
+        .filter((r: any) => r.exercise_id)
+        .map((r: any, i: number) => ({
+          workout_session_id: session.id,
+          routine_day_exercise_id: r.id,
+          exercise_id: r.exercise_id,
+          order_index: baseOrder + i,
+          superset_group_id: r.superset_group_id ?? null,
+          technique_tags:
+            Array.isArray(r.technique_tags) && r.technique_tags.length > 0
+              ? r.technique_tags
+              : [prefByExerciseId[String(r.exercise_id)] ?? 'Normal-Sets'],
+          duration_seconds: 0,
+        }));
+
+      if (addExercisesToInsert.length > 0) {
+        const { data: addWeRows, error: addWeErr } = await supabase
+          .from('workout_exercises')
+          .insert(addExercisesToInsert)
+          .select('id, exercise_id');
+        if (addWeErr) throw addWeErr;
+
+        // Seed sets for newly added template exercises (same logic as the template seeding below).
+        const rdeByExerciseId: Record<
+          string,
+          { default_sets: any[]; default_set_scheme: any | null; is_cardio: boolean }
+        > = {};
+
+        for (const row of missingTemplateRows || []) {
+          const exerciseId = (row as any).exercise_id as string | undefined;
+          if (!exerciseId) continue;
+          rdeByExerciseId[exerciseId] = {
+            default_sets: Array.isArray((row as any).default_sets) ? (row as any).default_sets : [],
+            default_set_scheme: (row as any).exercises?.default_set_scheme ?? null,
+            is_cardio:
+              (row as any)?.exercises?.exercise_type === 'cardio' || (row as any)?.exercises?.muscle_group === 'Cardio',
+          };
+        }
+
+        const setsToInsert: any[] = [];
+
+        for (const we of addWeRows || []) {
+          const workoutExerciseId = (we as any).id as string;
+          const exerciseId = (we as any).exercise_id as string;
+          const meta = rdeByExerciseId[exerciseId];
+          const scheme = meta?.default_set_scheme || null;
+          const defaultSetsArray = meta?.default_sets || [];
+
+          if (meta?.is_cardio) continue;
+
+          let setsCount = 1;
+          let defaultReps = 0;
+
+          if (Array.isArray(defaultSetsArray) && defaultSetsArray.length > 0) {
+            setsCount = Math.max(1, defaultSetsArray.length);
+          } else if (scheme && typeof scheme === 'object') {
+            setsCount = Math.max(1, safeInt((scheme as any).sets, 1));
+          }
+
+          if (scheme && typeof scheme === 'object') {
+            defaultReps = Math.max(0, safeInt((scheme as any).reps, 0));
+          }
+
+          for (let i = 0; i < setsCount; i++) {
+            const fromDefaultArray = Array.isArray(defaultSetsArray) ? defaultSetsArray[i] : null;
+            const repsFromArray =
+              fromDefaultArray && typeof fromDefaultArray === 'object' ? (fromDefaultArray as any).reps : undefined;
+            const weightFromArray =
+              fromDefaultArray && typeof fromDefaultArray === 'object' ? (fromDefaultArray as any).weight : undefined;
+
+            setsToInsert.push({
+              workout_exercise_id: workoutExerciseId,
+              set_index: i,
+              reps: Number.isFinite(Number(repsFromArray)) ? Number(repsFromArray) : defaultReps,
+              weight: Number.isFinite(Number(weightFromArray)) ? Number(weightFromArray) : 0,
+              rpe: null,
+              is_completed: false,
+            });
+          }
+        }
+
+        if (setsToInsert.length > 0) {
+          const { error: wsErr } = await supabase.from('workout_sets').insert(setsToInsert);
+          if (wsErr) throw wsErr;
+        }
+      }
+    }
+
+    return String(session.id);
+  }
+
   // 2) Pull routine_day_exercises + exercise default scheme
   const { data: rdeRows, error: rdeErr } = await supabase
     .from('routine_day_exercises')
-    .select('id, exercise_id, order_index, default_sets, technique_tags, exercises(default_set_scheme, muscle_group, exercise_type)')
+    .select('id, exercise_id, order_index, superset_group_id, default_sets, technique_tags, exercises(default_set_scheme, muscle_group, exercise_type)')
     .eq('routine_day_id', routineDayId)
     .order('order_index', { ascending: true });
 
@@ -71,6 +317,7 @@ export async function startWorkoutForDay(input: StartWorkoutInput): Promise<stri
         routine_day_exercise_id: r.id,
         exercise_id: r.exercise_id,
         order_index: r.order_index ?? 0,
+        superset_group_id: r.superset_group_id ?? null,
         technique_tags:
           Array.isArray(r.technique_tags) && r.technique_tags.length > 0
             ? r.technique_tags
