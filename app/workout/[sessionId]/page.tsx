@@ -1101,8 +1101,8 @@ const applySetTechnique = async (newTechnique: string) => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-950 via-gray-900 to-gray-950 text-white">
-      <div className="max-w-5xl mx-auto px-4 py-6">
+    <div className="app-shell min-h-screen">
+      <div className="page max-w-5xl mx-auto px-4 py-6">
 		{/* Sticky session timer: stays visible while scrolling (HEVY-style) */}
         <div className="sticky top-0 z-40 -mx-4 px-4 pt-2 pb-3 backdrop-blur bg-black/40">
           <div className="flex items-center justify-end">
