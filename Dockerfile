@@ -1,9 +1,4 @@
 # ---- Build stage ----
-# NOTE:
-# We intentionally avoid Alpine/musl here. Next.js uses platform-specific SWC binaries;
-# in some environments the musl build can fail to parse/compile valid TSX.
-# Using the Debian-based image keeps runtime behavior identical while making builds
-# reliable across Portainer/Unraid setups.
 FROM node:20-bookworm-slim AS builder
 WORKDIR /app
 
