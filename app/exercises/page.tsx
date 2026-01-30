@@ -371,6 +371,7 @@ export default function ExercisesPage() {
               <span>Add Exercise</span>
             </Button>
           </div>
+        </div>
 
           {libraryStatus && (
             <div className="mb-4 text-sm text-muted-foreground">{libraryStatus}</div>
@@ -629,8 +630,7 @@ export default function ExercisesPage() {
             </div>
           </div>
         </div>
-	      </div>
-	    </div>
-	    </AuthGuard>
+      </div>
+    </AuthGuard>
   );
 }
