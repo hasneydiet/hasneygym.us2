@@ -1,5 +1,10 @@
 # ---- Build stage ----
-FROM node:20-alpine AS builder
+# NOTE:
+# We intentionally avoid Alpine/musl here. Next.js uses platform-specific SWC binaries;
+# in some environments the musl build can fail to parse/compile valid TSX.
+# Using the Debian-based image keeps runtime behavior identical while making builds
+# reliable across Portainer/Unraid setups.
+FROM node:20-bookworm-slim AS builder
 WORKDIR /app
 
 # Build-time args (Next.js inlines NEXT_PUBLIC_* into the client bundle at build time)
@@ -12,14 +17,13 @@ ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
 ENV NEXT_TELEMETRY_DISABLED=1
 
 COPY package*.json ./
-COPY .npmrc ./
 RUN npm ci --no-audit --no-fund
 
 COPY . .
-RUN npm exec -- next build
+RUN npm run build
 
 # ---- Run stage ----
-FROM node:20-alpine AS runner
+FROM node:20-bookworm-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
