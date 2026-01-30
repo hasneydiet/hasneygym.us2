@@ -88,6 +88,42 @@ export async function startWorkoutForDay(input: StartWorkoutInput): Promise<stri
 
     if (weErr) throw weErr;
 
+
+// Pull previous sets for each exercise (last time the SAME exercise was performed by this user).
+// Used to:
+// - show HEVY-style "Previous" values
+// - seed today's workout with the SAME number of sets (and reps/weight) as last time
+const prevSetsByExerciseId: Record<string, any[]> = {};
+await Promise.all(
+  exerciseIds.map(async (exerciseId) => {
+    try {
+      const { data: prevWe } = await supabase
+        .from('workout_exercises')
+        .select('id, workout_sessions!inner(started_at, user_id)')
+        .eq('exercise_id', exerciseId)
+        .eq('workout_sessions.user_id', userId)
+        .lt('workout_sessions.started_at', session.started_at)
+        .order('workout_sessions.started_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const prevWorkoutExerciseId = (prevWe as any)?.id as string | undefined;
+      if (!prevWorkoutExerciseId) return;
+
+      const { data: prevSets } = await supabase
+        .from('workout_sets')
+        .select('set_index, reps, weight')
+        .eq('workout_exercise_id', prevWorkoutExerciseId)
+        .order('set_index');
+
+      if (Array.isArray(prevSets) && prevSets.length > 0) {
+        prevSetsByExerciseId[exerciseId] = prevSets as any[];
+      }
+    } catch {
+      // best-effort; fall back to template defaults if anything fails
+    }
+  })
+);
     // Build lookup by exercise_id so we know how many sets to create
     const rdeByExerciseId: Record<
       string,
@@ -119,13 +155,19 @@ export async function startWorkoutForDay(input: StartWorkoutInput): Promise<stri
       // Cardio is time-based (no sets).
       if (meta?.is_cardio) continue;
 
-      let setsCount = 1;
-      let defaultReps = 0;
+let setsCount = 1;
+let defaultReps = 0;
 
-      // If routine_day_exercises.default_sets is used (array), it wins
-      if (Array.isArray(defaultSetsArray) && defaultSetsArray.length > 0) {
+const prevSets = prevSetsByExerciseId[exerciseId] || null;
+if (Array.isArray(prevSets) && prevSets.length > 0) {
+  // HEVY behavior: seed with the SAME number of sets as last time.
+  setsCount = Math.max(1, prevSets.length);
+}
+
+// If routine_day_exercises.default_sets is used (array), it wins (unless previous sets exist)
+      if (!(Array.isArray(prevSets) && prevSets.length > 0) && Array.isArray(defaultSetsArray) && defaultSetsArray.length > 0) {
         setsCount = Math.max(1, defaultSetsArray.length);
-      } else if (scheme && typeof scheme === 'object') {
+      } else if (!(Array.isArray(prevSets) && prevSets.length > 0) && scheme && typeof scheme === 'object') {
         setsCount = Math.max(1, safeInt((scheme as any).sets, 1));
       }
 
@@ -143,8 +185,22 @@ export async function startWorkoutForDay(input: StartWorkoutInput): Promise<stri
         setsToInsert.push({
           workout_exercise_id: workoutExerciseId,
           set_index: i,
-          reps: Number.isFinite(Number(repsFromArray)) ? Number(repsFromArray) : defaultReps,
-          weight: Number.isFinite(Number(weightFromArray)) ? Number(weightFromArray) : 0,
+reps: (() => {
+  const p = Array.isArray(prevSets) ? (prevSets as any[])[i] : null;
+  const pr = p ? Number((p as any).reps) : NaN;
+  if (Number.isFinite(pr) && pr > 0) return pr;
+  const r = Number(repsFromArray);
+  if (Number.isFinite(r) && r > 0) return r;
+  return defaultReps;
+})(),
+weight: (() => {
+  const p = Array.isArray(prevSets) ? (prevSets as any[])[i] : null;
+  const pw = p ? Number((p as any).weight) : NaN;
+  if (Number.isFinite(pw) && pw >= 0) return pw;
+  const w = Number(weightFromArray);
+  if (Number.isFinite(w) && w >= 0) return w;
+  return 0;
+})(),
           rpe: null,
           is_completed: false,
         });
