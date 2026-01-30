@@ -629,7 +629,8 @@ export default function ExercisesPage() {
             </div>
           </div>
         </div>
-      </div>
-    </AuthGuard>
+	      </div>
+	    </div>
+	    </AuthGuard>
   );
 }
