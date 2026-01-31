@@ -25,6 +25,7 @@ export default function RoutineEditorPage() {
   const [days, setDays] = useState<RoutineDay[]>([]);
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [dayExercises, setDayExercises] = useState<{ [dayId: string]: RoutineDayExercise[] }>({});
+  const [prevSetsByExerciseId, setPrevSetsByExerciseId] = useState<Record<string, { reps: number; weight: number; set_index: number }[]>>({});
   const [showAddDay, setShowAddDay] = useState(false);
   const [showAddExercise, setShowAddExercise] = useState<string | null>(null);
   const [newDayName, setNewDayName] = useState('');
@@ -144,6 +145,141 @@ export default function RoutineEditorPage() {
       exMap[day.id] = list;
     }
     setDayExercises(exMap);
+
+    // UI-only: show last performed sets/weights for exercises in this routine.
+    // Best-effort; failures should not block routine editing.
+    try {
+      void loadPrevSets(uid, exMap);
+    } catch {}
+  };
+
+  const formatPrevSetsSummary = (sets: { reps: number; weight: number; set_index: number }[]) => {
+    if (!sets || sets.length === 0) return '';
+    const parts = sets
+      .slice(0, 6)
+      .map((s) => {
+        const reps = typeof s.reps === 'number' ? s.reps : Number(s.reps || 0);
+        const weight = typeof s.weight === 'number' ? s.weight : Number(s.weight || 0);
+        if (!reps && !weight) return null;
+        if (!weight) return `${reps}`;
+        return `${reps}×${weight}`;
+      })
+      .filter(Boolean);
+    return parts.length ? `Prev: ${parts.join(', ')}` : '';
+  };
+
+  const formatDefaultSetsSummary = (def: any[]) => {
+    if (!Array.isArray(def) || def.length === 0) return '';
+    const parts = def
+      .slice(0, 6)
+      .map((s: any) => {
+        const reps = s?.reps ?? s?.targetReps ?? s?.rep ?? null;
+        const r = reps !== null && reps !== undefined ? Number(reps) : null;
+        return r && Number.isFinite(r) && r > 0 ? String(r) : null;
+      })
+      .filter(Boolean);
+    if (!parts.length) return `${def.length} sets`;
+    return `${def.length} sets: ${parts.join('-')}`;
+  };
+
+  const loadPrevSets = async (uid: string, exMap: { [dayId: string]: RoutineDayExercise[] }) => {
+    try {
+      const uniqueExerciseIds = Array.from(
+        new Set(
+          Object.values(exMap)
+            .flat()
+            .map((e) => e.exercise_id)
+            .filter(Boolean)
+        )
+      ) as string[];
+
+      if (!uid || uniqueExerciseIds.length === 0) {
+        setPrevSetsByExerciseId({});
+        return;
+      }
+
+      // Fetch a small window of recent sessions for this user.
+      const { data: sessions, error: sErr } = await supabase
+        .from('workout_sessions')
+        .select('id, started_at')
+        .eq('user_id', uid)
+        .order('started_at', { ascending: false })
+        .limit(30);
+
+      if (sErr || !sessions || sessions.length === 0) {
+        setPrevSetsByExerciseId({});
+        return;
+      }
+
+      const sessionIds = sessions.map((s: any) => s.id).filter(Boolean);
+      const sessionRank: Record<string, number> = {};
+      sessions.forEach((s: any, idx: number) => {
+        sessionRank[s.id] = idx;
+      });
+
+      // Find the most recent workout_exercise row per exercise_id across recent sessions.
+      const { data: wex, error: wexErr } = await supabase
+        .from('workout_exercises')
+        .select('id, workout_session_id, exercise_id')
+        .in('workout_session_id', sessionIds)
+        .in('exercise_id', uniqueExerciseIds);
+
+      if (wexErr || !wex || wex.length === 0) {
+        setPrevSetsByExerciseId({});
+        return;
+      }
+
+      const bestByExercise: Record<string, { workoutExerciseId: string; rank: number }> = {};
+      for (const row of wex as any[]) {
+        const exId = row.exercise_id as string;
+        const wid = row.id as string;
+        const sid = row.workout_session_id as string;
+        const r = sessionRank[sid] ?? 9999;
+        const existing = bestByExercise[exId];
+        if (!existing || r < existing.rank) {
+          bestByExercise[exId] = { workoutExerciseId: wid, rank: r };
+        }
+      }
+
+      const workoutExerciseIds = Array.from(new Set(Object.values(bestByExercise).map((v) => v.workoutExerciseId)));
+      if (workoutExerciseIds.length === 0) {
+        setPrevSetsByExerciseId({});
+        return;
+      }
+
+      const { data: sets, error: setErr } = await supabase
+        .from('workout_sets')
+        .select('workout_exercise_id, set_index, reps, weight')
+        .in('workout_exercise_id', workoutExerciseIds)
+        .order('set_index', { ascending: true });
+
+      if (setErr || !sets) {
+        setPrevSetsByExerciseId({});
+        return;
+      }
+
+      const setsByWorkoutExercise: Record<string, any[]> = {};
+      for (const st of sets as any[]) {
+        const k = st.workout_exercise_id as string;
+        if (!setsByWorkoutExercise[k]) setsByWorkoutExercise[k] = [];
+        setsByWorkoutExercise[k].push({
+          set_index: Number(st.set_index ?? 0),
+          reps: Number(st.reps ?? 0),
+          weight: Number(st.weight ?? 0),
+        });
+      }
+
+      const next: Record<string, { reps: number; weight: number; set_index: number }[]> = {};
+      for (const exId of Object.keys(bestByExercise)) {
+        const wid = bestByExercise[exId].workoutExerciseId;
+        next[exId] = (setsByWorkoutExercise[wid] || []) as any[];
+      }
+
+      setPrevSetsByExerciseId(next);
+    } catch {
+      // Ignore; routine editor must remain usable even if preview fails.
+      setPrevSetsByExerciseId({});
+    }
   };
 
   const loadExercises = async () => {
@@ -459,7 +595,16 @@ export default function RoutineEditorPage() {
                             </div>
                             {group.items.map((ex) => (
                               <div key={ex.id} className="flex items-center justify-between py-2">
-                                <span className="font-medium text-foreground">{ex.exercises?.name}</span>
+                                <div className="min-w-0">
+                                  <span className="font-medium text-foreground block truncate">{ex.exercises?.name}</span>
+                                  {(() => {
+                                    const prev = prevSetsByExerciseId[ex.exercise_id] || [];
+                                    const text = formatPrevSetsSummary(prev);
+                                    return text ? (
+                                      <div className="text-xs text-muted-foreground mt-1 truncate">{text}</div>
+                                    ) : null;
+                                  })()}
+                                </div>
                                 <div className="flex items-center gap-1">
                                   <button
                                     onClick={() => moveExercise(day.id, ex.id, 'up')}
@@ -497,7 +642,16 @@ export default function RoutineEditorPage() {
                         const ex = group.items[0];
                         return (
                           <div key={ex.id} className="flex items-center justify-between py-2 border-b border-border/50">
-                            <span className="font-medium text-foreground">{ex.exercises?.name}</span>
+                            <div className="min-w-0">
+                              <span className="font-medium text-foreground block truncate">{ex.exercises?.name}</span>
+                              {(() => {
+                                const prev = prevSetsByExerciseId[ex.exercise_id] || [];
+                                const text = formatPrevSetsSummary(prev);
+                                return text ? (
+                                  <div className="text-xs text-muted-foreground mt-1 truncate">{text}</div>
+                                ) : null;
+                              })()}
+                            </div>
                             <div className="flex items-center gap-1">
                               <button
                                 onClick={() => moveExercise(day.id, ex.id, 'up')}

@@ -11,6 +11,7 @@
     "test": "node --test"
   },
   "dependencies": {
+    "@babel/parser": "^7.29.0",
     "@hookform/resolvers": "^3.9.0",
     "@netlify/plugin-nextjs": "^5.15.1",
     "@next/swc-wasm-nodejs": "13.5.1",
@@ -71,6 +72,5 @@
     "typescript": "5.2.2",
     "vaul": "^0.9.9",
     "zod": "^3.23.8"
-  },
-  "devDependencies": {}
+  }
 }
