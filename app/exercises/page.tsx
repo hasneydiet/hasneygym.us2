@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -73,6 +73,7 @@ export default function ExercisesPage() {
               className="max-w-xs"
             />
           </div>
+        </div>
 
           <div className="surface overflow-hidden">
             <table className="w-full">
