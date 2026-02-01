@@ -1284,12 +1284,9 @@ const syncRoutineTemplateFromSession = async () => {
           await syncRoutineTemplateFromSession();
         } catch (e: any) {
           console.error('Failed to persist routine changes:', e);
-          window.alert(
-            (e?.message ? String(e.message) : 'Failed to save routine changes.') +
-              '
+          window.alert(`${e?.message ? String(e.message) : 'Failed to save routine changes.'}
 
-Your workout will still be saved to History.'
-          );
+Your workout will still be saved to History.`);
         }
       }
 
