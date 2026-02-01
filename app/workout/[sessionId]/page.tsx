@@ -1985,8 +1985,7 @@ const applyReplaceExercise = async () => {
             <AlertDialog open={endRoutinePromptOpen} onOpenChange={setEndRoutinePromptOpen}>
               <AlertDialogContent
                 className="max-w-md rounded-2xl"
-                onInteractOutside={(e) => e.preventDefault()}
-                onEscapeKeyDown={(e) => e.preventDefault()}
+onEscapeKeyDown={(e) => e.preventDefault()}
               >
                 <AlertDialogHeader>
                   <AlertDialogTitle className="text-[17px] font-semibold">
