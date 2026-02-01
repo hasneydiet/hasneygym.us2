@@ -1242,7 +1242,7 @@ const applyReplaceExercise = async () => {
 
     // Delete template exercises that no longer exist in the session.
     const toDelete: string[] = [];
-    for (const id of templateIds) {
+    for (const id of Array.from(templateIds)) {
       if (!usedTemplateIds.has(id)) toDelete.push(id);
     }
     if (toDelete.length) {
