@@ -8,6 +8,7 @@ import { useCoach } from '@/hooks/useCoach';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogAction } from '@/components/ui/alert-dialog';
 import {Plus, Clock, Trash2, GripVertical, Info, Dumbbell, MoreVertical, RefreshCcw} from 'lucide-react';
 type WorkoutSession = any;
 type WorkoutExercise = any;
@@ -161,6 +162,10 @@ const [exerciseMenuExerciseId, setExerciseMenuExerciseId] = useState<string | nu
 const [showReplaceExercise, setShowReplaceExercise] = useState(false);
 const [replaceExerciseId, setReplaceExerciseId] = useState('');
 
+  // Routine edit tracking (HEVY-style): prompt to keep/discard routine changes at End Workout
+  const [routineEditsDirty, setRoutineEditsDirty] = useState(false);
+  const [endRoutinePromptOpen, setEndRoutinePromptOpen] = useState(false);
+
   // Cardio (time-based) draft input per workout_exercise_id
   const [cardioDraft, setCardioDraft] = useState<Record<string, string>>({});
 
@@ -278,14 +283,10 @@ const applySetTechnique = async (newTechnique: string) => {
 			.eq('id', workoutExerciseId);
 		if (res1?.error) throw res1.error;
 
-		// If the workout was started from a routine day and this exercise was seeded from a specific template row,
-		// persist the selection so future workouts inherit it.
+		// If this workout was started from a routine day, treat this as a routine edit.
+		// We will prompt at End Workout to keep/discard routine changes (HEVY-style).
 		if (originRoutineDayExerciseId) {
-			const res2 = await supabase
-				.from('routine_day_exercises')
-				.update({ technique_tags: [newTechnique] })
-				.eq('id', originRoutineDayExerciseId);
-			if (res2?.error) throw res2.error;
+			setRoutineEditsDirty(true);
 		}
 
 		// Smart default: remember the last selected technique for this exercise (used when adding the exercise again).
@@ -1137,10 +1138,121 @@ const applyReplaceExercise = async () => {
     return null;
   };
 
+const syncRoutineTemplateFromSession = async () => {
+  const routineDayId = session?.routine_day_id as string | null | undefined;
+  if (!routineDayId) return;
+
+  // Desired routine exercises = current workout exercises order (including adds/removes/replaces/reorder).
+  const desired = (exercisesRef.current || []).map((we: any, idx: number) => {
+    const workoutExerciseId = String(we.id);
+    const isCardio = isCardioWorkoutExercise(we);
+    const defaultSets = isCardio
+      ? []
+      : (sets[workoutExerciseId] || [])
+          .slice()
+          .sort((a: any, b: any) => Number(a.set_index ?? 0) - Number(b.set_index ?? 0))
+          .map((s: any) => ({
+            reps: Number.isFinite(Number(s.reps)) ? Number(s.reps) : 0,
+            weight: Number.isFinite(Number(s.weight)) ? Number(s.weight) : 0,
+          }));
+
+    return {
+      idx,
+      routineDayExerciseId: we.routine_day_exercise_id ? String(we.routine_day_exercise_id) : null,
+      exerciseId: we.exercise_id ? String(we.exercise_id) : null,
+      supersetGroupId: we.superset_group_id ?? null,
+      techniqueTags: Array.isArray(we.technique_tags) ? we.technique_tags : [],
+      defaultSets,
+    };
+  }).filter((x: any) => x.exerciseId);
+
+  // Load current template rows
+  const { data: templateRows, error: tplErr } = await supabase
+    .from('routine_day_exercises')
+    .select('id, exercise_id, order_index, superset_group_id, default_sets, technique_tags')
+    .eq('routine_day_id', routineDayId);
+
+  if (tplErr) throw tplErr;
+
+  const existingIds = new Set((templateRows || []).map((r: any) => String(r.id)));
+  const desiredExistingIds = new Set(desired.map((d: any) => d.routineDayExerciseId).filter(Boolean));
+
+  // 1) Move / update existing rows to a temp order_index space (1000+idx) and update fields
+  for (const d of desired) {
+    if (!d.routineDayExerciseId) continue;
+    if (!existingIds.has(d.routineDayExerciseId)) {
+      // stale pointer; treat as new
+      d.routineDayExerciseId = null;
+      continue;
+    }
+    const res = await supabase
+      .from('routine_day_exercises')
+      .update({
+        exercise_id: d.exerciseId,
+        order_index: 1000 + d.idx,
+        superset_group_id: d.supersetGroupId,
+        default_sets: d.defaultSets,
+        technique_tags: d.techniqueTags,
+      })
+      .eq('id', d.routineDayExerciseId);
+    if (res?.error) throw res.error;
+  }
+
+  // 2) Delete removed template rows (not present in desired list)
+  const removedIds = (templateRows || [])
+    .map((r: any) => String(r.id))
+    .filter((id: string) => !desiredExistingIds.has(id));
+  if (removedIds.length > 0) {
+    const res = await supabase.from('routine_day_exercises').delete().in('id', removedIds);
+    if (res?.error) throw res.error;
+  }
+
+  // 3) Insert brand-new rows into temp space (1000+idx)
+  const toInsert = desired
+    .filter((d: any) => !d.routineDayExerciseId && d.exerciseId)
+    .map((d: any) => ({
+      routine_day_id: routineDayId,
+      exercise_id: d.exerciseId,
+      order_index: 1000 + d.idx,
+      superset_group_id: d.supersetGroupId,
+      default_sets: d.defaultSets,
+      technique_tags: d.techniqueTags,
+    }));
+
+  if (toInsert.length > 0) {
+    const res = await supabase.from('routine_day_exercises').insert(toInsert);
+    if (res?.error) throw res.error;
+  }
+
+  // 4) Normalize order_index back to 0..n-1 based on the temp order
+  const { data: rowsNow, error: nowErr } = await supabase
+    .from('routine_day_exercises')
+    .select('id, order_index')
+    .eq('routine_day_id', routineDayId)
+    .order('order_index', { ascending: true });
+
+  if (nowErr) throw nowErr;
+
+  let i = 0;
+  for (const r of rowsNow || []) {
+    const id = String((r as any).id);
+    const res = await supabase.from('routine_day_exercises').update({ order_index: i }).eq('id', id);
+    if (res?.error) throw res.error;
+    i++;
+  }
+};
+
+
   const endWorkout = async () => {
     const validationError = getWorkoutValidationError();
     if (validationError) {
       window.alert(validationError);
+      return;
+    }
+
+    // HEVY-style routine edit prompt (only when started from a routine day)
+    if (routineEditsDirty && session?.routine_day_id) {
+      setEndRoutinePromptOpen(true);
       return;
     }
 
@@ -1155,6 +1267,40 @@ const applyReplaceExercise = async () => {
       setEnding(false);
     }
   };
+
+  const finalizeEndWorkout = async (keepRoutineChanges: boolean) => {
+    const validationError = getWorkoutValidationError();
+    if (validationError) {
+      window.alert(validationError);
+      setEndRoutinePromptOpen(false);
+      return;
+    }
+
+    try {
+      setEnding(true);
+
+      if (keepRoutineChanges) {
+        try {
+          await syncRoutineTemplateFromSession();
+        } catch (e: any) {
+          console.error('Failed to persist routine changes:', e);
+          window.alert(
+            (e?.message ? String(e.message) : 'Failed to save routine changes.') +
+              '
+
+Your workout will still be saved to History.'
+          );
+        }
+      }
+
+      await supabase.from('workout_sessions').update({ ended_at: new Date().toISOString() }).eq('id', sessionId);
+      setEndRoutinePromptOpen(false);
+      router.push('/history');
+    } finally {
+      setEnding(false);
+    }
+  };
+
 
   const discardWorkout = async () => {
     const ok = window.confirm('Discard workout? This will permanently delete this session and all sets.');
@@ -1321,6 +1467,7 @@ const applyReplaceExercise = async () => {
     await new Promise((r) => window.setTimeout(r, 140));
     vibrate([12, 8]);
     await supabase.from('workout_sets').delete().eq('id', setId);
+    if (session?.routine_day_id) setRoutineEditsDirty(true);
 
     const remaining = (sets[exerciseId] || []).filter((s: any) => s.id !== setId);
     // Re-index remaining sets in a single request (avoids sequential UPDATE loop).
@@ -1827,6 +1974,37 @@ const applyReplaceExercise = async () => {
             >
               {discarding ? 'Discarding…' : 'Discard Workout'}
             </button>
+
+
+<AlertDialog
+  open={endRoutinePromptOpen}
+  onOpenChange={(open) => {
+    // Keep it open unless one of the action buttons completes.
+    if (open) setEndRoutinePromptOpen(true);
+  }}
+>
+  <AlertDialogContent className="rounded-2xl">
+    <AlertDialogHeader>
+      <AlertDialogTitle>Save changes to routine?</AlertDialogTitle>
+      <AlertDialogDescription>
+        You changed this routine during the workout. Do you want to keep these changes for future workouts?
+      </AlertDialogDescription>
+    </AlertDialogHeader>
+
+    <AlertDialogFooter className="gap-2 sm:gap-2">
+      <AlertDialogAction className="w-full sm:w-auto" onClick={() => finalizeEndWorkout(true)}>
+        Keep Changes
+      </AlertDialogAction>
+      <AlertDialogAction
+        className="w-full sm:w-auto bg-transparent text-foreground border border-input hover:bg-muted"
+        onClick={() => finalizeEndWorkout(false)}
+      >
+        Discard Changes &amp; Save
+      </AlertDialogAction>
+    </AlertDialogFooter>
+  </AlertDialogContent>
+</AlertDialog>
+
           </div>
 
           {exercises.length === 0 && <div className="text-muted-foreground">No exercises found for this session.</div>}
