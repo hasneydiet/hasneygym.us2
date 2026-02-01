@@ -1983,26 +1983,38 @@ const applyReplaceExercise = async () => {
 
             {/* Hevy-style routine changes prompt (shown when ending a routine-based workout after edits) */}
             <AlertDialog open={endRoutinePromptOpen} onOpenChange={setEndRoutinePromptOpen}>
-              <AlertDialogContent className="max-w-md rounded-2xl">
+              <AlertDialogContent
+                className="max-w-md rounded-2xl"
+                onInteractOutside={(e) => e.preventDefault()}
+                onEscapeKeyDown={(e) => e.preventDefault()}
+              >
                 <AlertDialogHeader>
-                  <AlertDialogTitle>Save changes?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    You made changes to this workout. Do you want to keep these changes for future workouts?
+                  <AlertDialogTitle className="text-[17px] font-semibold">
+                    Save changes to routine?
+                  </AlertDialogTitle>
+                  <AlertDialogDescription className="text-sm leading-5">
+                    <span className="block">You made changes to this workout.</span>
+                    <span className="block">
+                      Would you like to apply them to the routine for future workouts?
+                    </span>
                   </AlertDialogDescription>
                 </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel
-                    onClick={discardChangesAndEnd}
-                    disabled={ending || persistingRoutine}
-                  >
-                    Discard changes and save
-                  </AlertDialogCancel>
+
+                <AlertDialogFooter className="flex flex-col gap-2 sm:flex-row sm:justify-end sm:gap-2">
                   <AlertDialogAction
                     onClick={keepChangesAndEnd}
                     disabled={ending || persistingRoutine}
+                    className="w-full sm:w-auto"
                   >
                     {persistingRoutine ? 'Keeping…' : 'Keep changes'}
                   </AlertDialogAction>
+                  <AlertDialogCancel
+                    onClick={discardChangesAndEnd}
+                    disabled={ending || persistingRoutine}
+                    className="w-full sm:w-auto"
+                  >
+                    Discard &amp; save workout
+                  </AlertDialogCancel>
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
