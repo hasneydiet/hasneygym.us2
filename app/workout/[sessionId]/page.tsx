@@ -23,6 +23,20 @@ type WorkoutSession = any;
 type WorkoutExercise = any;
 type WorkoutSet = any;
 
+
+type RoutineBaselineExercise = {
+  id: string;
+  order_index: number;
+  exercise_id: string;
+  technique: string;
+  reps: number[];
+};
+
+type RoutineBaseline = {
+  routine_day_id: string;
+  exercises: RoutineBaselineExercise[];
+};
+
 function formatClock(totalSeconds: number) {
   const s = Math.max(0, Math.floor(totalSeconds));
   const hh = Math.floor(s / 3600);
@@ -166,8 +180,88 @@ export default function WorkoutPage() {
   const [endRoutinePromptOpen, setEndRoutinePromptOpen] = useState(false);
   const [persistingRoutine, setPersistingRoutine] = useState(false);
 
-  const markRoutineChanged = () => {
-    if (session?.routine_day_id) setRoutineDirty(true);
+  const [routineBaseline, setRoutineBaseline] = useState<RoutineBaseline | null>(null);
+  const setsRef = useRef<{ [exerciseId: string]: WorkoutSet[] }>({});
+
+  useEffect(() => {
+    setsRef.current = sets;
+  }, [sets]);
+
+  const normalizeTechnique = (tags: any): string => {
+    return Array.isArray(tags) && tags[0] ? String(tags[0]) : 'Normal-Sets';
+  };
+
+  const extractRepsFromDefaultSets = (defaultSets: any): number[] => {
+    if (!Array.isArray(defaultSets)) return [];
+    const reps: number[] = [];
+    for (const s of defaultSets) {
+      const r = Number((s as any)?.reps);
+      reps.push(Number.isFinite(r) ? Math.max(0, Math.floor(r)) : 0);
+    }
+    return reps;
+  };
+
+  const extractRepsFromSessionSets = (sessionSets: any[]): number[] => {
+    if (!Array.isArray(sessionSets)) return [];
+    return sessionSets
+      .slice()
+      .sort((a, b) => (a?.set_index ?? 0) - (b?.set_index ?? 0))
+      .map((s: any) => {
+        const r = Number(s?.reps);
+        return Number.isFinite(r) ? Math.max(0, Math.floor(r)) : 0;
+      });
+  };
+
+  const computeRoutineDirty = (
+    baseline: RoutineBaseline | null,
+    exList: WorkoutExercise[],
+    setMap: { [exerciseId: string]: WorkoutSet[] }
+  ): boolean => {
+    if (!baseline) return false;
+
+    const cur = (exList || []).map((we: any) => ({
+      templateId: we?.routine_day_exercise_id ? String(we.routine_day_exercise_id) : `new:${String(we?.id || '')}`,
+      exercise_id: String(we?.exercise_id || ''),
+      technique: normalizeTechnique(we?.technique_tags),
+      reps: extractRepsFromSessionSets(setMap?.[String(we?.id || '')] || []),
+      isCardio: isCardioWorkoutExercise(we),
+    }));
+
+    const base = (baseline.exercises || []).slice().sort((a, b) => a.order_index - b.order_index);
+
+    // New/removed exercises or cardio-only rows are structural differences.
+    const curFiltered = cur.filter((c) => !c.isCardio);
+
+    if (curFiltered.length !== base.length) return true;
+
+    for (let i = 0; i < base.length; i++) {
+      const b = base[i];
+      const c = curFiltered[i];
+
+      // Order/identity
+      if (String(c.templateId) !== String(b.id)) return true;
+
+      // Replacement
+      if (String(c.exercise_id) !== String(b.exercise_id)) return true;
+
+      // Technique
+      if (String(c.technique) !== String(b.technique)) return true;
+
+      // Sets/reps shape (ignore weights; only reps + set count)
+      if (c.reps.length !== b.reps.length) return true;
+      for (let j = 0; j < b.reps.length; j++) {
+        if (Number(c.reps[j]) !== Number(b.reps[j])) return true;
+      }
+    }
+
+    return false;
+  };
+
+  const markRoutineChanged = (nextExercises?: WorkoutExercise[], nextSets?: { [exerciseId: string]: WorkoutSet[] }) => {
+    if (!session?.routine_day_id) return;
+    const exList = nextExercises || exercisesRef.current || exercises;
+    const setMap = nextSets || setsRef.current || sets;
+    setRoutineDirty(computeRoutineDirty(routineBaseline, exList, setMap));
   };
 
   // Add Exercise (session-only): allows adding extra exercises during a workout day
@@ -846,6 +940,35 @@ const applyReplaceExercise = async () => {
 
     setSession(sessionData);
 
+    let baselineForCheck: RoutineBaseline | null = routineBaseline;
+
+    // Capture the routine template baseline once, so we can accurately detect if the user
+    // actually changed the routine structure (Hevy-style) and avoid false positives.
+    if (sessionData?.routine_day_id) {
+      const dayId = String(sessionData.routine_day_id);
+      if (!routineBaseline || routineBaseline.routine_day_id !== dayId) {
+        const { data: baseRows, error: bErr } = await supabase
+          .from('routine_day_exercises')
+          .select('id, order_index, exercise_id, technique_tags, default_sets')
+          .eq('routine_day_id', dayId)
+          .order('order_index');
+        if (!bErr && Array.isArray(baseRows)) {
+          const baseline: RoutineBaseline = {
+            routine_day_id: dayId,
+            exercises: baseRows.map((r: any) => ({
+              id: String(r.id),
+              order_index: Number(r.order_index) || 0,
+              exercise_id: String(r.exercise_id || ''),
+              technique: normalizeTechnique(r.technique_tags),
+              reps: extractRepsFromDefaultSets(r.default_sets),
+            })),
+          };
+          setRoutineBaseline(baseline);
+          baselineForCheck = baseline;
+        }
+      }
+    }
+
     const { data: exData } = await supabase
       .from('workout_exercises')
       .select('*, exercises(*)')
@@ -878,6 +1001,14 @@ const applyReplaceExercise = async () => {
 
     setPrevSetsByExercise(prevMap);
     setSets(patched);
+
+    // Recompute routineDirty against the baseline so the prompt only appears when the
+    // routine template actually differs from the original (and resets if the user undoes changes).
+    if (sessionData?.routine_day_id) {
+      setRoutineDirty(computeRoutineDirty(baselineForCheck, exData as any, patched));
+    } else {
+      setRoutineDirty(false);
+    }
 
     // Persist the reps prefill in the background (no second setSets call).
     if (updates.length > 0) {
@@ -1198,7 +1329,7 @@ const applyReplaceExercise = async () => {
             .sort((a, b) => (a?.set_index ?? 0) - (b?.set_index ?? 0))
             .map((s: any) => ({
               reps: Number.isFinite(Number(s?.reps)) ? Number(s.reps) : 0,
-              weight: Number.isFinite(Number(s?.weight)) ? Number(s.weight) : 0,
+              weight: 0,
             }));
 
       const originTemplateId = we?.routine_day_exercise_id ? String(we.routine_day_exercise_id) : null;
