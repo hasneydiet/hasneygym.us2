@@ -8,34 +8,10 @@ import { useCoach } from '@/hooks/useCoach';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogAction,
-  AlertDialogCancel,
-} from '@/components/ui/alert-dialog';
 import {Plus, Clock, Trash2, GripVertical, Info, Dumbbell, MoreVertical, RefreshCcw} from 'lucide-react';
 type WorkoutSession = any;
 type WorkoutExercise = any;
 type WorkoutSet = any;
-
-
-type RoutineBaselineExercise = {
-  id: string;
-  order_index: number;
-  exercise_id: string;
-  technique: string;
-  reps: number[];
-};
-
-type RoutineBaseline = {
-  routine_day_id: string;
-  exercises: RoutineBaselineExercise[];
-};
 
 function formatClock(totalSeconds: number) {
   const s = Math.max(0, Math.floor(totalSeconds));
@@ -172,98 +148,6 @@ export default function WorkoutPage() {
 
   const [prevSetsByExercise, setPrevSetsByExercise] = useState<Record<string, WorkoutSet[]>>({});
 
-  // Hevy-style routine changes prompt:
-  // If this workout was started from a routine day and the user edits the session
-  // structure (add/remove/reorder/replace exercises, add/remove sets, etc), we ask
-  // whether to persist those changes to the routine template when ending the workout.
-  const [routineDirty, setRoutineDirty] = useState(false);
-  const [endRoutinePromptOpen, setEndRoutinePromptOpen] = useState(false);
-  const [persistingRoutine, setPersistingRoutine] = useState(false);
-
-  const [routineBaseline, setRoutineBaseline] = useState<RoutineBaseline | null>(null);
-  const setsRef = useRef<{ [exerciseId: string]: WorkoutSet[] }>({});
-
-  useEffect(() => {
-    setsRef.current = sets;
-  }, [sets]);
-
-  const normalizeTechnique = (tags: any): string => {
-    return Array.isArray(tags) && tags[0] ? String(tags[0]) : 'Normal-Sets';
-  };
-
-  const extractRepsFromDefaultSets = (defaultSets: any): number[] => {
-    if (!Array.isArray(defaultSets)) return [];
-    const reps: number[] = [];
-    for (const s of defaultSets) {
-      const r = Number((s as any)?.reps);
-      reps.push(Number.isFinite(r) ? Math.max(0, Math.floor(r)) : 0);
-    }
-    return reps;
-  };
-
-  const extractRepsFromSessionSets = (sessionSets: any[]): number[] => {
-    if (!Array.isArray(sessionSets)) return [];
-    return sessionSets
-      .slice()
-      .sort((a, b) => (a?.set_index ?? 0) - (b?.set_index ?? 0))
-      .map((s: any) => {
-        const r = Number(s?.reps);
-        return Number.isFinite(r) ? Math.max(0, Math.floor(r)) : 0;
-      });
-  };
-
-  const computeRoutineDirty = (
-    baseline: RoutineBaseline | null,
-    exList: WorkoutExercise[],
-    setMap: { [exerciseId: string]: WorkoutSet[] }
-  ): boolean => {
-    if (!baseline) return false;
-
-    const cur = (exList || []).map((we: any) => ({
-      templateId: we?.routine_day_exercise_id ? String(we.routine_day_exercise_id) : `new:${String(we?.id || '')}`,
-      exercise_id: String(we?.exercise_id || ''),
-      technique: normalizeTechnique(we?.technique_tags),
-      reps: extractRepsFromSessionSets(setMap?.[String(we?.id || '')] || []),
-      isCardio: isCardioWorkoutExercise(we),
-    }));
-
-    const base = (baseline.exercises || []).slice().sort((a, b) => a.order_index - b.order_index);
-
-    // New/removed exercises or cardio-only rows are structural differences.
-    const curFiltered = cur.filter((c) => !c.isCardio);
-
-    if (curFiltered.length !== base.length) return true;
-
-    for (let i = 0; i < base.length; i++) {
-      const b = base[i];
-      const c = curFiltered[i];
-
-      // Order/identity
-      if (String(c.templateId) !== String(b.id)) return true;
-
-      // Replacement
-      if (String(c.exercise_id) !== String(b.exercise_id)) return true;
-
-      // Technique
-      if (String(c.technique) !== String(b.technique)) return true;
-
-      // Sets/reps shape (ignore weights; only reps + set count)
-      if (c.reps.length !== b.reps.length) return true;
-      for (let j = 0; j < b.reps.length; j++) {
-        if (Number(c.reps[j]) !== Number(b.reps[j])) return true;
-      }
-    }
-
-    return false;
-  };
-
-  const markRoutineChanged = (nextExercises?: WorkoutExercise[], nextSets?: { [exerciseId: string]: WorkoutSet[] }) => {
-    if (!session?.routine_day_id) return;
-    const exList = nextExercises || exercisesRef.current || exercises;
-    const setMap = nextSets || setsRef.current || sets;
-    setRoutineDirty(computeRoutineDirty(routineBaseline, exList, setMap));
-  };
-
   // Add Exercise (session-only): allows adding extra exercises during a workout day
   const [showAddExercise, setShowAddExercise] = useState(false);
   const [selectedExerciseId, setSelectedExerciseId] = useState('');
@@ -352,6 +236,16 @@ const onSetSwipeEnd = (setId: string, _e: any) => {
   // Draft typed values: used only while editing; after blur it gets cleared.
   const [draft, setDraft] = useState<Record<string, Record<string, string>>>({});
 
+  // iOS Safari can suspend/kill tabs while the user is still focused in an input.
+  // Keep a ref so we can flush in-flight edits when the page becomes hidden.
+  const draftRef = useRef(draft);
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
+
+  // Debounced saves for in-flight draft values (weight/reps) so switching apps doesn't lose input.
+  const pendingDraftSaveRef = useRef<Record<string, number>>({});
+
 // Technique guide sheet (shows instructions for the CURRENT selected technique)
 const [techniqueGuideOpen, setTechniqueGuideOpen] = useState(false);
 const [techniqueGuideExerciseId, setTechniqueGuideExerciseId] = useState<string | null>(null);
@@ -376,7 +270,7 @@ const applySetTechnique = async (newTechnique: string) => {
   const workoutExerciseId = techniqueExerciseId;
   if (!workoutExerciseId) return;
 
-  // Find the row so we can optionally persist later (Hevy-style prompt at end).
+  // Find the row so we can (optionally) persist the selection back to the routine template.
   const row = exercises.find((e: any) => e.id === workoutExerciseId) as any;
   const originRoutineDayExerciseId = row?.routine_day_exercise_id as string | null | undefined;
 
@@ -394,11 +288,14 @@ const applySetTechnique = async (newTechnique: string) => {
 			.eq('id', workoutExerciseId);
 		if (res1?.error) throw res1.error;
 
-
-		// Hevy-style behavior: do NOT mutate the routine template mid-workout.
-		// If this session was started from a routine, we will offer to persist changes when the user ends the workout.
-		if (originRoutineDayExerciseId && session?.routine_day_id) {
-			setRoutineDirty(true);
+		// If the workout was started from a routine day and this exercise was seeded from a specific template row,
+		// persist the selection so future workouts inherit it.
+		if (originRoutineDayExerciseId) {
+			const res2 = await supabase
+				.from('routine_day_exercises')
+				.update({ technique_tags: [newTechnique] })
+				.eq('id', originRoutineDayExerciseId);
+			if (res2?.error) throw res2.error;
 		}
 
 		// Smart default: remember the last selected technique for this exercise (used when adding the exercise again).
@@ -523,7 +420,6 @@ const applySetTechnique = async (newTechnique: string) => {
     // Persist the current in-memory order for this session only.
     try {
       await persistExerciseOrder(exercisesRef.current);
-      if (session?.routine_day_id) markRoutineChanged();
     } catch (err) {
       console.error(err);
       await loadWorkout();
@@ -619,7 +515,6 @@ const applySetTechnique = async (newTechnique: string) => {
     if (!confirm('Remove this exercise from this workout session?')) return;
 
     try {
-      if (session?.routine_day_id) markRoutineChanged();
       // Delete the workout_exercises row; workout_sets cascade delete via FK.
       await supabase.from('workout_exercises').delete().eq('id', workoutExerciseId);
 
@@ -653,7 +548,6 @@ const applyReplaceExercise = async () => {
   if (!workoutExerciseId || !newExerciseId) return;
 
   try {
-    if (session?.routine_day_id) markRoutineChanged();
     // Update the workout exercise to point at the new exercise
     const { error: upErr } = await supabase
       .from('workout_exercises')
@@ -940,35 +834,6 @@ const applyReplaceExercise = async () => {
 
     setSession(sessionData);
 
-    let baselineForCheck: RoutineBaseline | null = routineBaseline;
-
-    // Capture the routine template baseline once, so we can accurately detect if the user
-    // actually changed the routine structure (Hevy-style) and avoid false positives.
-    if (sessionData?.routine_day_id) {
-      const dayId = String(sessionData.routine_day_id);
-      if (!routineBaseline || routineBaseline.routine_day_id !== dayId) {
-        const { data: baseRows, error: bErr } = await supabase
-          .from('routine_day_exercises')
-          .select('id, order_index, exercise_id, technique_tags, default_sets')
-          .eq('routine_day_id', dayId)
-          .order('order_index');
-        if (!bErr && Array.isArray(baseRows)) {
-          const baseline: RoutineBaseline = {
-            routine_day_id: dayId,
-            exercises: baseRows.map((r: any) => ({
-              id: String(r.id),
-              order_index: Number(r.order_index) || 0,
-              exercise_id: String(r.exercise_id || ''),
-              technique: normalizeTechnique(r.technique_tags),
-              reps: extractRepsFromDefaultSets(r.default_sets),
-            })),
-          };
-          setRoutineBaseline(baseline);
-          baselineForCheck = baseline;
-        }
-      }
-    }
-
     const { data: exData } = await supabase
       .from('workout_exercises')
       .select('*, exercises(*)')
@@ -1001,14 +866,6 @@ const applyReplaceExercise = async () => {
 
     setPrevSetsByExercise(prevMap);
     setSets(patched);
-
-    // Recompute routineDirty against the baseline so the prompt only appears when the
-    // routine template actually differs from the original (and resets if the user undoes changes).
-    if (sessionData?.routine_day_id) {
-      setRoutineDirty(computeRoutineDirty(baselineForCheck, exData as any, patched));
-    } else {
-      setRoutineDirty(false);
-    }
 
     // Persist the reps prefill in the background (no second setSets call).
     if (updates.length > 0) {
@@ -1080,8 +937,6 @@ const applyReplaceExercise = async () => {
         .single();
 
       if (weErr) throw weErr;
-
-      if (session?.routine_day_id) markRoutineChanged();
 
       const workoutExerciseId = (newWorkoutExercise as any)?.id as string | undefined;
       if (!workoutExerciseId) throw new Error('Failed to create workout exercise.');
@@ -1233,6 +1088,56 @@ const applyReplaceExercise = async () => {
     }
   };
 
+  // --- iOS/Safari resilience: flush & debounce draft input ---
+  const flushDraftField = async (setId: string, field: 'reps' | 'weight') => {
+    const raw = (draftRef.current?.[setId]?.[field] ?? '').trim();
+    // Interpret empty as 0 (keeps DB consistent and prevents losing the user's clear action).
+    const num = raw === '' ? 0 : Number(raw);
+    await saveSet(setId, field, Number.isFinite(num) ? num : 0);
+  };
+
+  const queueDraftSave = (setId: string, field: 'reps' | 'weight', value: string) => {
+    setDraftValue(setId, field, value);
+    const key = `${setId}:${field}`;
+    const prevTimeout = pendingDraftSaveRef.current[key];
+    if (prevTimeout) window.clearTimeout(prevTimeout);
+    // Debounce to avoid hammering the DB while typing.
+    pendingDraftSaveRef.current[key] = window.setTimeout(() => {
+      flushDraftField(setId, field).catch(() => {
+        // best-effort; if it fails we'll resync on next load.
+      });
+    }, 600);
+  };
+
+  const flushAllDrafts = () => {
+    const d = draftRef.current || {};
+    for (const setId of Object.keys(d)) {
+      const fields = d[setId] || {};
+      if (fields.weight !== undefined) {
+        flushDraftField(setId, 'weight').catch(() => {});
+      }
+      if (fields.reps !== undefined) {
+        flushDraftField(setId, 'reps').catch(() => {});
+      }
+    }
+  };
+
+  useEffect(() => {
+    const onHidden = () => {
+      // iOS Safari often snapshots/kills the tab without blurring inputs.
+      if (document.visibilityState === 'hidden') flushAllDrafts();
+    };
+    const onPageHide = () => flushAllDrafts();
+
+    document.addEventListener('visibilitychange', onHidden);
+    window.addEventListener('pagehide', onPageHide);
+    return () => {
+      document.removeEventListener('visibilitychange', onHidden);
+      window.removeEventListener('pagehide', onPageHide);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const getExerciseRestSeconds = (ex: any): number => {
   // Rest time is set per exercise; default is 60 seconds.
   const v = ex?.exercises?.rest_seconds ?? ex?.exercises?.default_set_scheme?.restSeconds;
@@ -1292,106 +1197,10 @@ const applyReplaceExercise = async () => {
     return null;
   };
 
-  const finishWorkoutAndGoToHistory = async () => {
-    await supabase.from('workout_sessions').update({ ended_at: new Date().toISOString() }).eq('id', sessionId);
-    router.push('/history');
-  };
-
-  const persistRoutineChangesFromSession = async () => {
-    const routineDayId = session?.routine_day_id as string | null | undefined;
-    if (!routineDayId) return;
-
-    // Fetch current template rows for the day so we can delete any removed exercises.
-    const { data: templateRows, error: tErr } = await supabase
-      .from('routine_day_exercises')
-      .select('id')
-      .eq('routine_day_id', routineDayId);
-    if (tErr) throw tErr;
-
-    const templateIds = new Set<string>((templateRows || []).map((r: any) => String(r.id)).filter(Boolean));
-    const usedTemplateIds = new Set<string>();
-
-    // Apply inserts/updates in order.
-    for (let i = 0; i < exercises.length; i++) {
-      const we: any = exercises[i];
-      const workoutExerciseId = String(we?.id || '');
-      const exerciseId = String(we?.exercise_id || '');
-      if (!workoutExerciseId || !exerciseId) continue;
-
-      const isCardio = isCardioWorkoutExercise(we);
-      const techniqueTags = Array.isArray(we?.technique_tags) ? we.technique_tags : ['Normal-Sets'];
-
-      const sessionSets = (sets?.[workoutExerciseId] || []) as any[];
-      const defaultSets = isCardio
-        ? []
-        : sessionSets
-            .slice()
-            .sort((a, b) => (a?.set_index ?? 0) - (b?.set_index ?? 0))
-            .map((s: any) => ({
-              reps: Number.isFinite(Number(s?.reps)) ? Number(s.reps) : 0,
-              weight: 0,
-            }));
-
-      const originTemplateId = we?.routine_day_exercise_id ? String(we.routine_day_exercise_id) : null;
-
-      if (originTemplateId) {
-        usedTemplateIds.add(originTemplateId);
-        await supabase
-          .from('routine_day_exercises')
-          .update({
-            order_index: i,
-            exercise_id: exerciseId,
-            technique_tags: techniqueTags,
-            default_sets: defaultSets,
-          })
-          .eq('id', originTemplateId);
-      } else {
-        const { data: inserted, error: insErr } = await supabase
-          .from('routine_day_exercises')
-          .insert({
-            routine_day_id: routineDayId,
-            order_index: i,
-            exercise_id: exerciseId,
-            technique_tags: techniqueTags,
-            default_sets: defaultSets,
-          })
-          .select('id')
-          .single();
-        if (insErr) throw insErr;
-
-        // Link the new template row to this workout exercise so the session stays consistent.
-        const newTemplateId = (inserted as any)?.id ? String((inserted as any).id) : null;
-        if (newTemplateId) {
-          usedTemplateIds.add(newTemplateId);
-          await supabase
-            .from('workout_exercises')
-            .update({ routine_day_exercise_id: newTemplateId })
-            .eq('id', workoutExerciseId);
-        }
-      }
-    }
-
-    // Delete template exercises that no longer exist in the session.
-    const toDelete: string[] = [];
-    for (const id of Array.from(templateIds)) {
-      if (!usedTemplateIds.has(id)) toDelete.push(id);
-    }
-    if (toDelete.length) {
-      const { error: delErr } = await supabase.from('routine_day_exercises').delete().in('id', toDelete);
-      if (delErr) throw delErr;
-    }
-  };
-
   const endWorkout = async () => {
     const validationError = getWorkoutValidationError();
     if (validationError) {
       window.alert(validationError);
-      return;
-    }
-
-    // Hevy-style prompt when the session was started from a routine day and the user changed structure.
-    if (session?.routine_day_id && routineDirty) {
-      setEndRoutinePromptOpen(true);
       return;
     }
 
@@ -1400,39 +1209,8 @@ const applyReplaceExercise = async () => {
 
     try {
       setEnding(true);
-      await finishWorkoutAndGoToHistory();
-    } finally {
-      setEnding(false);
-    }
-  };
-
-  const keepChangesAndEnd = async () => {
-    try {
-      setEndRoutinePromptOpen(false);
-      setEnding(true);
-      setPersistingRoutine(true);
-      await persistRoutineChangesFromSession();
-      await finishWorkoutAndGoToHistory();
-    } catch (e: any) {
-      console.error('Persist routine changes failed:', e);
-      window.alert(
-        `${e?.message ? String(e.message) : 'Failed to save routine changes.'} Your workout will still be saved to History.`
-      );
-      // Even if routine save fails, still end the workout to avoid trapping the user.
-      try {
-        await finishWorkoutAndGoToHistory();
-      } catch {}
-    } finally {
-      setPersistingRoutine(false);
-      setEnding(false);
-    }
-  };
-
-  const discardChangesAndEnd = async () => {
-    try {
-      setEndRoutinePromptOpen(false);
-      setEnding(true);
-      await finishWorkoutAndGoToHistory();
+      await supabase.from('workout_sessions').update({ ended_at: new Date().toISOString() }).eq('id', sessionId);
+      router.push('/history');
     } finally {
       setEnding(false);
     }
@@ -1520,7 +1298,6 @@ const applyReplaceExercise = async () => {
     }
 
     if (data) {
-      if (session?.routine_day_id) markRoutineChanged();
       // Optimistic UI update so the new set appears immediately on mobile even
       // if the session/user context briefly flickers.
       setSets((prev) => {
@@ -1588,7 +1365,6 @@ const applyReplaceExercise = async () => {
 
 
   const deleteSet = async (exerciseId: string, setId: string) => {
-    if (session?.routine_day_id) markRoutineChanged();
     // mark as removing for a subtle exit animation
     setRemovingSetIds((prev) => {
       const next = new Set(prev);
@@ -1954,7 +1730,7 @@ const applyReplaceExercise = async () => {
                   step="0.5"
                   placeholder={weightPlaceholder}
                   value={getDisplayValue(set.id, 'weight', set.weight)}
-                  onChange={(e) => setDraftValue(set.id, 'weight', e.target.value)}
+                  onChange={(e) => queueDraftSave(set.id, 'weight', e.target.value)}
                   onFocus={(e) => e.currentTarget.select()}
                   ref={(el) => {
                     const keyA = `${exercise.id}:${set.id}:weight`;
@@ -1969,6 +1745,8 @@ const applyReplaceExercise = async () => {
                   }}
                   onKeyDown={(e) => handleWeightKeyDown(exercise.id, idx, (sets[exercise.id] || []).length, e)}
                   onBlur={() => {
+                    const hasDraft = draft[set.id]?.weight !== undefined;
+                    if (!hasDraft) return;
                     const raw = getDraftRaw(set.id, 'weight').trim();
                     const num = raw === '' ? 0 : Number(raw);
                     saveSet(set.id, 'weight', Number.isFinite(num) ? num : 0);
@@ -1986,7 +1764,7 @@ const applyReplaceExercise = async () => {
                   aria-label={`Reps for set ${idx + 1}`}
                   placeholder={repsPlaceholder}
                   value={getDisplayValue(set.id, 'reps', set.reps)}
-                  onChange={(e) => setDraftValue(set.id, 'reps', e.target.value)}
+                  onChange={(e) => queueDraftSave(set.id, 'reps', e.target.value)}
                   onFocus={(e) => e.currentTarget.select()}
                   ref={(el) => {
                     const keyA = `${exercise.id}:${set.id}:reps`;
@@ -2001,6 +1779,8 @@ const applyReplaceExercise = async () => {
                   }}
                   onKeyDown={(e) => handleRepsKeyDown(exercise.id, idx, e)}
                   onBlur={() => {
+                    const hasDraft = draft[set.id]?.reps !== undefined;
+                    if (!hasDraft) return;
                     const raw = getDraftRaw(set.id, 'reps').trim();
                     const num = raw === '' ? 0 : Number(raw);
                     saveSet(set.id, 'reps', Number.isFinite(num) ? num : 0);
@@ -2111,43 +1891,6 @@ const applyReplaceExercise = async () => {
             >
               {discarding ? 'Discarding…' : 'Discard Workout'}
             </button>
-
-            {/* Hevy-style routine changes prompt (shown when ending a routine-based workout after edits) */}
-            <AlertDialog open={endRoutinePromptOpen} onOpenChange={setEndRoutinePromptOpen}>
-              <AlertDialogContent
-                className="max-w-md rounded-2xl"
-onEscapeKeyDown={(e) => e.preventDefault()}
-              >
-                <AlertDialogHeader>
-                  <AlertDialogTitle className="text-[17px] font-semibold">
-                    Save changes to routine?
-                  </AlertDialogTitle>
-                  <AlertDialogDescription className="text-sm leading-5">
-                    <span className="block">You made changes to this workout.</span>
-                    <span className="block">
-                      Would you like to apply them to the routine for future workouts?
-                    </span>
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-
-                <AlertDialogFooter className="flex flex-col gap-2 sm:flex-row sm:justify-end sm:gap-2">
-                  <AlertDialogAction
-                    onClick={keepChangesAndEnd}
-                    disabled={ending || persistingRoutine}
-                    className="w-full sm:w-auto"
-                  >
-                    {persistingRoutine ? 'Keeping…' : 'Keep changes'}
-                  </AlertDialogAction>
-                  <AlertDialogCancel
-                    onClick={discardChangesAndEnd}
-                    disabled={ending || persistingRoutine}
-                    className="w-full sm:w-auto"
-                  >
-                    Discard &amp; save workout
-                  </AlertDialogCancel>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
           </div>
 
           {exercises.length === 0 && <div className="text-muted-foreground">No exercises found for this session.</div>}
@@ -2164,8 +1907,8 @@ onEscapeKeyDown={(e) => e.preventDefault()}
       <SheetHeader>
         <SheetTitle className="text-foreground">Set Technique</SheetTitle>
         <SheetDescription className="text-muted-foreground">
-          This updates the current workout in real time. If this workout was started from a routine day and you choose
-          “Keep changes” when ending the workout, it will also become the default for future workouts.
+          This updates the current workout in real time. If this workout was started from a routine day, it also becomes
+          the default for future workouts until you change it again.
         </SheetDescription>
       </SheetHeader>
 

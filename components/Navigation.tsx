@@ -113,7 +113,7 @@ export default function Navigation() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-14 md:h-16">
             {/* Logo (no square background) */}
-            <BrandLogo href="/dashboard" iconSize={28} showTagline={true} taglineOnMobile={true} />
+            <BrandLogo href="/dashboard" iconSize={28} showTagline={true} taglineOnMobile={false} />
 
             {/* Desktop nav links ONLY */}
             <div className="hidden md:flex items-center gap-1 rounded-2xl border border-border/60 bg-card/60 p-1 backdrop-blur">
