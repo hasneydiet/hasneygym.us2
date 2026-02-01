@@ -847,9 +847,24 @@ const applyReplaceExercise = async () => {
       map[s.workout_exercise_id] = map[s.workout_exercise_id] || [];
       map[s.workout_exercise_id].push(s);
     }
-    setSets(map);
+    // Fetch previous sets first, then patch the initial set map BEFORE rendering.
+    // This prevents the "flash" where default reps appear briefly before being replaced
+    // by previous-session reps.
+    const prevMap = await loadPreviousSetsForExercises(exData, sessionData.started_at, sessionData.user_id);
 
-    await loadPreviousSetsForExercises(exData, sessionData.started_at, sessionData.user_id);
+    const { patched, updates } = prefillRepsFromPrevious(exData, map, prevMap);
+
+    setPrevSetsByExercise(prevMap);
+    setSets(patched);
+
+    // Persist the reps prefill in the background (no second setSets call).
+    if (updates.length > 0) {
+      const { error: upErr } = await supabase.from('workout_sets').upsert(updates, { onConflict: 'id' });
+      if (upErr) {
+        console.error('Prefill upsert failed:', upErr);
+        // Non-fatal. UI is already correct; we just won't persist the prefill.
+      }
+    }
   };
 
   const addExerciseToSession = async () => {
@@ -942,9 +957,11 @@ const applyReplaceExercise = async () => {
     }
   };
 
-  const loadPreviousSetsForExercises = async (exData: WorkoutExercise[], startedAt: string, userId: string) => {
-    setPrevSetsByExercise({});
-
+  const loadPreviousSetsForExercises = async (
+    exData: WorkoutExercise[],
+    startedAt: string,
+    userId: string
+  ): Promise<Record<string, WorkoutSet[]>> => {
     const entries = await Promise.all(
       exData.map(async (ex) => {
         const currentWorkoutExerciseId = ex.id;
@@ -993,7 +1010,54 @@ const applyReplaceExercise = async () => {
 
     const map: Record<string, WorkoutSet[]> = {};
     for (const [k, v] of entries) map[k] = v;
-    setPrevSetsByExercise(map);
+    return map;
+  };
+
+  const prefillRepsFromPrevious = (
+    exData: WorkoutExercise[],
+    currentSetMap: { [exerciseId: string]: WorkoutSet[] },
+    prevMap: Record<string, WorkoutSet[]>
+  ): { patched: { [exerciseId: string]: WorkoutSet[] }; updates: Array<{ id: string; reps: number }> } => {
+    // IMPORTANT:
+    // We patch the initial set map BEFORE rendering (in loadWorkout) to avoid "flashing"
+    // between default reps and previous reps on mobile.
+    const updates: Array<{ id: string; reps: number }> = [];
+    const patched: { [exerciseId: string]: WorkoutSet[] } = { ...currentSetMap };
+
+    for (const ex of exData as any[]) {
+      const weId = ex?.id as string;
+      if (!weId) continue;
+
+      const curSets = (currentSetMap?.[weId] || []) as any[];
+      const prevSets = (prevMap?.[weId] || []) as any[];
+
+      const schemeRepsRaw = ex?.exercises?.default_set_scheme?.reps;
+      const schemeRepsNum = Number(schemeRepsRaw);
+      const defaultReps = Number.isFinite(schemeRepsNum) ? Math.max(0, Math.floor(schemeRepsNum)) : null;
+      if (defaultReps === null) continue;
+
+      const nextList = curSets.map((s) => ({ ...s }));
+
+      for (let i = 0; i < nextList.length; i++) {
+        const cur = nextList[i];
+        const prev = prevSets[i];
+        const prevReps = prev?.reps;
+        if (cur?.is_completed) continue;
+        if (!Number.isFinite(Number(prevReps))) continue;
+
+        const curRepsNum = Number(cur?.reps);
+        const prevRepsNum = Number(prevReps);
+
+        if (Number.isFinite(curRepsNum) && curRepsNum === defaultReps && prevRepsNum !== defaultReps) {
+          updates.push({ id: cur.id, reps: prevRepsNum });
+          cur.reps = prevRepsNum;
+        }
+      }
+
+      patched[weId] = nextList as any;
+    }
+
+    return { patched, updates };
   };
 
   const saveSet = async (setId: string, field: string, value: any) => {
@@ -1099,17 +1163,53 @@ const applyReplaceExercise = async () => {
     try {
       setDiscarding(true);
 
-      const { data: exRows } = await supabase.from('workout_exercises').select('id').eq('workout_session_id', sessionId);
+      const { data: exRows, error: exErr } = await supabase
+        .from('workout_exercises')
+        .select('id')
+        .eq('workout_session_id', sessionId);
+      if (exErr) throw exErr;
       const exIds = (exRows || []).map((r: any) => r.id);
 
       if (exIds.length > 0) {
-        await supabase.from('workout_sets').delete().in('workout_exercise_id', exIds);
+        const { error: setsErr } = await supabase
+          .from('workout_sets')
+          .delete()
+          .in('workout_exercise_id', exIds);
+        if (setsErr) throw setsErr;
       }
 
-      await supabase.from('workout_exercises').delete().eq('workout_session_id', sessionId);
-      await supabase.from('workout_sessions').delete().eq('id', sessionId);
+      const { error: exDelErr } = await supabase
+        .from('workout_exercises')
+        .delete()
+        .eq('workout_session_id', sessionId);
+      if (exDelErr) throw exDelErr;
+
+      const { error: sessDelErr } = await supabase
+        .from('workout_sessions')
+        .delete()
+        .eq('id', sessionId);
+      if (sessDelErr) throw sessDelErr;
+
+      // Verify it actually deleted (prevents ghost/empty history entries).
+      const { data: stillThere, error: checkErr } = await supabase
+        .from('workout_sessions')
+        .select('id')
+        .eq('id', sessionId)
+        .maybeSingle();
+      if (checkErr) throw checkErr;
+
+      if (stillThere?.id) {
+        window.alert(
+          'Discard did not fully complete, so this workout may still appear in History.\n\n' +
+            'Go to History and delete the session there (trash icon) to remove it.'
+        );
+        return;
+      }
 
       router.push('/workout/start');
+    } catch (err: any) {
+      console.error('Discard workout failed:', err);
+      window.alert(err?.message || 'Failed to discard workout. Please try again.');
     } finally {
       setDiscarding(false);
     }
@@ -1394,7 +1494,7 @@ const applyReplaceExercise = async () => {
                         <button
                           type="button"
                           onClick={() => openTechniqueGuide(exercise.id)}
-                          className="tap-target inline-flex items-center justify-center rounded-lg p-1 text-muted-foreground hover:text-foreground"
+                          className="tap-target inline-flex items-center justify-center rounded-lg p-1 text-foreground/70 hover:text-foreground"
                           aria-label="Technique instructions"
                           title="Technique instructions"
                         >
@@ -1403,8 +1503,8 @@ const applyReplaceExercise = async () => {
 </div>
 
                       {/* Rest timer on the right */}
-                      <div className="flex items-center gap-2 text-sm text-gray-300 shrink-0">
-                        <Clock className="h-4 w-4 text-gray-300" />
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground shrink-0">
+                        <Clock className="h-4 w-4 text-muted-foreground" />
                         {restSecondsRemaining !== null && restExerciseId === exercise.id ? (
                           <span className="font-medium">{formatClock(restSecondsRemaining)}</span>
                         ) : (
@@ -1424,7 +1524,7 @@ const applyReplaceExercise = async () => {
                     return (
                       <div className="mt-3 flex flex-col sm:flex-row sm:items-end gap-3">
                         <div className="flex-1">
-                          <label className="block text-[11px] uppercase tracking-wide text-gray-300/80 mb-1">
+                          <label className="block text-[11px] uppercase tracking-wide text-muted-foreground mb-1">
                             Duration (H:MM)
                           </label>
                           <input
@@ -1479,15 +1579,17 @@ const applyReplaceExercise = async () => {
                   })() : (
                   <div className="overflow-x-hidden">
   {/* HEVY-style header */}
-  <div className="grid grid-cols-[52px_1fr_92px_76px_52px] gap-2 px-2 pb-2 text-left text-[11px] uppercase tracking-wide text-gray-300/80 border-b border-gray-800">
+  <div
+    className="grid min-w-0 grid-cols-[32px_minmax(0,1fr)_78px_58px_32px] sm:grid-cols-[52px_minmax(0,1fr)_92px_76px_52px] gap-2 px-2 pb-2 text-left text-[11px] uppercase tracking-wide text-muted-foreground border-b border-border"
+  >
     <div>Set</div>
-    <div>Previous</div>
+    <div className="min-w-0">Previous</div>
     <div className="text-center">Weight</div>
     <div className="text-center">Reps</div>
     <div className="text-center">✓</div>
   </div>
 
-  <div className="divide-y divide-gray-800">
+  <div className="divide-y divide-border">
     {(sets[exercise.id] || []).map((set: any, idx: number) => {
       const prev = prevSets[idx];
       const prevReps = prev?.reps ?? null;
@@ -1540,7 +1642,7 @@ const applyReplaceExercise = async () => {
             {/* Foreground content that slides */}
             <div
               className={
-                "grid grid-cols-[52px_1fr_92px_76px_52px] gap-2 items-center px-2 py-2 bg-card touch-pan-y"
+                "grid min-w-0 grid-cols-[32px_minmax(0,1fr)_78px_58px_32px] sm:grid-cols-[52px_minmax(0,1fr)_92px_76px_52px] gap-2 items-center px-2 py-2 bg-card touch-pan-y"
               }
               style={{ transform: `translateX(${swipeOffset}px)`, transition: swipeDraggingSetId === set.id ? 'none' : 'transform 150ms ease' }}
               onTouchStart={(e) => onSetSwipeStart(set.id, e)}
@@ -1549,10 +1651,15 @@ const applyReplaceExercise = async () => {
               onTouchCancel={(e) => onSetSwipeEnd(set.id, e)}
             >
               {/* SET # */}
-              <div className="font-semibold text-gray-200 tabular-nums">{idx + 1}</div>
+              <div className="font-semibold text-muted-foreground tabular-nums">{idx + 1}</div>
 
               {/* PREVIOUS */}
-              <div className="text-sm text-foreground/90 truncate">{prevText}</div>
+              <div
+                className="min-w-0 text-[11px] sm:text-sm text-foreground/90 leading-tight truncate whitespace-nowrap"
+                title={prevText}
+              >
+                {prevText}
+              </div>
 
               {/* WEIGHT */}
               <div>
@@ -1583,7 +1690,7 @@ const applyReplaceExercise = async () => {
                     saveSet(set.id, 'weight', Number.isFinite(num) ? num : 0);
                     clearDraftField(set.id, 'weight');
                   }}
-                  className="w-full h-11 px-2 py-2 rounded-xl border border-input bg-background text-center text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                  className="w-full h-10 sm:h-11 px-1 sm:px-2 py-2 rounded-xl border border-input bg-background text-center text-sm sm:text-base text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                 />
               </div>
 
@@ -1615,7 +1722,7 @@ const applyReplaceExercise = async () => {
                     saveSet(set.id, 'reps', Number.isFinite(num) ? num : 0);
                     clearDraftField(set.id, 'reps');
                   }}
-                  className="w-full h-11 px-2 py-2 rounded-xl border border-input bg-background text-center text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                  className="w-full h-10 sm:h-11 px-1 sm:px-2 py-2 rounded-xl border border-input bg-background text-center text-sm sm:text-base text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                 />
               </div>
 
@@ -1624,7 +1731,7 @@ const applyReplaceExercise = async () => {
                 <button
                   type="button"
                   onClick={() => handleToggleCompleted(exercise, set)}
-                  className={`w-11 h-11 rounded border-2 flex items-center justify-center ${
+                  className={`w-8 h-8 sm:w-11 sm:h-11 rounded border-2 flex items-center justify-center ${
                     set.is_completed ? 'bg-primary border-primary text-primary-foreground' : 'border-input'
                   }`}
                   title="Mark set complete"
@@ -1645,7 +1752,7 @@ const applyReplaceExercise = async () => {
                       type="button"
                       aria-label="Add set"
                       onClick={() => addSet(exercise.id)}
-                      className="w-full h-14 rounded-2xl bg-gray-800/60 border border-input text-foreground/90 text-base font-semibold inline-flex items-center justify-center gap-2 active:scale-[0.99]"
+                      className="w-full h-14 rounded-2xl bg-muted border border-input text-foreground text-base font-semibold inline-flex items-center justify-center gap-2 active:scale-[0.99]"
                     >
                       <Plus className="h-5 w-5" aria-hidden="true" />
                       Add Set
@@ -1735,7 +1842,7 @@ const applyReplaceExercise = async () => {
     <div className="space-y-4">
       <SheetHeader>
         <SheetTitle className="text-foreground">Set Technique</SheetTitle>
-        <SheetDescription className="text-gray-300">
+        <SheetDescription className="text-muted-foreground">
           This updates the current workout in real time. If this workout was started from a routine day, it also becomes
           the default for future workouts until you change it again.
         </SheetDescription>
@@ -1777,13 +1884,13 @@ const applyReplaceExercise = async () => {
         <div className="space-y-4">
           <SheetHeader>
             <SheetTitle className="text-foreground">{guide.title}</SheetTitle>
-            <SheetDescription className="text-gray-300">{guide.summary}</SheetDescription>
+            <SheetDescription className="text-muted-foreground">{guide.summary}</SheetDescription>
           </SheetHeader>
 
           <div className="space-y-3">
             <div>
-              <div className="mb-2 text-sm font-semibold text-gray-200">How To</div>
-              <ol className="list-decimal space-y-2 pl-5 text-sm text-gray-200">
+              <div className="mb-2 text-sm font-semibold text-foreground">How To</div>
+              <ol className="list-decimal space-y-2 pl-5 text-sm text-foreground/90">
                 {guide.steps.map((s) => (
                   <li key={s}>{s}</li>
                 ))}
@@ -1792,8 +1899,8 @@ const applyReplaceExercise = async () => {
 
             {guide.tips?.length ? (
               <div>
-                <div className="mb-2 text-sm font-semibold text-gray-200">Tips</div>
-                <ul className="list-disc space-y-2 pl-5 text-sm text-gray-200">
+                <div className="mb-2 text-sm font-semibold text-foreground">Tips</div>
+                <ul className="list-disc space-y-2 pl-5 text-sm text-foreground/90">
                   {guide.tips.map((t) => (
                     <li key={t}>{t}</li>
                   ))}

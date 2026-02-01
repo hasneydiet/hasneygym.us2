@@ -1,9 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
-  images: { unoptimized: true },
+  // Netlify's Next.js runtime handles server rendering and functions.
+  // Using `output: 'standalone'` can break the Netlify plugin packaging.
 };
 
 module.exports = nextConfig;

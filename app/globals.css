@@ -94,8 +94,8 @@ button {
 
     --secondary: 243 244 246; /* rgb derived from hsl(220 16% 96%) */
     --secondary-foreground: 15 23 41;
-    --muted: 243 244 246; /* rgb derived from hsl(220 14% 96%) */
-    --muted-foreground: 101 117 139; /* rgb derived from hsl(215 16% 47%) */
+    --muted: 235 237 242; /* slightly darker for contrast */
+    --muted-foreground: 71 85 105; /* darker for readability */
     --accent: 252 232 244; /* rgb derived from hsl(325 78% 95%) */
     --accent-foreground: 15 23 41;
 
