@@ -151,6 +151,21 @@ export default function WorkoutPage() {
   // Add Exercise (session-only): allows adding extra exercises during a workout day
   const [showAddExercise, setShowAddExercise] = useState(false);
   const [selectedExerciseId, setSelectedExerciseId] = useState('');
+
+  // If the user switches focus between exercises (common when doing supersets), flush any in-flight edits so values never disappear.
+  const prevSelectedExerciseIdRef = useRef<string>('');
+  useEffect(() => {
+    if (!prevSelectedExerciseIdRef.current) {
+      prevSelectedExerciseIdRef.current = selectedExerciseId;
+      return;
+    }
+    if (prevSelectedExerciseIdRef.current !== selectedExerciseId) {
+      flushAllDrafts();
+      prevSelectedExerciseIdRef.current = selectedExerciseId;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedExerciseId]);
+
   const [availableExercises, setAvailableExercises] = useState<any[]>([]);
   const [addingExercise, setAddingExercise] = useState(false);
 
@@ -233,15 +248,10 @@ const onSetSwipeEnd = (setId: string, _e: any) => {
   setSwipeDraggingSetId(null);
   swipeRef.current = { setId: null, startX: 0, startY: 0, startOffset: 0, active: false };
 };
-  // Draft typed values: used only while editing; after blur it gets cleared.
-  const [draft, setDraft] = useState<Record<string, Record<string, string>>>({});
-
+  // Draft typed values are stored in a ref so typing doesn't re-render the whole page (iOS performance + data loss prevention).
+  const draftRef = useRef<Record<string, Record<string, string>>>({});
   // iOS Safari can suspend/kill tabs while the user is still focused in an input.
-  // Keep a ref so we can flush in-flight edits when the page becomes hidden.
-  const draftRef = useRef(draft);
-  useEffect(() => {
-    draftRef.current = draft;
-  }, [draft]);
+  // We keep draft values in draftRef so we can flush in-flight edits when the page becomes hidden.
 
   // Debounced saves for in-flight draft values (weight/reps) so switching apps doesn't lose input.
   const pendingDraftSaveRef = useRef<Record<string, number>>({});
@@ -687,28 +697,23 @@ const applyReplaceExercise = async () => {
   }, [session?.started_at]);
 
   const setDraftValue = (setId: string, field: string, value: string) => {
-    setDraft((prev) => ({
-      ...prev,
-      [setId]: { ...(prev[setId] || {}), [field]: value },
-    }));
+    const next = draftRef.current;
+    next[setId] = { ...(next[setId] || {}), [field]: value };
   };
 
   const clearDraftField = (setId: string, field: string) => {
-    setDraft((prev) => {
-      const next = { ...prev };
-      if (!next[setId]) return prev;
-      const inner = { ...next[setId] };
-      delete inner[field];
-      next[setId] = inner;
-      return next;
-    });
+    const next = draftRef.current;
+    if (!next[setId]) return;
+    const inner = { ...next[setId] };
+    delete inner[field];
+    next[setId] = inner;
   };
 
   // ✅ This is the key fix:
   // - If user is typing (draft exists), show draft.
   // - Otherwise show the saved value from state (sets) — but keep it blank if 0.
   const getDisplayValue = (setId: string, field: 'reps' | 'weight', savedValue: any) => {
-    const v = draft[setId]?.[field];
+    const v = draftRef.current?.[setId]?.[field];
     if (v !== undefined) return v;
     const n = Number(savedValue ?? 0);
     if (!Number.isFinite(n) || n === 0) return '';
@@ -716,7 +721,7 @@ const applyReplaceExercise = async () => {
   };
 
   const getDraftRaw = (setId: string, field: 'reps' | 'weight') => {
-    const v = draft[setId]?.[field];
+    const v = draftRef.current?.[setId]?.[field];
     return v !== undefined ? v : '';
   };
 
@@ -1147,6 +1152,16 @@ const applyReplaceExercise = async () => {
 
   const handleToggleCompleted = async (workoutExerciseRow: any, setRow: any) => {
     const willComplete = !setRow.is_completed;
+    // Flush any in-flight reps/weight edits before marking complete so values never get lost.
+    if (draftRef.current?.[setRow.id]?.weight !== undefined) {
+      await flushDraftField(setRow.id, 'weight');
+      clearDraftField(setRow.id, 'weight');
+    }
+    if (draftRef.current?.[setRow.id]?.reps !== undefined) {
+      await flushDraftField(setRow.id, 'reps');
+      clearDraftField(setRow.id, 'reps');
+    }
+
     await saveSet(setRow.id, 'is_completed', willComplete);
     if (willComplete) startRestTimer(workoutExerciseRow.id, getExerciseRestSeconds(workoutExerciseRow));
   };
@@ -1729,7 +1744,7 @@ const applyReplaceExercise = async () => {
                   aria-label={`Weight for set ${idx + 1}`}
                   step="0.5"
                   placeholder={weightPlaceholder}
-                  value={getDisplayValue(set.id, 'weight', set.weight)}
+                  defaultValue={(() => { const n = Number(set.weight ?? 0); return !Number.isFinite(n) || n === 0 ? '' : String(n); })()}
                   onChange={(e) => queueDraftSave(set.id, 'weight', e.target.value)}
                   onFocus={(e) => e.currentTarget.select()}
                   ref={(el) => {
@@ -1745,7 +1760,7 @@ const applyReplaceExercise = async () => {
                   }}
                   onKeyDown={(e) => handleWeightKeyDown(exercise.id, idx, (sets[exercise.id] || []).length, e)}
                   onBlur={() => {
-                    const hasDraft = draft[set.id]?.weight !== undefined;
+                    const hasDraft = draftRef.current?.[set.id]?.weight !== undefined;
                     if (!hasDraft) return;
                     const raw = getDraftRaw(set.id, 'weight').trim();
                     const num = raw === '' ? 0 : Number(raw);
@@ -1763,7 +1778,7 @@ const applyReplaceExercise = async () => {
                   inputMode="numeric"
                   aria-label={`Reps for set ${idx + 1}`}
                   placeholder={repsPlaceholder}
-                  value={getDisplayValue(set.id, 'reps', set.reps)}
+                  defaultValue={(() => { const n = Number(set.reps ?? 0); return !Number.isFinite(n) || n === 0 ? '' : String(n); })()}
                   onChange={(e) => queueDraftSave(set.id, 'reps', e.target.value)}
                   onFocus={(e) => e.currentTarget.select()}
                   ref={(el) => {
@@ -1779,7 +1794,7 @@ const applyReplaceExercise = async () => {
                   }}
                   onKeyDown={(e) => handleRepsKeyDown(exercise.id, idx, e)}
                   onBlur={() => {
-                    const hasDraft = draft[set.id]?.reps !== undefined;
+                    const hasDraft = draftRef.current?.[set.id]?.reps !== undefined;
                     if (!hasDraft) return;
                     const raw = getDraftRaw(set.id, 'reps').trim();
                     const num = raw === '' ? 0 : Number(raw);
