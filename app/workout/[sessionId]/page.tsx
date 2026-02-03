@@ -1166,58 +1166,9 @@ const applyReplaceExercise = async () => {
     if (willComplete) startRestTimer(workoutExerciseRow.id, getExerciseRestSeconds(workoutExerciseRow));
   };
 
-  // Guardrail: only allow ending/saving a workout when all sets are completed
-  // and required fields are filled out.
-  const getWorkoutValidationError = (): string | null => {
-    for (const ex of exercises) {
-      const exName = ex?.exercises?.name || ex?.name || 'Exercise';
-      const cardio = isCardioWorkoutExercise(ex);
-
-      if (cardio) {
-        const secs = Number((ex as any)?.duration_seconds || 0);
-        if (!Number.isFinite(secs) || secs <= 0) {
-          return `Please complete your workout before finishing.\n\n${exName} — cardio duration must be greater than 0.`;
-        }
-        continue;
-      }
-      const exSets = sets[ex.id] || [];
-
-      if (exSets.length === 0) {
-        return `Please complete your workout before finishing.\n\nMissing sets for: ${exName}`;
-      }
-
-      for (let i = 0; i < exSets.length; i++) {
-        const s: any = exSets[i];
-        const setLabel = `Set ${i + 1}`;
-
-        // Require completion toggle.
-        if (!s?.is_completed) {
-          return `Please complete all sets before finishing.\n\n${exName} — ${setLabel} is not checked.`;
-        }
-
-        // Require reps > 0
-        const reps = Number(s?.reps);
-        if (!Number.isFinite(reps) || reps <= 0) {
-          return `Please fill out all fields before finishing.\n\n${exName} — ${setLabel} has missing reps.`;
-        }
-
-        // Require a numeric weight (0 is allowed for bodyweight)
-        const weight = Number(s?.weight);
-        if (!Number.isFinite(weight) || weight < 0) {
-          return `Please fill out all fields before finishing.\n\n${exName} — ${setLabel} has missing weight.`;
-        }
-      }
-    }
-
-    return null;
-  };
-
   const endWorkout = async () => {
-    const validationError = getWorkoutValidationError();
-    if (validationError) {
-      window.alert(validationError);
-      return;
-    }
+    // Always persist in-flight edits before ending.
+    await flushAllDrafts();
 
     const ok = window.confirm('End workout? This will save it to History.');
     if (!ok) return;
