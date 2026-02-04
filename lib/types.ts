@@ -15,6 +15,8 @@ export interface Exercise {
   /** Default rest time after a completed set (in seconds). */
   rest_seconds?: number;
   default_technique_tags: string[];
+  /** Per-exercise notes for this workout (saved to history). */
+  notes?: string;
   default_set_scheme: {
     sets?: number;
     reps?: number;
@@ -73,6 +75,8 @@ export interface WorkoutExercise {
   order_index: number;
   superset_group_id: string | null;
   technique_tags: string[];
+  /** Per-exercise notes for this workout (saved to history). */
+  notes?: string;
   exercises?: Exercise;
 }
 

@@ -256,6 +256,10 @@ const onSetSwipeEnd = (setId: string, _e: any) => {
   // Debounced saves for in-flight draft values (weight/reps) so switching apps doesn't lose input.
   const pendingDraftSaveRef = useRef<Record<string, number>>({});
 
+  // Debounced saves for per-exercise notes.
+  const notesDraftRef = useRef<Record<string, string>>({});
+  const pendingNotesSaveRef = useRef<Record<string, number>>({});
+
 // Technique guide sheet (shows instructions for the CURRENT selected technique)
 const [techniqueGuideOpen, setTechniqueGuideOpen] = useState(false);
 const [techniqueGuideExerciseId, setTechniqueGuideExerciseId] = useState<string | null>(null);
@@ -390,6 +394,14 @@ const applySetTechnique = async (newTechnique: string) => {
       }
     } finally {
       setIsPersistingOrder(false);
+    }
+
+    // Flush exercise notes drafts (if any)
+    const n = notesDraftRef.current || {};
+    for (const exId of Object.keys(n)) {
+      if (n[exId] !== undefined) {
+        flushExerciseNotes(exId).catch(() => {});
+      }
     }
   };
 
@@ -1114,6 +1126,33 @@ const applyReplaceExercise = async () => {
     }, 600);
   };
 
+
+  const flushExerciseNotes = async (workoutExerciseId: string) => {
+    const notes = notesDraftRef.current?.[workoutExerciseId];
+    if (notes === undefined) return;
+    try {
+      const { error } = await supabase
+        .from('workout_exercises')
+        .update({ notes })
+        .eq('id', workoutExerciseId);
+      if (error) throw error;
+    } catch {
+      // best-effort
+    }
+  };
+
+  const scheduleNotesSave = (workoutExerciseId: string, notes: string) => {
+    notesDraftRef.current = { ...(notesDraftRef.current || {}), [workoutExerciseId]: notes };
+    const existing = pendingNotesSaveRef.current?.[workoutExerciseId];
+    if (existing) window.clearTimeout(existing);
+
+    const t = window.setTimeout(() => {
+      flushExerciseNotes(workoutExerciseId).catch(() => {});
+    }, 600);
+
+    pendingNotesSaveRef.current = { ...(pendingNotesSaveRef.current || {}), [workoutExerciseId]: t };
+  };
+
   const flushAllDrafts = () => {
     const d = draftRef.current || {};
     for (const setId of Object.keys(d)) {
@@ -1540,6 +1579,26 @@ const applyReplaceExercise = async () => {
                     </div>
                   )}
                 </div>
+
+                {!isReorderMode && (
+                  <div className="mt-3">
+                    <div className="mb-1 text-xs font-semibold tracking-wide text-muted-foreground">Notes</div>
+                    <textarea
+                      value={String((exercise as any)?.notes ?? '')}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setExercises((prev) =>
+                          prev.map((x: any) => (x.id === exercise.id ? { ...x, notes: v } : x))
+                        );
+                        scheduleNotesSave(exercise.id, v);
+                      }}
+                      disabled={sessionIsCompleted}
+                      placeholder="Add notes..."
+                      className="w-full min-h-[44px] resize-none rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-40 disabled:pointer-events-none"
+                    />
+                  </div>
+                )}
+
                 {!isReorderMode && (isCardio ? (() => {
                     const savedSecs = Number((exercise as any)?.duration_seconds || 0);
                     const draftValue = (cardioDraft[exercise.id] ?? '').toString();
