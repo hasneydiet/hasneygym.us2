@@ -151,21 +151,6 @@ export default function WorkoutPage() {
   // Add Exercise (session-only): allows adding extra exercises during a workout day
   const [showAddExercise, setShowAddExercise] = useState(false);
   const [selectedExerciseId, setSelectedExerciseId] = useState('');
-
-  // If the user switches focus between exercises (common when doing supersets), flush any in-flight edits so values never disappear.
-  const prevSelectedExerciseIdRef = useRef<string>('');
-  useEffect(() => {
-    if (!prevSelectedExerciseIdRef.current) {
-      prevSelectedExerciseIdRef.current = selectedExerciseId;
-      return;
-    }
-    if (prevSelectedExerciseIdRef.current !== selectedExerciseId) {
-      flushAllDrafts();
-      prevSelectedExerciseIdRef.current = selectedExerciseId;
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedExerciseId]);
-
   const [availableExercises, setAvailableExercises] = useState<any[]>([]);
   const [addingExercise, setAddingExercise] = useState(false);
 
@@ -233,8 +218,10 @@ const onSetSwipeMove = (setId: string, e: any) => {
     ref.active = true;
   }
 
-  // Prevent page scroll while swiping horizontally
-  e.preventDefault?.();
+  // Prevent page scroll while swiping horizontally.
+  // On iOS, calling preventDefault on non-cancelable or passive events can cause
+  // intermittent scroll jank/freezes.
+  if (e?.cancelable) e.preventDefault?.();
 
   const raw = ref.startOffset + dx;
   const clamped = Math.max(-120, Math.min(0, raw));
@@ -248,17 +235,46 @@ const onSetSwipeEnd = (setId: string, _e: any) => {
   setSwipeDraggingSetId(null);
   swipeRef.current = { setId: null, startX: 0, startY: 0, startOffset: 0, active: false };
 };
-  // Draft typed values are stored in a ref so typing doesn't re-render the whole page (iOS performance + data loss prevention).
-  const draftRef = useRef<Record<string, Record<string, string>>>({});
-  // iOS Safari can suspend/kill tabs while the user is still focused in an input.
-  // We keep draft values in draftRef so we can flush in-flight edits when the page becomes hidden.
+  // Draft typed values: used only while editing; after blur it gets cleared.
+  const [draft, setDraft] = useState<Record<string, Record<string, string>>>({});
 
-  // Debounced saves for in-flight draft values (weight/reps) so switching apps doesn't lose input.
-  const pendingDraftSaveRef = useRef<Record<string, number>>({});
+  // Debounced background save for iOS/Safari: onBlur is not reliable when users
+  // scroll, switch apps, or jump between exercises quickly.
+  const draftSaveTimers = useRef<Record<string, any>>({});
 
-  // Debounced saves for per-exercise notes.
-  const notesDraftRef = useRef<Record<string, string>>({});
-  const pendingNotesSaveRef = useRef<Record<string, number>>({});
+  const scheduleDraftSave = (setId: string, field: 'weight' | 'reps', raw: string) => {
+    const key = `${setId}:${field}`;
+    if (draftSaveTimers.current[key]) clearTimeout(draftSaveTimers.current[key]);
+    draftSaveTimers.current[key] = setTimeout(() => {
+      const trimmed = String(raw ?? '').trim();
+      const num = trimmed === '' ? 0 : Number(trimmed);
+      // Save immediately so History and "Previous" stay correct even if blur never fires.
+      saveSet(setId, field, Number.isFinite(num) ? num : 0);
+    }, 250);
+  };
+
+  const flushDraftSaves = async () => {
+    // Force-save any in-flight draft values so they don't get lost if we reload,
+    // the user switches exercises, or Safari backgrounding interrupts blur.
+    const pending: Array<Promise<any>> = [];
+    for (const setId of Object.keys(draft)) {
+      const fields = draft[setId] || {};
+      for (const field of Object.keys(fields)) {
+        if (field !== 'weight' && field !== 'reps') continue;
+        const raw = String(fields[field] ?? '').trim();
+        const num = raw === '' ? 0 : Number(raw);
+        pending.push(supabase.from('workout_sets').update({ [field]: Number.isFinite(num) ? num : 0 }).eq('id', setId));
+      }
+    }
+    if (pending.length > 0) {
+      try {
+        await Promise.all(pending);
+      } catch (e) {
+        // Non-fatal: UI remains and we can reload if needed.
+        console.warn('flushDraftSaves failed', e);
+      }
+    }
+  };
 
 // Technique guide sheet (shows instructions for the CURRENT selected technique)
 const [techniqueGuideOpen, setTechniqueGuideOpen] = useState(false);
@@ -394,14 +410,6 @@ const applySetTechnique = async (newTechnique: string) => {
       }
     } finally {
       setIsPersistingOrder(false);
-    }
-
-    // Flush exercise notes drafts (if any)
-    const n = notesDraftRef.current || {};
-    for (const exId of Object.keys(n)) {
-      if (n[exId] !== undefined) {
-        flushExerciseNotes(exId).catch(() => {});
-      }
     }
   };
 
@@ -709,23 +717,28 @@ const applyReplaceExercise = async () => {
   }, [session?.started_at]);
 
   const setDraftValue = (setId: string, field: string, value: string) => {
-    const next = draftRef.current;
-    next[setId] = { ...(next[setId] || {}), [field]: value };
+    setDraft((prev) => ({
+      ...prev,
+      [setId]: { ...(prev[setId] || {}), [field]: value },
+    }));
   };
 
   const clearDraftField = (setId: string, field: string) => {
-    const next = draftRef.current;
-    if (!next[setId]) return;
-    const inner = { ...next[setId] };
-    delete inner[field];
-    next[setId] = inner;
+    setDraft((prev) => {
+      const next = { ...prev };
+      if (!next[setId]) return prev;
+      const inner = { ...next[setId] };
+      delete inner[field];
+      next[setId] = inner;
+      return next;
+    });
   };
 
   // ✅ This is the key fix:
   // - If user is typing (draft exists), show draft.
   // - Otherwise show the saved value from state (sets) — but keep it blank if 0.
   const getDisplayValue = (setId: string, field: 'reps' | 'weight', savedValue: any) => {
-    const v = draftRef.current?.[setId]?.[field];
+    const v = draft[setId]?.[field];
     if (v !== undefined) return v;
     const n = Number(savedValue ?? 0);
     if (!Number.isFinite(n) || n === 0) return '';
@@ -733,7 +746,7 @@ const applyReplaceExercise = async () => {
   };
 
   const getDraftRaw = (setId: string, field: 'reps' | 'weight') => {
-    const v = draftRef.current?.[setId]?.[field];
+    const v = draft[setId]?.[field];
     return v !== undefined ? v : '';
   };
 
@@ -802,6 +815,28 @@ const applyReplaceExercise = async () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, effectiveUserId]);
 
+  // iOS/Safari reliability: persist edits when the page is backgrounded or
+  // when the browser freezes JS timers while scrolling.
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === 'hidden') {
+        flushDraftSaves();
+      }
+    };
+    const onPageHide = () => {
+      flushDraftSaves();
+    };
+    document.addEventListener('visibilitychange', onVis);
+    window.addEventListener('pagehide', onPageHide);
+    window.addEventListener('beforeunload', onPageHide);
+    return () => {
+      document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('pagehide', onPageHide);
+      window.removeEventListener('beforeunload', onPageHide);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Load exercise list lazily for the session-only "Add Exercise" flow
   useEffect(() => {
     if (!showAddExercise && !showReplaceExercise) return;
@@ -841,6 +876,10 @@ const applyReplaceExercise = async () => {
   }, [pendingFocusKey, sets]);
 
   const loadWorkout = async () => {
+    // Make sure any in-flight edits are persisted before we refresh data.
+    // This prevents iOS Safari from losing edits when switching exercises or scrolling.
+    await flushDraftSaves();
+
     const { data: sessionData } = await supabase
       .from('workout_sessions')
       .select('*, routines(name), routine_days(name)')
@@ -882,7 +921,27 @@ const applyReplaceExercise = async () => {
     const { patched, updates } = prefillRepsFromPrevious(exData, map, prevMap);
 
     setPrevSetsByExercise(prevMap);
-    setSets(patched);
+
+    // Overlay any draft edits (user may be mid-edit while we reload for add/reorder/etc.)
+    const patchedWithDrafts: { [exerciseId: string]: WorkoutSet[] } = {};
+    for (const weId of Object.keys(patched)) {
+      patchedWithDrafts[weId] = (patched[weId] || []).map((s: any) => {
+        const d = draft[s.id];
+        if (!d) return s;
+        const next = { ...s };
+        if (typeof d.weight === 'string') {
+          const n = d.weight.trim() === '' ? 0 : Number(d.weight);
+          next.weight = Number.isFinite(n) ? n : next.weight;
+        }
+        if (typeof d.reps === 'string') {
+          const n = d.reps.trim() === '' ? 0 : Number(d.reps);
+          next.reps = Number.isFinite(n) ? n : next.reps;
+        }
+        return next;
+      });
+    }
+
+    setSets(patchedWithDrafts);
 
     // Persist the reps prefill in the background (no second setSets call).
     if (updates.length > 0) {
@@ -989,55 +1048,96 @@ const applyReplaceExercise = async () => {
     startedAt: string,
     userId: string
   ): Promise<Record<string, WorkoutSet[]>> => {
-    const entries = await Promise.all(
-      exData.map(async (ex) => {
-        const currentWorkoutExerciseId = ex.id;
-        const exerciseId = ex.exercise_id;
+    // Performance + correctness:
+    // Previous data is based on *exercise_id* (not routine), and should always pull
+    // from the most recent prior session where that exercise was performed.
+    // The old implementation queried per-exercise/per-session (very slow on iOS).
+    // This implementation does it in a small number of batched queries.
 
-        if (!exerciseId) return [currentWorkoutExerciseId, []] as [string, WorkoutSet[]];
+    const currentByWorkoutExerciseId: Array<{ workoutExerciseId: string; exerciseId: string | null }> = exData.map((ex) => ({
+      workoutExerciseId: ex.id,
+      exerciseId: ex.exercise_id ?? null,
+    }));
 
-        const { data: prevSessions } = await supabase
-          .from('workout_sessions')
-          .select('id, started_at')
-          .eq('user_id', userId)
-          .lt('started_at', startedAt)
-          .order('started_at', { ascending: false })
-          .limit(25);
-
-        if (!prevSessions || prevSessions.length === 0) return [currentWorkoutExerciseId, []] as [string, WorkoutSet[]];
-
-        let prevWorkoutExerciseId: string | null = null;
-
-        for (const s of prevSessions) {
-          const { data: prevExerciseRow } = await supabase
-            .from('workout_exercises')
-            .select('id')
-            .eq('workout_session_id', s.id)
-            .eq('exercise_id', exerciseId)
-            .limit(1)
-            .maybeSingle();
-
-          if (prevExerciseRow?.id) {
-            prevWorkoutExerciseId = prevExerciseRow.id;
-            break;
-          }
-        }
-
-        if (!prevWorkoutExerciseId) return [currentWorkoutExerciseId, []] as [string, WorkoutSet[]];
-
-        const { data: prevSets } = await supabase
-          .from('workout_sets')
-          .select('*')
-          .eq('workout_exercise_id', prevWorkoutExerciseId)
-          .order('set_index');
-
-        return [currentWorkoutExerciseId, (prevSets || []) as WorkoutSet[]] as [string, WorkoutSet[]];
-      })
+    const exerciseIds = Array.from(
+      new Set(currentByWorkoutExerciseId.map((x) => x.exerciseId).filter(Boolean) as string[])
     );
 
-    const map: Record<string, WorkoutSet[]> = {};
-    for (const [k, v] of entries) map[k] = v;
-    return map;
+    const out: Record<string, WorkoutSet[]> = {};
+    for (const x of currentByWorkoutExerciseId) out[x.workoutExerciseId] = [];
+    if (exerciseIds.length === 0) return out;
+
+    // 1) Load recent previous sessions once.
+    const { data: prevSessions, error: sessErr } = await supabase
+      .from('workout_sessions')
+      .select('id, started_at')
+      .eq('user_id', userId)
+      .lt('started_at', startedAt)
+      .order('started_at', { ascending: false })
+      .limit(50);
+    if (sessErr) {
+      console.warn('Previous sessions load failed', sessErr);
+      return out;
+    }
+    if (!prevSessions || prevSessions.length === 0) return out;
+
+    const prevSessionIds = prevSessions.map((s: any) => s.id);
+    const sessionRank: Record<string, number> = {};
+    prevSessionIds.forEach((id: string, idx: number) => (sessionRank[id] = idx));
+
+    // 2) Load all matching prior workout_exercises in one query.
+    const { data: prevWEs, error: weErr } = await supabase
+      .from('workout_exercises')
+      .select('id, exercise_id, workout_session_id')
+      .in('workout_session_id', prevSessionIds)
+      .in('exercise_id', exerciseIds);
+    if (weErr) {
+      console.warn('Previous exercises load failed', weErr);
+      return out;
+    }
+    if (!prevWEs || prevWEs.length === 0) return out;
+
+    // For each exercise_id, pick the most recent session (lowest rank).
+    const bestPrevByExerciseId: Record<string, { weId: string; rank: number }> = {};
+    for (const row of prevWEs as any[]) {
+      const exId = row.exercise_id as string;
+      const sessId = row.workout_session_id as string;
+      const r = sessionRank[sessId] ?? 999999;
+      const cur = bestPrevByExerciseId[exId];
+      if (!cur || r < cur.rank) bestPrevByExerciseId[exId] = { weId: row.id as string, rank: r };
+    }
+
+    const prevWorkoutExerciseIds = Array.from(new Set(Object.values(bestPrevByExerciseId).map((x) => x.weId)));
+    if (prevWorkoutExerciseIds.length === 0) return out;
+
+    // 3) Load all sets for those previous workout_exercise ids in one query.
+    const { data: prevSets, error: setsErr } = await supabase
+      .from('workout_sets')
+      .select('*')
+      .in('workout_exercise_id', prevWorkoutExerciseIds)
+      .order('set_index');
+    if (setsErr) {
+      console.warn('Previous sets load failed', setsErr);
+      return out;
+    }
+
+    const prevSetsByWorkoutExerciseId: Record<string, WorkoutSet[]> = {};
+    for (const s of (prevSets || []) as any[]) {
+      const weId = s.workout_exercise_id as string;
+      if (!prevSetsByWorkoutExerciseId[weId]) prevSetsByWorkoutExerciseId[weId] = [];
+      prevSetsByWorkoutExerciseId[weId].push(s as any);
+    }
+
+    // Map previous sets back to the CURRENT workout_exercise ids.
+    for (const cur of currentByWorkoutExerciseId) {
+      const exId = cur.exerciseId;
+      if (!exId) continue;
+      const best = bestPrevByExerciseId[exId];
+      if (!best) continue;
+      out[cur.workoutExerciseId] = prevSetsByWorkoutExerciseId[best.weId] || [];
+    }
+
+    return out;
   };
 
   const prefillRepsFromPrevious = (
@@ -1105,83 +1205,6 @@ const applyReplaceExercise = async () => {
     }
   };
 
-  // --- iOS/Safari resilience: flush & debounce draft input ---
-  const flushDraftField = async (setId: string, field: 'reps' | 'weight') => {
-    const raw = (draftRef.current?.[setId]?.[field] ?? '').trim();
-    // Interpret empty as 0 (keeps DB consistent and prevents losing the user's clear action).
-    const num = raw === '' ? 0 : Number(raw);
-    await saveSet(setId, field, Number.isFinite(num) ? num : 0);
-  };
-
-  const queueDraftSave = (setId: string, field: 'reps' | 'weight', value: string) => {
-    setDraftValue(setId, field, value);
-    const key = `${setId}:${field}`;
-    const prevTimeout = pendingDraftSaveRef.current[key];
-    if (prevTimeout) window.clearTimeout(prevTimeout);
-    // Debounce to avoid hammering the DB while typing.
-    pendingDraftSaveRef.current[key] = window.setTimeout(() => {
-      flushDraftField(setId, field).catch(() => {
-        // best-effort; if it fails we'll resync on next load.
-      });
-    }, 600);
-  };
-
-
-  const flushExerciseNotes = async (workoutExerciseId: string) => {
-    const notes = notesDraftRef.current?.[workoutExerciseId];
-    if (notes === undefined) return;
-    try {
-      const { error } = await supabase
-        .from('workout_exercises')
-        .update({ notes })
-        .eq('id', workoutExerciseId);
-      if (error) throw error;
-    } catch {
-      // best-effort
-    }
-  };
-
-  const scheduleNotesSave = (workoutExerciseId: string, notes: string) => {
-    notesDraftRef.current = { ...(notesDraftRef.current || {}), [workoutExerciseId]: notes };
-    const existing = pendingNotesSaveRef.current?.[workoutExerciseId];
-    if (existing) window.clearTimeout(existing);
-
-    const t = window.setTimeout(() => {
-      flushExerciseNotes(workoutExerciseId).catch(() => {});
-    }, 600);
-
-    pendingNotesSaveRef.current = { ...(pendingNotesSaveRef.current || {}), [workoutExerciseId]: t };
-  };
-
-  const flushAllDrafts = () => {
-    const d = draftRef.current || {};
-    for (const setId of Object.keys(d)) {
-      const fields = d[setId] || {};
-      if (fields.weight !== undefined) {
-        flushDraftField(setId, 'weight').catch(() => {});
-      }
-      if (fields.reps !== undefined) {
-        flushDraftField(setId, 'reps').catch(() => {});
-      }
-    }
-  };
-
-  useEffect(() => {
-    const onHidden = () => {
-      // iOS Safari often snapshots/kills the tab without blurring inputs.
-      if (document.visibilityState === 'hidden') flushAllDrafts();
-    };
-    const onPageHide = () => flushAllDrafts();
-
-    document.addEventListener('visibilitychange', onHidden);
-    window.addEventListener('pagehide', onPageHide);
-    return () => {
-      document.removeEventListener('visibilitychange', onHidden);
-      window.removeEventListener('pagehide', onPageHide);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   const getExerciseRestSeconds = (ex: any): number => {
   // Rest time is set per exercise; default is 60 seconds.
   const v = ex?.exercises?.rest_seconds ?? ex?.exercises?.default_set_scheme?.restSeconds;
@@ -1191,29 +1214,64 @@ const applyReplaceExercise = async () => {
 
   const handleToggleCompleted = async (workoutExerciseRow: any, setRow: any) => {
     const willComplete = !setRow.is_completed;
-    // Flush any in-flight reps/weight edits before marking complete so values never get lost.
-    if (draftRef.current?.[setRow.id]?.weight !== undefined) {
-      await flushDraftField(setRow.id, 'weight');
-      clearDraftField(setRow.id, 'weight');
-    }
-    if (draftRef.current?.[setRow.id]?.reps !== undefined) {
-      await flushDraftField(setRow.id, 'reps');
-      clearDraftField(setRow.id, 'reps');
-    }
-
     await saveSet(setRow.id, 'is_completed', willComplete);
     if (willComplete) startRestTimer(workoutExerciseRow.id, getExerciseRestSeconds(workoutExerciseRow));
   };
 
-  const endWorkout = async () => {
-    // Always persist in-flight edits before ending.
-    await flushAllDrafts();
+  // Guardrail: only allow ending/saving a workout when all sets are completed
+  // and required fields are filled out.
+  const getWorkoutValidationError = (): string | null => {
+    for (const ex of exercises) {
+      const exName = ex?.exercises?.name || ex?.name || 'Exercise';
+      const cardio = isCardioWorkoutExercise(ex);
 
+      if (cardio) {
+        const secs = Number((ex as any)?.duration_seconds || 0);
+        if (!Number.isFinite(secs) || secs <= 0) {
+          return `Please complete your workout before finishing.\n\n${exName} — cardio duration must be greater than 0.`;
+        }
+        continue;
+      }
+      const exSets = sets[ex.id] || [];
+
+      if (exSets.length === 0) {
+        return `Please complete your workout before finishing.\n\nMissing sets for: ${exName}`;
+      }
+
+      for (let i = 0; i < exSets.length; i++) {
+        const s: any = exSets[i];
+        const setLabel = `Set ${i + 1}`;
+
+        // Require completion toggle.
+        if (!s?.is_completed) {
+          return `Please complete all sets before finishing.\n\n${exName} — ${setLabel} is not checked.`;
+        }
+
+        // Require reps > 0
+        const reps = Number(s?.reps);
+        if (!Number.isFinite(reps) || reps <= 0) {
+          return `Please fill out all fields before finishing.\n\n${exName} — ${setLabel} has missing reps.`;
+        }
+
+        // Require a numeric weight (0 is allowed for bodyweight)
+        const weight = Number(s?.weight);
+        if (!Number.isFinite(weight) || weight < 0) {
+          return `Please fill out all fields before finishing.\n\n${exName} — ${setLabel} has missing weight.`;
+        }
+      }
+    }
+
+    return null;
+  };
+
+  const endWorkout = async () => {
     const ok = window.confirm('End workout? This will save it to History.');
     if (!ok) return;
 
     try {
       setEnding(true);
+      // Force-save any pending input values (critical for iOS/Safari).
+      await flushDraftSaves();
       await supabase.from('workout_sessions').update({ ended_at: new Date().toISOString() }).eq('id', sessionId);
       router.push('/history');
     } finally {
@@ -1579,26 +1637,6 @@ const applyReplaceExercise = async () => {
                     </div>
                   )}
                 </div>
-
-                {!isReorderMode && (
-                  <div className="mt-3">
-                    <div className="mb-1 text-xs font-semibold tracking-wide text-muted-foreground">Notes</div>
-                    <textarea
-                      value={String((exercise as any)?.notes ?? '')}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        setExercises((prev) =>
-                          prev.map((x: any) => (x.id === exercise.id ? { ...x, notes: v } : x))
-                        );
-                        scheduleNotesSave(exercise.id, v);
-                      }}
-                      disabled={sessionIsCompleted}
-                      placeholder="Add notes..."
-                      className="w-full min-h-[44px] resize-none rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-40 disabled:pointer-events-none"
-                    />
-                  </div>
-                )}
-
                 {!isReorderMode && (isCardio ? (() => {
                     const savedSecs = Number((exercise as any)?.duration_seconds || 0);
                     const draftValue = (cardioDraft[exercise.id] ?? '').toString();
@@ -1754,8 +1792,12 @@ const applyReplaceExercise = async () => {
                   aria-label={`Weight for set ${idx + 1}`}
                   step="0.5"
                   placeholder={weightPlaceholder}
-                  defaultValue={(() => { const n = Number(set.weight ?? 0); return !Number.isFinite(n) || n === 0 ? '' : String(n); })()}
-                  onChange={(e) => queueDraftSave(set.id, 'weight', e.target.value)}
+                  value={getDisplayValue(set.id, 'weight', set.weight)}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setDraftValue(set.id, 'weight', v);
+                    scheduleDraftSave(set.id, 'weight', v);
+                  }}
                   onFocus={(e) => e.currentTarget.select()}
                   ref={(el) => {
                     const keyA = `${exercise.id}:${set.id}:weight`;
@@ -1770,8 +1812,6 @@ const applyReplaceExercise = async () => {
                   }}
                   onKeyDown={(e) => handleWeightKeyDown(exercise.id, idx, (sets[exercise.id] || []).length, e)}
                   onBlur={() => {
-                    const hasDraft = draftRef.current?.[set.id]?.weight !== undefined;
-                    if (!hasDraft) return;
                     const raw = getDraftRaw(set.id, 'weight').trim();
                     const num = raw === '' ? 0 : Number(raw);
                     saveSet(set.id, 'weight', Number.isFinite(num) ? num : 0);
@@ -1788,8 +1828,12 @@ const applyReplaceExercise = async () => {
                   inputMode="numeric"
                   aria-label={`Reps for set ${idx + 1}`}
                   placeholder={repsPlaceholder}
-                  defaultValue={(() => { const n = Number(set.reps ?? 0); return !Number.isFinite(n) || n === 0 ? '' : String(n); })()}
-                  onChange={(e) => queueDraftSave(set.id, 'reps', e.target.value)}
+                  value={getDisplayValue(set.id, 'reps', set.reps)}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setDraftValue(set.id, 'reps', v);
+                    scheduleDraftSave(set.id, 'reps', v);
+                  }}
                   onFocus={(e) => e.currentTarget.select()}
                   ref={(el) => {
                     const keyA = `${exercise.id}:${set.id}:reps`;
@@ -1804,8 +1848,6 @@ const applyReplaceExercise = async () => {
                   }}
                   onKeyDown={(e) => handleRepsKeyDown(exercise.id, idx, e)}
                   onBlur={() => {
-                    const hasDraft = draftRef.current?.[set.id]?.reps !== undefined;
-                    if (!hasDraft) return;
                     const raw = getDraftRaw(set.id, 'reps').trim();
                     const num = raw === '' ? 0 : Number(raw);
                     saveSet(set.id, 'reps', Number.isFinite(num) ? num : 0);

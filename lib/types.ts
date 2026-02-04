@@ -73,8 +73,6 @@ export interface WorkoutExercise {
   order_index: number;
   superset_group_id: string | null;
   technique_tags: string[];
-  /** Per-exercise notes for this workout (saved to history). */
-  notes?: string;
   exercises?: Exercise;
 }
 
