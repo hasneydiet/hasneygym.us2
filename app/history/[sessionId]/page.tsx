@@ -80,11 +80,15 @@ export default function SessionDetailPage() {
 
         // Compute session analytics (volume, PRs, duration) for this detail view.
         try {
+          // IMPORTANT: PRs/analytics must only use COMPLETED sets.
+          // If a user typed values but did not mark any set complete, it should NOT
+          // count toward volume or PRs.
           const total = exData.reduce(
             (acc, ex) => {
               const s = setsMap[ex.id] || [];
-              const completedCount = s.filter((x) => x.is_completed).length;
-              const m = computeExerciseMetricsDetailed(s);
+              const completed = s.filter((x) => x.is_completed);
+              const completedCount = completed.length;
+              const m = completedCount > 0 ? computeExerciseMetricsDetailed(completed) : { volume: 0, bestWeight: 0, bestReps: 0, est1RM: 0 };
               return {
                 totalVolume: acc.totalVolume + (m.volume || 0),
                 completedSets: acc.completedSets + completedCount,
@@ -96,6 +100,8 @@ export default function SessionDetailPage() {
                     bestWeight: m.bestWeight || 0,
                     bestReps: m.bestReps || 0,
                     est1RM: m.est1RM || 0,
+                    // Track whether this exercise had any completed set in THIS session.
+                    hasCompleted: completedCount > 0,
                   },
                 },
               };
@@ -105,7 +111,7 @@ export default function SessionDetailPage() {
               completedSets: 0,
               perExercise: {} as Record<
                 string,
-                { name: string; volume: number; bestWeight: number; bestReps: number; est1RM: number }
+                { name: string; volume: number; bestWeight: number; bestReps: number; est1RM: number; hasCompleted: boolean }
               >,
             }
           );
@@ -162,7 +168,9 @@ export default function SessionDetailPage() {
               for (const [weId, sArr] of Object.entries(setsByWE)) {
                 const exId = weIdToExerciseId[weId];
                 if (!exId) continue;
-                const m = computeExerciseMetricsDetailed(sArr);
+                const completed = (sArr || []).filter((x) => (x as any).is_completed);
+                if (completed.length === 0) continue;
+                const m = computeExerciseMetricsDetailed(completed);
                 const cur = bestByExercise[exId] || { volume: 0, bestWeight: 0, est1RM: 0 };
                 bestByExercise[exId] = {
                   volume: Math.max(cur.volume, m.volume || 0),
@@ -174,6 +182,7 @@ export default function SessionDetailPage() {
               // Compare this session's metrics vs prior best.
               for (const exId of exerciseIds) {
                 const cur = total.perExercise[exId];
+                if (!cur?.hasCompleted) continue;
                 const prev = bestByExercise[exId] || { volume: 0, bestWeight: 0, est1RM: 0 };
                 if (cur.bestWeight > 0 && cur.bestWeight > prev.bestWeight) {
                   prs.push({
