@@ -4,6 +4,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useCoach } from '@/hooks/useCoach';
+import { cacheDel } from '@/lib/perfCache';
 
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
@@ -147,6 +148,11 @@ export default function WorkoutPage() {
   const [sets, setSets] = useState<{ [exerciseId: string]: WorkoutSet[] }>({});
 
   const [prevSetsByExercise, setPrevSetsByExercise] = useState<Record<string, WorkoutSet[]>>({});
+
+  // Prevent out-of-order async loads (multiple loadWorkout() calls can overlap
+  // when effectiveUserId/sessionId changes). Without this, a slower, older load
+  // can overwrite newer state and cause "flashing" and incorrect reps/weight.
+  const loadSeqRef = useRef(0);
 
   // Add Exercise (session-only): allows adding extra exercises during a workout day
   const [showAddExercise, setShowAddExercise] = useState(false);
@@ -876,9 +882,11 @@ const applyReplaceExercise = async () => {
   }, [pendingFocusKey, sets]);
 
   const loadWorkout = async () => {
+    const loadId = ++loadSeqRef.current;
     // Make sure any in-flight edits are persisted before we refresh data.
     // This prevents iOS Safari from losing edits when switching exercises or scrolling.
     await flushDraftSaves();
+    if (loadId !== loadSeqRef.current) return;
 
     const { data: sessionData } = await supabase
       .from('workout_sessions')
@@ -887,6 +895,8 @@ const applyReplaceExercise = async () => {
       .single();
 
     if (!sessionData) return;
+
+    if (loadId !== loadSeqRef.current) return;
 
     setSession(sessionData);
 
@@ -898,6 +908,8 @@ const applyReplaceExercise = async () => {
 
     if (!exData) return;
 
+    if (loadId !== loadSeqRef.current) return;
+
     setExercises(exData);
 
     const exIds = exData.map((e: any) => e.id);
@@ -906,6 +918,8 @@ const applyReplaceExercise = async () => {
       .select('*')
       .in('workout_exercise_id', exIds)
       .order('set_index');
+
+    if (loadId !== loadSeqRef.current) return;
 
     const map: { [exerciseId: string]: WorkoutSet[] } = {};
     for (const ex of exData) map[ex.id] = [];
@@ -917,6 +931,7 @@ const applyReplaceExercise = async () => {
     // This prevents the "flash" where default reps appear briefly before being replaced
     // by previous-session reps.
     const prevMap = await loadPreviousSetsForExercises(exData, sessionData.started_at, sessionData.user_id);
+    if (loadId !== loadSeqRef.current) return;
 
     const { patched, updates } = prefillRepsFromPrevious(exData, map, prevMap);
 
@@ -944,6 +959,7 @@ const applyReplaceExercise = async () => {
     setSets(patchedWithDrafts);
 
     // Persist the reps prefill in the background (no second setSets call).
+    if (loadId !== loadSeqRef.current) return;
     if (updates.length > 0) {
       const { error: upErr } = await supabase.from('workout_sets').upsert(updates, { onConflict: 'id' });
       if (upErr) {
@@ -1273,6 +1289,11 @@ const applyReplaceExercise = async () => {
       // Force-save any pending input values (critical for iOS/Safari).
       await flushDraftSaves();
       await supabase.from('workout_sessions').update({ ended_at: new Date().toISOString() }).eq('id', sessionId);
+
+      // Ensure History updates immediately (it uses a short-lived local cache).
+      const uid = effectiveUserId || (session as any)?.user_id;
+      if (uid) cacheDel(`history:sessions:${uid}:v1`);
+
       router.push('/history');
     } finally {
       setEnding(false);
@@ -1328,6 +1349,10 @@ const applyReplaceExercise = async () => {
         );
         return;
       }
+
+      // Ensure History doesn't temporarily show the discarded empty session.
+      const uid = effectiveUserId || (session as any)?.user_id;
+      if (uid) cacheDel(`history:sessions:${uid}:v1`);
 
       router.push('/workout/start');
     } catch (err: any) {
