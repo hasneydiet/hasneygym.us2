@@ -256,14 +256,14 @@ const onSetSwipeEnd = (setId: string, _e: any) => {
   const flushDraftSaves = async () => {
     // Force-save any in-flight draft values so they don't get lost if we reload,
     // the user switches exercises, or Safari backgrounding interrupts blur.
-    const pending: Array<Promise<any>> = [];
+    const pending: Array<PromiseLike<any>> = [];
     for (const setId of Object.keys(draft)) {
       const fields = draft[setId] || {};
       for (const field of Object.keys(fields)) {
         if (field !== 'weight' && field !== 'reps') continue;
         const raw = String(fields[field] ?? '').trim();
         const num = raw === '' ? 0 : Number(raw);
-        pending.push(supabase.from('workout_sets').update({ [field]: Number.isFinite(num) ? num : 0 }).eq('id', setId));
+        pending.push(Promise.resolve(supabase.from('workout_sets').update({ [field]: Number.isFinite(num) ? num : 0 }).eq('id', setId)));
       }
     }
     if (pending.length > 0) {
