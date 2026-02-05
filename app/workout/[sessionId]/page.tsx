@@ -248,16 +248,23 @@ const onSetSwipeEnd = (setId: string, _e: any) => {
   // scroll, switch apps, or jump between exercises quickly.
   const draftSaveTimers = useRef<Record<string, any>>({});
 
-  const scheduleDraftSave = (setId: string, field: 'weight' | 'reps', raw: string) => {
+  const scheduleDraftSave = (
+    workoutExerciseId: string,
+    setId: string,
+    field: 'weight' | 'reps',
+    raw: string
+  ) => {
     const key = `${setId}:${field}`;
     if (draftSaveTimers.current[key]) clearTimeout(draftSaveTimers.current[key]);
+
+    // Longer debounce to reduce network chatter and UI jank on mobile keyboards.
     draftSaveTimers.current[key] = setTimeout(() => {
       const trimmed = String(raw ?? '').trim();
       const num = trimmed === '' ? 0 : Number(trimmed);
-      // Save immediately so History and "Previous" stay correct even if blur never fires.
-      saveSet(setId, field, Number.isFinite(num) ? num : 0);
-    }, 250);
+      saveSet(workoutExerciseId, setId, field, Number.isFinite(num) ? num : 0);
+    }, 800);
   };
+
 
   const flushDraftSaves = async () => {
     // Force-save any in-flight draft values so they don't get lost if we reload,
@@ -1203,15 +1210,33 @@ const applyReplaceExercise = async () => {
     return { patched, updates };
   };
 
-  const saveSet = async (setId: string, field: string, value: any) => {
-    // optimistic update so the value stays visible immediately
+  const saveSet = async (
+    workoutExerciseId: string,
+    setId: string,
+    field: string,
+    value: any
+  ) => {
+    let shouldPersist = true;
+
+    // Optimistic update: update only the affected exercise's set list (avoids O(allSets) work on every keystroke).
     setSets((prev) => {
-      const next: { [exerciseId: string]: WorkoutSet[] } = {};
-      for (const exId of Object.keys(prev)) {
-        next[exId] = prev[exId].map((s: any) => (s.id === setId ? { ...s, [field]: value } : s));
+      const list = prev?.[workoutExerciseId];
+      if (!list) return prev;
+
+      const idx = list.findIndex((s: any) => s?.id === setId);
+      if (idx === -1) return prev;
+
+      const cur: any = list[idx];
+      if (cur && cur[field] === value) {
+        shouldPersist = false;
+        return prev;
       }
-      return next;
+
+      const nextList = list.map((s: any) => (s?.id === setId ? { ...s, [field]: value } : s));
+      return { ...prev, [workoutExerciseId]: nextList };
     });
+
+    if (!shouldPersist) return;
 
     const { error } = await supabase.from('workout_sets').update({ [field]: value }).eq('id', setId);
 
@@ -1220,6 +1245,7 @@ const applyReplaceExercise = async () => {
       loadWorkout();
     }
   };
+
 
   const getExerciseRestSeconds = (ex: any): number => {
   // Rest time is set per exercise; default is 60 seconds.
@@ -1230,7 +1256,7 @@ const applyReplaceExercise = async () => {
 
   const handleToggleCompleted = async (workoutExerciseRow: any, setRow: any) => {
     const willComplete = !setRow.is_completed;
-    await saveSet(setRow.id, 'is_completed', willComplete);
+    await saveSet(workoutExerciseRow.id, setRow.id, 'is_completed', willComplete);
     if (willComplete) startRestTimer(workoutExerciseRow.id, getExerciseRestSeconds(workoutExerciseRow));
   };
 
@@ -1821,7 +1847,7 @@ const applyReplaceExercise = async () => {
                   onChange={(e) => {
                     const v = e.target.value;
                     setDraftValue(set.id, 'weight', v);
-                    scheduleDraftSave(set.id, 'weight', v);
+                    scheduleDraftSave(exercise.id, set.id, 'weight', v);
                   }}
                   onFocus={(e) => e.currentTarget.select()}
                   ref={(el) => {
@@ -1839,7 +1865,7 @@ const applyReplaceExercise = async () => {
                   onBlur={() => {
                     const raw = getDraftRaw(set.id, 'weight').trim();
                     const num = raw === '' ? 0 : Number(raw);
-                    saveSet(set.id, 'weight', Number.isFinite(num) ? num : 0);
+                    saveSet(exercise.id, set.id, 'weight', Number.isFinite(num) ? num : 0);
                     clearDraftField(set.id, 'weight');
                   }}
                   className="w-full h-10 sm:h-11 px-1 sm:px-2 py-2 rounded-xl border border-input bg-background text-center text-sm sm:text-base text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
@@ -1857,7 +1883,7 @@ const applyReplaceExercise = async () => {
                   onChange={(e) => {
                     const v = e.target.value;
                     setDraftValue(set.id, 'reps', v);
-                    scheduleDraftSave(set.id, 'reps', v);
+                    scheduleDraftSave(exercise.id, set.id, 'reps', v);
                   }}
                   onFocus={(e) => e.currentTarget.select()}
                   ref={(el) => {
@@ -1875,7 +1901,7 @@ const applyReplaceExercise = async () => {
                   onBlur={() => {
                     const raw = getDraftRaw(set.id, 'reps').trim();
                     const num = raw === '' ? 0 : Number(raw);
-                    saveSet(set.id, 'reps', Number.isFinite(num) ? num : 0);
+                    saveSet(exercise.id, set.id, 'reps', Number.isFinite(num) ? num : 0);
                     clearDraftField(set.id, 'reps');
                   }}
                   className="w-full h-10 sm:h-11 px-1 sm:px-2 py-2 rounded-xl border border-input bg-background text-center text-sm sm:text-base text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
