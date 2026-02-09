@@ -3,6 +3,7 @@ import { Inter } from 'next/font/google';
 import './globals.css';
 import { ThemeProvider } from '@/lib/theme';
 import PWARegister from '@/components/pwa/PWARegister';
+import IOSViewportFix from '@/components/ios/IOSViewportFix';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -50,6 +51,7 @@ export default function RootLayout({
         className={`${inter.className} min-h-screen antialiased overflow-x-hidden selection:bg-primary/20 selection:text-foreground`}
       >
         <ThemeProvider>
+          <IOSViewportFix />
           <PWARegister />
           {children}
         </ThemeProvider>
