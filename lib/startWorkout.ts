@@ -152,7 +152,9 @@ export async function startWorkoutForDay(input: StartWorkoutInput): Promise<stri
     }
 
     if (setsToInsert.length > 0) {
-      const { error: wsErr } = await supabase.from('workout_sets').insert(setsToInsert);
+      const { error: wsErr } = await supabase
+        .from('workout_sets')
+        .upsert(setsToInsert, { onConflict: 'workout_exercise_id,set_index' });
       if (wsErr) throw wsErr;
     }
   }
