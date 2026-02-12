@@ -1,32 +1,40 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuthCoach } from '@/components/providers/AuthCoachProvider';
+import { supabase } from '@/lib/supabase';
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
+  const [loading, setLoading] = useState(true);
   const router = useRouter();
-  const { loading, user } = useAuthCoach();
 
-  // Centralized auth: only redirect when the provider has finished initializing.
   useEffect(() => {
-    if (loading) return;
-    if (!user) router.replace('/login');
-  }, [loading, user, router]);
+    const checkAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        router.push('/login');
+      } else {
+        setLoading(false);
+      }
+    };
+
+    checkAuth();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!session) {
+        router.push('/login');
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [router]);
 
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-lg">Loading...</div>
-      </div>
-    );
-  }
-
-  if (!user) {
-    // During the redirect frame, keep layout stable.
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-lg">Redirecting...</div>
       </div>
     );
   }

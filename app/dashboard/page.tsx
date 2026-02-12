@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Navigation from '@/components/Navigation';
 import AuthGuard from '@/components/AuthGuard';
 import { supabase } from '@/lib/supabase';
-import { useAuthCoach } from '@/components/providers/AuthCoachProvider';
+import { useCoach } from '@/hooks/useCoach';
 import { sortRoutineDays } from '@/lib/routineDaySort';
 import { cacheGet, cacheSet } from '@/lib/perfCache';
 import { startWorkoutForDay } from '@/lib/startWorkout';
@@ -99,9 +99,22 @@ function goalLabel(goal: ProfileGoal) {
   }
 }
 
+async function getAuthedUser() {
+  const { data: sessData } = await supabase.auth.getSession();
+  const session = sessData?.session ?? null;
+  if (session?.user) return session.user;
+  try {
+    const res = await supabase.auth.getUser();
+    if (res.error) return null;
+    return res.data?.user ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export default function DashboardPage() {
   const router = useRouter();
-  const { loading: authLoading, user, effectiveUserId } = useAuthCoach();
+  const { effectiveUserId } = useCoach();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -143,8 +156,12 @@ export default function DashboardPage() {
       setError(null);
 
       try {
-        if (!effectiveUserId) return;
-        const uid = effectiveUserId;
+        const user = await getAuthedUser();
+        if (!user) {
+          router.replace('/login');
+          return;
+        }
+        const uid = effectiveUserId ?? user.id;
 
         // Parallelize independent dashboard queries to reduce first-load latency on mobile.
         const [profRes, daysRes, lastRes] = await Promise.all([
@@ -231,14 +248,6 @@ export default function DashboardPage() {
     };
 
     // Fast path: show cached data immediately, then revalidate.
-    if (!mounted) return;
-    // Wait for centralized auth to finish; avoids double-load on first mount.
-    if (authLoading) return;
-    if (!user) {
-      router.replace('/login');
-      return;
-    }
-
     if (cacheKey) {
       const cached = cacheGet<{ days: DashboardDay[]; lastWorkout: LastWorkout | null; profile: UserProfile | null }>(cacheKey);
       if (cached && cached.days) {
@@ -257,7 +266,7 @@ export default function DashboardPage() {
     return () => {
       mounted = false;
     };
-  }, [router, authLoading, user, effectiveUserId, cacheKey]);
+  }, [router, effectiveUserId, cacheKey]);
 
   useEffect(() => {
     let mounted = true;
@@ -341,11 +350,12 @@ export default function DashboardPage() {
       setStarting(true);
       setError(null);
 
-      if (!effectiveUserId) {
+      const user = await getAuthedUser();
+      if (!user) {
         router.replace('/login');
         return;
       }
-      const uid = effectiveUserId;
+      const uid = effectiveUserId ?? user.id;
       const sessionId = await startWorkoutForDay({
         userId: uid,
         routineId: nextDay.routine_id,
@@ -384,11 +394,12 @@ export default function DashboardPage() {
       setSavingProfile(true);
       setError(null);
 
-      if (!effectiveUserId) {
+      const user = await getAuthedUser();
+      if (!user) {
         router.replace('/login');
         return;
       }
-      const uid = effectiveUserId;
+      const uid = effectiveUserId ?? user.id;
 
       let avatarUrlToSave: string | null = draftAvatarUrl;
       if (draftAvatarFile) {

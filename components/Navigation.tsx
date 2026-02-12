@@ -71,86 +71,33 @@ export default function Navigation() {
         { href: '/history', icon: History, label: 'History' },
       ];
 
-  // Mobile performance: prefetching helps tab switches, but doing it too early
-  // can compete with the dashboard's first Supabase queries (especially on iOS Safari).
-  // Strategy:
-  // - Skip prefetch on slow/data-saver connections
-  // - Delay until after the critical first render window
-  // - Prefetch in two small stages (most-likely routes first)
+  // Mobile performance: aggressively prefetch tab routes so switching tabs
+  // doesn't wait on route chunk downloads over slower connections.
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    const hrefs = navItems.map((n) => n.href);
 
-    // Only prefetch when visible; avoid burning bandwidth in background.
-    if (document.visibilityState !== 'visible') return;
-
-    const conn: any = (navigator as any).connection;
-    const saveData = Boolean(conn?.saveData);
-    const effectiveType = String(conn?.effectiveType || '').toLowerCase();
-    const isSlow = saveData || effectiveType.includes('2g') || effectiveType.includes('3g');
-    if (isSlow) return;
-
-    const hrefs = navItems.map((n) => n.href).filter((h) => h !== pathname);
-
-    // Prefer likely next destinations first.
-    const primary = hrefs.filter((h) => h === '/workout/start' || h === '/exercises');
-    const secondary = hrefs.filter((h) => !primary.includes(h));
-
-    let cancelled = false;
-    const w: any = window as any;
-    const cleanupFns: Array<() => void> = [];
-
-    const safePrefetch = (list: string[]) => {
-      if (cancelled) return;
+    const doPrefetch = () => {
       try {
-        list.forEach((h) => router.prefetch(h));
+        hrefs.forEach((h) => router.prefetch(h));
       } catch {
-        // best-effort
+        // Prefetch is a best-effort optimization; ignore failures.
       }
     };
 
-    const scheduleIdle = (fn: () => void, timeout: number) => {
-      if (typeof w.requestIdleCallback === 'function') {
-        const id = w.requestIdleCallback(fn, { timeout });
-        return () => {
-          try {
-            w.cancelIdleCallback?.(id);
-          } catch {}
-        };
-      }
-      const t = window.setTimeout(fn, Math.min(2500, timeout));
-      return () => window.clearTimeout(t);
-    };
-
-    // Delay a bit to avoid fighting the initial dashboard load.
-    const t0 = window.setTimeout(() => {
-      const cancelPrimary = scheduleIdle(() => safePrefetch(primary), 5000);
-      const cancelSecondary = scheduleIdle(() => safePrefetch(secondary), 9000);
-
-      const onVis = () => {
-        if (document.visibilityState === 'hidden') {
-          cancelPrimary();
-          cancelSecondary();
-        }
-      };
-      document.addEventListener('visibilitychange', onVis);
-
-      // Cleanup for this stage
-      cleanupFns.push(() => document.removeEventListener('visibilitychange', onVis));
-      cleanupFns.push(cancelPrimary);
-      cleanupFns.push(cancelSecondary);
-    }, 1800);
-
-    cleanupFns.push(() => window.clearTimeout(t0));
-
-    return () => {
-      cancelled = true;
-      cleanupFns.forEach((fn) => {
+    // Prefer idle time so we don't compete with initial rendering.
+    const w = typeof window !== 'undefined' ? (window as any) : null;
+    if (w && typeof w.requestIdleCallback === 'function') {
+      const id = w.requestIdleCallback(doPrefetch, { timeout: 1500 });
+      return () => {
         try {
-          fn();
+          w.cancelIdleCallback?.(id);
         } catch {}
-      });
-    };
-  }, [router, pathname, isCoach, impersonateUserId]);
+      };
+    }
+
+    const t = setTimeout(doPrefetch, 400);
+    return () => clearTimeout(t);
+  }, [router, isCoach, impersonateUserId]);
 
 
   const isActive = (href: string) => {

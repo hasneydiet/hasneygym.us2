@@ -621,12 +621,9 @@ const applyReplaceExercise = async () => {
       await supabase.from('workout_sets').upsert(updates, { onConflict: 'id' });
     } else {
       // If there are no sets, create at least 1
-      await supabase
-        .from('workout_sets')
-        .upsert(
-          [{ workout_exercise_id: workoutExerciseId, set_index: 0, reps: defaultReps, weight: 0, rpe: null, is_completed: false }],
-          { onConflict: 'workout_exercise_id,set_index' }
-        );
+      await supabase.from('workout_sets').insert([
+        { workout_exercise_id: workoutExerciseId, set_index: 0, reps: defaultReps, weight: 0, rpe: null, is_completed: false },
+      ]);
     }
 
     setShowReplaceExercise(false);
@@ -1053,9 +1050,7 @@ const applyReplaceExercise = async () => {
           is_completed: false,
         }));
 
-        const { error: wsErr } = await supabase
-          .from('workout_sets')
-          .upsert(setsToInsert, { onConflict: 'workout_exercise_id,set_index' });
+        const { error: wsErr } = await supabase.from('workout_sets').insert(setsToInsert);
         if (wsErr) throw wsErr;
       }
 
@@ -1395,31 +1390,20 @@ const applyReplaceExercise = async () => {
   };
 
   const addSet = async (exerciseId: string) => {
-    // IMPORTANT: workout_sets has a unique constraint on (workout_exercise_id, set_index).
-    // On mobile it’s easy to double-tap “+ Set” or trigger two adds before local state refreshes.
-    // Use an idempotent upsert keyed by (workout_exercise_id, set_index) to avoid 23505 errors.
     const currentSets = sets[exerciseId] || [];
     const lastSet = currentSets[currentSets.length - 1];
 
-    const nextIndex =
-      currentSets.length === 0
-        ? 0
-        : Math.max(...currentSets.map((s: any) => Number(s?.set_index ?? -1)).filter((n: any) => Number.isFinite(n))) + 1;
-
-    const payload = {
-      workout_exercise_id: exerciseId,
-      set_index: nextIndex,
-      reps: lastSet?.reps || 0,
-      weight: lastSet?.weight || 0,
-      rpe: null,
-      is_completed: false,
-    };
-
     const { data, error } = await supabase
       .from('workout_sets')
-      .upsert(payload, { onConflict: 'workout_exercise_id,set_index' })
+      .insert({
+        workout_exercise_id: exerciseId,
+        set_index: currentSets.length,
+        reps: lastSet?.reps || 0,
+        weight: lastSet?.weight || 0,
+        rpe: null,
+      })
       .select()
-      .maybeSingle();
+      .single();
 
     if (error) {
       console.error('Add set failed:', error);
@@ -1427,38 +1411,20 @@ const applyReplaceExercise = async () => {
       return;
     }
 
-    // If the row already existed, PostgREST may return null depending on headers/policies.
-    // Fetch it as a fallback so UI stays consistent.
-    let row: any = data;
-    if (!row) {
-      const { data: existing, error: selErr } = await supabase
-        .from('workout_sets')
-        .select('*')
-        .eq('workout_exercise_id', exerciseId)
-        .eq('set_index', nextIndex)
-        .maybeSingle();
-      if (selErr) {
-        console.warn('Add set fallback select failed:', selErr);
-      } else {
-        row = existing as any;
-      }
-    }
-
-    if (row) {
+    if (data) {
       // Optimistic UI update so the new set appears immediately on mobile even
       // if the session/user context briefly flickers.
       setSets((prev) => {
         const next = { ...prev };
         const list = next[exerciseId] ? [...next[exerciseId]] : [];
-        // Ensure we don't duplicate in local state if a double-tap happened.
-        if (!list.some((s: any) => s?.id === row.id)) list.push(row);
+        list.push(data as any);
         next[exerciseId] = list;
         return next;
       });
 
       vibrate(15);
-      setHighlightSetId(row.id);
-      window.setTimeout(() => setHighlightSetId((prev) => (prev === row.id ? null : prev)), 700);
+      setHighlightSetId((data as any).id);
+      window.setTimeout(() => setHighlightSetId((prev) => (prev === (data as any).id ? null : prev)), 700);
       loadWorkout();
     }
   };

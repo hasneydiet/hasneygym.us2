@@ -4,7 +4,6 @@ import './globals.css';
 import { ThemeProvider } from '@/lib/theme';
 import PWARegister from '@/components/pwa/PWARegister';
 import IOSViewportFix from '@/components/ios/IOSViewportFix';
-import { AuthCoachProvider } from '@/components/providers/AuthCoachProvider';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -52,11 +51,9 @@ export default function RootLayout({
         className={`${inter.className} min-h-screen antialiased overflow-x-hidden selection:bg-primary/20 selection:text-foreground`}
       >
         <ThemeProvider>
-          <AuthCoachProvider>
           <IOSViewportFix />
           <PWARegister />
           {children}
-          </AuthCoachProvider>
         </ThemeProvider>
       </body>
     </html>
