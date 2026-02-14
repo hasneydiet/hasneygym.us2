@@ -22,7 +22,8 @@ export function useCoach() {
     impersonateUserId: ctx.impersonateUserId,
     effectiveUserId: ctx.effectiveUserId,
     setImpersonateUserId: ctx.setImpersonateUserId,
-    // Previous hook exposed `ready`; map it to the inverse of `loading`.
-    ready: !ctx.loading,
+    // Previous hook exposed `ready` meaning "coach status resolved".
+    // Auth may be ready before coach is resolved; keep semantics stable.
+    ready: !ctx.loading && ctx.coachReady,
   };
 }

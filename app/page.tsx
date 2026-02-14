@@ -2,43 +2,31 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
-import { useCoach } from '@/hooks/useCoach';
+import { useAuthCoach } from '@/components/providers/AuthCoachProvider';
 
 export const dynamic = 'force-dynamic';
 
 export default function Home() {
   const router = useRouter();
-  const { isCoach, ready } = useCoach();
+  const { loading, user, isCoach, coachReady } = useAuthCoach();
 
   useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        // If Supabase env vars are missing/misconfigured, this call can throw.
-        // Never allow the app to get stuck on an infinite Loading screen.
-        const { data: { session } } = await supabase.auth.getSession();
+    if (loading) return;
+    if (!user) {
+      router.replace('/login');
+      return;
+    }
 
-        if (!session) {
-          router.replace('/login');
-          return;
-        }
+    // Prefer correct routing for coaches, but NEVER block indefinitely.
+    // If coachReady isn't available yet, route to dashboard immediately and
+    // allow a later redirect once coach status resolves.
+    if (coachReady) {
+      router.replace(isCoach ? '/coach' : '/dashboard');
+      return;
+    }
 
-        // Wait until coach detection is ready to avoid briefly routing coaches into workout.
-        if (!ready) return;
-
-        if (isCoach) {
-          router.replace('/coach');
-        } else {
-          router.replace('/dashboard');
-        }
-      } catch {
-        // Fail-safe: route to login if anything unexpected happens.
-        router.replace('/login');
-      }
-    };
-
-    checkAuth();
-  }, [router, isCoach, ready]);
+    router.replace('/dashboard');
+  }, [router, loading, user, isCoach, coachReady]);
 
   return (
     <div className="min-h-screen flex items-center justify-center">

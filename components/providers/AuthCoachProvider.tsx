@@ -10,7 +10,10 @@ import { COACH_IMPERSONATE_EMAIL_KEY, COACH_IMPERSONATE_KEY } from '@/lib/coach'
 type UserShape = { id: string; email?: string | null };
 
 type CoachState = {
+  // "loading" means auth is still initializing. It MUST never block indefinitely.
   loading: boolean;
+  // coachReady means we've finished determining coach status for the current user.
+  coachReady: boolean;
   user: UserShape | null;
   isCoach: boolean;
   impersonateUserId: string | null;
@@ -76,7 +79,8 @@ async function resolveCoach(userId: string | null): Promise<boolean> {
   const cached = readCoachCache(userId);
   if (cached !== null) return cached;
   try {
-    const coachRes = await supabase.rpc('is_coach');
+    // Never allow coach RPC to stall app boot. Timebox it.
+    const coachRes = await withTimeout(supabase.rpc('is_coach'), 2000);
     const isCoach = !coachRes.error && Boolean(coachRes.data);
     writeCoachCache(userId, isCoach);
     return isCoach;
@@ -85,8 +89,25 @@ async function resolveCoach(userId: string | null): Promise<boolean> {
   }
 }
 
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error('timeout')), ms);
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        reject(e);
+      }
+    );
+  });
+}
+
 export function AuthCoachProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
+  const [coachReady, setCoachReady] = useState(false);
   const [user, setUser] = useState<UserShape | null>(null);
   const [isCoach, setIsCoach] = useState(false);
   const [impersonateUserId, setImpersonateUserIdState] = useState<string | null>(null);
@@ -94,13 +115,17 @@ export function AuthCoachProvider({ children }: { children: React.ReactNode }) {
   // Initial auth + coach determination.
   useEffect(() => {
     let cancelled = false;
+    let activeUserId: string | null = null;
 
     const load = async () => {
       try {
-        // getSession is cheap and avoids an extra network hop in many cases.
-        const { data } = await supabase.auth.getSession();
+        // On some Android/PWA cold boots, getSession can hang for a long time.
+        // Timebox it so the UI never gets stuck.
+        const { data } = await withTimeout(supabase.auth.getSession(), 2500);
         const u = (data.session?.user ?? null) as any;
         const nextUser: UserShape | null = u ? { id: u.id, email: u.email ?? null } : null;
+
+        activeUserId = nextUser?.id ?? null;
 
         let nextImpersonate: string | null = null;
         if (typeof window !== 'undefined') {
@@ -108,7 +133,19 @@ export function AuthCoachProvider({ children }: { children: React.ReactNode }) {
           if (!nextImpersonate) window.localStorage.removeItem(COACH_IMPERSONATE_KEY);
         }
 
+        // Unlock UI as soon as auth is known.
+        if (!cancelled) {
+          setUser(nextUser);
+          setImpersonateUserIdState(nextImpersonate);
+          setLoading(false);
+          setCoachReady(false);
+        }
+
+        // Resolve coach status asynchronously (do not block rendering).
         const nextIsCoach = await resolveCoach(nextUser?.id ?? null);
+        if (cancelled) return;
+        // Ignore if user changed while resolving.
+        if ((nextUser?.id ?? null) !== activeUserId) return;
 
         // If not coach, ensure impersonation is cleared.
         if (!nextIsCoach && typeof window !== 'undefined') {
@@ -117,18 +154,16 @@ export function AuthCoachProvider({ children }: { children: React.ReactNode }) {
           nextImpersonate = null;
         }
 
-        if (!cancelled) {
-          setUser(nextUser);
-          setIsCoach(nextIsCoach);
-          setImpersonateUserIdState(nextImpersonate);
-          setLoading(false);
-        }
+        setIsCoach(nextIsCoach);
+        setImpersonateUserIdState(nextImpersonate);
+        setCoachReady(true);
       } catch {
         if (!cancelled) {
           setUser(null);
           setIsCoach(false);
           setImpersonateUserIdState(null);
           setLoading(false);
+          setCoachReady(true);
         }
       }
     };
@@ -138,7 +173,17 @@ export function AuthCoachProvider({ children }: { children: React.ReactNode }) {
     const { data: sub } = supabase.auth.onAuthStateChange(async (_event, session) => {
       const u = (session?.user ?? null) as any;
       const nextUser: UserShape | null = u ? { id: u.id, email: u.email ?? null } : null;
+
+      activeUserId = nextUser?.id ?? null;
+
+      // Unlock immediately on auth change.
+      setUser(nextUser);
+      setLoading(false);
+      setCoachReady(false);
+
+      // Coach resolution should never block UI.
       const nextIsCoach = await resolveCoach(nextUser?.id ?? null);
+      if ((nextUser?.id ?? null) !== activeUserId) return;
 
       let nextImpersonate: string | null = null;
       if (typeof window !== 'undefined') {
@@ -151,10 +196,9 @@ export function AuthCoachProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      setUser(nextUser);
       setIsCoach(nextIsCoach);
       setImpersonateUserIdState(nextImpersonate);
-      setLoading(false);
+      setCoachReady(true);
     });
 
     return () => {
@@ -200,6 +244,7 @@ export function AuthCoachProvider({ children }: { children: React.ReactNode }) {
 
   const value: CoachState = {
     loading,
+    coachReady,
     user,
     isCoach,
     impersonateUserId,
