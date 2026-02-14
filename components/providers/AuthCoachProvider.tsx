@@ -89,7 +89,9 @@ async function resolveCoach(userId: string | null): Promise<boolean> {
   }
 }
 
-function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+// Supabase query builders (including rpc()) are "thenable" but not typed as Promise.
+// Accept PromiseLike so we can timebox them without casting.
+function withTimeout<T>(p: PromiseLike<T>, ms: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const t = setTimeout(() => reject(new Error('timeout')), ms);
     p.then(
