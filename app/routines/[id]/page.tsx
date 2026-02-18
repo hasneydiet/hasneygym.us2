@@ -441,6 +441,7 @@ export default function RoutineEditorPage() {
   const dragStartYRef = useRef<number>(0);
   const dragStartIndexRef = useRef<number>(-1);
   const [dragOverIndex, setDragOverIndex] = useState<number>(-1);
+  const dragOverIndexRef = useRef<number>(-1);
   const [dragTranslateY, setDragTranslateY] = useState<number>(0);
   const dragRafRef = useRef<number | null>(null);
   const isPersistingOrderRef = useRef(false);
@@ -492,12 +493,14 @@ export default function RoutineEditorPage() {
     dragPointerYRef.current = e.clientY;
     dragStartIndexRef.current = idx;
     setDragging({ dayId, exerciseId });
+    dragOverIndexRef.current = idx;
     setDragOverIndex(idx);
   };
 
   const stopRoutineExerciseDrag = async () => {
     const current = dragging;
     setDragging(null);
+    dragOverIndexRef.current = -1;
     setDragOverIndex(-1);
     dragStartIndexRef.current = -1;
     setDragTranslateY(0);
@@ -509,6 +512,8 @@ export default function RoutineEditorPage() {
     try {
       const ordered = (dayExercisesRef.current[current.dayId] || []).slice();
       await persistDayExerciseOrder(current.dayId, ordered);
+      // Re-sync from server so the saved order is guaranteed when navigating away/back.
+      if (effectiveUserId) await loadRoutine(effectiveUserId);
     } catch (err) {
       console.error(err);
       if (effectiveUserId) await loadRoutine(effectiveUserId);
@@ -552,7 +557,7 @@ export default function RoutineEditorPage() {
 
       if (entries.length === 0) return;
 
-      let over = dragOverIndex;
+      let over = dragOverIndexRef.current;
       for (const it of entries) {
         if (y < it.mid) {
           over = it.i;
@@ -561,7 +566,7 @@ export default function RoutineEditorPage() {
         over = it.i;
       }
 
-      if (over !== dragOverIndex) {
+      if (over !== dragOverIndexRef.current) {
         dragStartYRef.current = ev.clientY;
         setDragTranslateY(0);
         setDayExercises((prev) => {
@@ -575,6 +580,7 @@ export default function RoutineEditorPage() {
           dragStartIndexRef.current = to;
           return { ...prev, [dragging.dayId]: nextList };
         });
+        dragOverIndexRef.current = over;
         setDragOverIndex(over);
       }
 
@@ -594,7 +600,7 @@ export default function RoutineEditorPage() {
       window.removeEventListener('pointercancel', onUp as any);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dragging, dragOverIndex]);
+  }, [dragging]);
 
   const toggleSuperset = async (dayId: string, exerciseId: string) => {
     const exs = dayExercises[dayId] || [];
