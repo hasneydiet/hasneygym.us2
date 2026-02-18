@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { PointerEvent as ReactPointerEvent } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import AuthGuard from '@/components/AuthGuard';
 import Navigation from '@/components/Navigation';
@@ -432,6 +433,169 @@ export default function RoutineEditorPage() {
     if (effectiveUserId) loadRoutine(effectiveUserId);
   };
 
+  // Pointer-drag reorder for routine day exercises (mobile-friendly, same feel as active workout).
+  // We intentionally avoid introducing new UI elements; drag starts from the exercise name area.
+  const exerciseNodeRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const [dragging, setDragging] = useState<{ dayId: string; exerciseId: string } | null>(null);
+  const dragPointerYRef = useRef<number>(0);
+  const dragStartYRef = useRef<number>(0);
+  const dragStartIndexRef = useRef<number>(-1);
+  const [dragOverIndex, setDragOverIndex] = useState<number>(-1);
+  const [dragTranslateY, setDragTranslateY] = useState<number>(0);
+  const dragRafRef = useRef<number | null>(null);
+  const isPersistingOrderRef = useRef(false);
+  const dayExercisesRef = useRef<Record<string, RoutineDayExercise[]>>({});
+
+  useEffect(() => {
+    dayExercisesRef.current = dayExercises;
+  }, [dayExercises]);
+
+  const arrayMove = <T,>(arr: T[], from: number, to: number) => {
+    const next = arr.slice();
+    const [item] = next.splice(from, 1);
+    next.splice(to, 0, item);
+    return next;
+  };
+
+  const persistDayExerciseOrder = async (dayId: string, ordered: RoutineDayExercise[]) => {
+    // Avoid uniqueness conflicts if there's a unique constraint on (routine_day_id, order_index)
+    // by first writing to a temporary index space.
+    if (isPersistingOrderRef.current) return;
+    isPersistingOrderRef.current = true;
+    try {
+      const tmp = ordered.map((e, i) => ({ id: e.id, order_index: 1000 + i }));
+      const fin = ordered.map((e, i) => ({ id: e.id, order_index: i }));
+      await supabase.from('routine_day_exercises').upsert(tmp, { onConflict: 'id' });
+      await supabase.from('routine_day_exercises').upsert(fin, { onConflict: 'id' });
+    } finally {
+      isPersistingOrderRef.current = false;
+    }
+  };
+
+  const startRoutineExerciseDrag = (dayId: string, exerciseId: string, e: ReactPointerEvent) => {
+    const list = dayExercises[dayId] || [];
+    const idx = list.findIndex((x) => x.id === exerciseId);
+    if (idx < 0) return;
+
+    const key = `${dayId}:${exerciseId}`;
+    const node = exerciseNodeRefs.current.get(key);
+    if (!node) return;
+
+    try {
+      (e.currentTarget as any)?.setPointerCapture?.(e.pointerId);
+    } catch {}
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    dragStartYRef.current = e.clientY;
+    dragPointerYRef.current = e.clientY;
+    dragStartIndexRef.current = idx;
+    setDragging({ dayId, exerciseId });
+    setDragOverIndex(idx);
+  };
+
+  const stopRoutineExerciseDrag = async () => {
+    const current = dragging;
+    setDragging(null);
+    setDragOverIndex(-1);
+    dragStartIndexRef.current = -1;
+    setDragTranslateY(0);
+    if (dragRafRef.current != null) {
+      cancelAnimationFrame(dragRafRef.current);
+      dragRafRef.current = null;
+    }
+    if (!current) return;
+    try {
+      const ordered = (dayExercisesRef.current[current.dayId] || []).slice();
+      await persistDayExerciseOrder(current.dayId, ordered);
+    } catch (err) {
+      console.error(err);
+      if (effectiveUserId) await loadRoutine(effectiveUserId);
+    }
+  };
+
+  useEffect(() => {
+    if (!dragging) return;
+
+    const onMove = (ev: PointerEvent) => {
+      dragPointerYRef.current = ev.clientY;
+
+      // Auto-scroll while dragging near viewport edges (mobile-friendly)
+      const edge = 80;
+      const y = ev.clientY;
+      const vh = window.innerHeight;
+      if (y < edge) {
+        const strength = (edge - y) / edge;
+        window.scrollBy({ top: -Math.round(18 * strength), left: 0, behavior: 'auto' });
+      } else if (y > vh - edge) {
+        const strength = (y - (vh - edge)) / edge;
+        window.scrollBy({ top: Math.round(18 * strength), left: 0, behavior: 'auto' });
+      }
+
+      if (dragRafRef.current == null) {
+        dragRafRef.current = requestAnimationFrame(() => {
+          dragRafRef.current = null;
+          setDragTranslateY(dragPointerYRef.current - dragStartYRef.current);
+        });
+      }
+
+      const list = dayExercisesRef.current[dragging.dayId] || [];
+      const entries = list
+        .map((ex, i) => {
+          const n = exerciseNodeRefs.current.get(`${dragging.dayId}:${ex.id}`);
+          if (!n) return null;
+          const r = n.getBoundingClientRect();
+          return { i, mid: r.top + r.height / 2 };
+        })
+        .filter(Boolean) as { i: number; mid: number }[];
+
+      if (entries.length === 0) return;
+
+      let over = dragOverIndex;
+      for (const it of entries) {
+        if (y < it.mid) {
+          over = it.i;
+          break;
+        }
+        over = it.i;
+      }
+
+      if (over !== dragOverIndex) {
+        dragStartYRef.current = ev.clientY;
+        setDragTranslateY(0);
+        setDayExercises((prev) => {
+          const cur = prev[dragging.dayId] || [];
+          const from = dragStartIndexRef.current;
+          const to = over;
+          if (from < 0 || from >= cur.length) return prev;
+          if (to < 0 || to >= cur.length) return prev;
+          if (from === to) return prev;
+          const nextList = arrayMove(cur, from, to);
+          dragStartIndexRef.current = to;
+          return { ...prev, [dragging.dayId]: nextList };
+        });
+        setDragOverIndex(over);
+      }
+
+      ev.preventDefault();
+    };
+
+    const onUp = () => {
+      stopRoutineExerciseDrag();
+    };
+
+    window.addEventListener('pointermove', onMove, { passive: false });
+    window.addEventListener('pointerup', onUp, { passive: true });
+    window.addEventListener('pointercancel', onUp, { passive: true });
+    return () => {
+      window.removeEventListener('pointermove', onMove as any);
+      window.removeEventListener('pointerup', onUp as any);
+      window.removeEventListener('pointercancel', onUp as any);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dragging, dragOverIndex]);
+
   const toggleSuperset = async (dayId: string, exerciseId: string) => {
     const exs = dayExercises[dayId] || [];
     const ex = exs.find((e) => e.id === exerciseId);
@@ -594,8 +758,25 @@ export default function RoutineEditorPage() {
                               <Badge variant="secondary" className="border-border/60">SUPERSET</Badge>
                             </div>
                             {group.items.map((ex) => (
-                              <div key={ex.id} className="flex items-center justify-between py-2">
-                                <div className="min-w-0">
+                              <div
+                                key={ex.id}
+                                ref={(el) => {
+                                  const k = `${day.id}:${ex.id}`;
+                                  if (el) exerciseNodeRefs.current.set(k, el);
+                                  else exerciseNodeRefs.current.delete(k);
+                                }}
+                                className="flex items-center justify-between py-2"
+                                style={
+                                  dragging?.dayId === day.id && dragging?.exerciseId === ex.id
+                                    ? { transform: `translateY(${dragTranslateY}px)`, zIndex: 50, position: 'relative' }
+                                    : undefined
+                                }
+                              >
+                                <div
+                                  className="min-w-0"
+                                  onPointerDown={(e) => startRoutineExerciseDrag(day.id, ex.id, e)}
+                                  style={{ touchAction: 'none' }}
+                                >
                                   <span className="font-medium text-foreground block truncate">{ex.exercises?.name}</span>
                                   {(() => {
                                     const prev = prevSetsByExerciseId[ex.exercise_id] || [];
@@ -641,8 +822,25 @@ export default function RoutineEditorPage() {
                       } else {
                         const ex = group.items[0];
                         return (
-                          <div key={ex.id} className="flex items-center justify-between py-2 border-b border-border/50">
-                            <div className="min-w-0">
+                          <div
+                            key={ex.id}
+                            ref={(el) => {
+                              const k = `${day.id}:${ex.id}`;
+                              if (el) exerciseNodeRefs.current.set(k, el);
+                              else exerciseNodeRefs.current.delete(k);
+                            }}
+                            className="flex items-center justify-between py-2 border-b border-border/50"
+                            style={
+                              dragging?.dayId === day.id && dragging?.exerciseId === ex.id
+                                ? { transform: `translateY(${dragTranslateY}px)`, zIndex: 50, position: 'relative' }
+                                : undefined
+                            }
+                          >
+                            <div
+                              className="min-w-0"
+                              onPointerDown={(e) => startRoutineExerciseDrag(day.id, ex.id, e)}
+                              style={{ touchAction: 'none' }}
+                            >
                               <span className="font-medium text-foreground block truncate">{ex.exercises?.name}</span>
                               {(() => {
                                 const prev = prevSetsByExerciseId[ex.exercise_id] || [];
